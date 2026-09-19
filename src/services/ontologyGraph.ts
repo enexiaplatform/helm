@@ -18,10 +18,19 @@ import {
   type GraphStore,
 } from '@helm/graph-store';
 import { createPostgresGraphStore } from '@helm/graph-store/postgres';
+import {
+  buildSeedValueRegistry,
+  buildCanonicalValueChain,
+  createInMemoryValueGraph,
+  type ValueGraph,
+  type ValueMetricRegistry,
+} from '@helm/value-graph';
+import { createPostgresValueGraph } from '@helm/value-graph/postgres';
 import { asOrgId, asUserId, systemClock, uuidIdGen, type Scope } from '@helm/shared';
 import { supabaseClient } from '../lib/supabaseClient.ts';
 
 export const registry: OntologyRegistry = buildSeedRegistry();
+export const valueMetrics: ValueMetricRegistry = buildSeedValueRegistry();
 
 /** The demo organization id. Fixed so the in-memory graph is stable per session. */
 export const DEMO_ORG_ID = asOrgId('00000000-0000-4000-8000-00000000d3m0');
@@ -47,43 +56,77 @@ export function cloudScope(orgId: string, userId: string, role: Scope['role']): 
   };
 }
 
+export type HelmGraphs = {
+  graphStore: GraphStore;
+  valueGraph: ValueGraph;
+};
+
 let demoStore: GraphStore | null = null;
-let demoReady: Promise<GraphStore> | null = null;
+let demoReady: Promise<HelmGraphs> | null = null;
 
 /**
- * The demo graph, built once per session. Never syncs: this store is memory
- * only, so nothing here can reach the shared database.
+ * The demo graphs, built once per session: the Phase 1 entity graph and the
+ * Phase 2 value layer over it. Never syncs — both are memory only, so nothing
+ * here can reach the shared database.
  */
-export function getDemoGraphStore(): Promise<GraphStore> {
+export function getDemoGraphs(): Promise<HelmGraphs> {
   if (demoReady) return demoReady;
   demoReady = (async () => {
-    const store = createInMemoryGraphStore({
+    const scope = demoScope();
+    const graphStore = createInMemoryGraphStore({
       registry,
       clock: systemClock,
       idGen: uuidIdGen,
     });
-    const built = await buildCanonicalScenario(store, demoScope());
-    if (!built.ok) {
-      throw new Error(`demo graph failed to build: ${built.error.code} ${built.error.message}`);
+    const entities = await buildCanonicalScenario(graphStore, scope);
+    if (!entities.ok) {
+      throw new Error(`demo graph failed to build: ${entities.error.code} ${entities.error.message}`);
     }
-    demoStore = store;
-    return store;
+
+    const valueGraph = createInMemoryValueGraph({
+      metrics: valueMetrics,
+      ontology: registry,
+      graphStore,
+      clock: systemClock,
+      idGen: uuidIdGen,
+    });
+    const values = await buildCanonicalValueChain(valueGraph, graphStore, scope);
+    if (!values.ok) {
+      throw new Error(`demo value chain failed: ${values.error.code} ${values.error.message}`);
+    }
+
+    demoStore = graphStore;
+    return { graphStore, valueGraph };
   })();
   return demoReady;
 }
 
-/** The cloud graph, backed by Postgres with RLS doing the isolation. */
-export function getCloudGraphStore(): GraphStore | null {
+/** The cloud graphs, backed by Postgres with RLS doing the isolation. */
+export function getCloudGraphs(): HelmGraphs | null {
   if (!supabaseClient) return null;
-  return createPostgresGraphStore({
+  const graphStore = createPostgresGraphStore({
     client: supabaseClient,
     registry,
     clock: systemClock,
   });
+  const valueGraph = createPostgresValueGraph({
+    client: supabaseClient,
+    metrics: valueMetrics,
+    ontology: registry,
+    graphStore,
+    clock: systemClock,
+  });
+  return { graphStore, valueGraph };
 }
 
-export function resolveGraphStore(mode: 'demo' | 'cloud'): Promise<GraphStore | null> {
-  return mode === 'demo' ? getDemoGraphStore() : Promise.resolve(getCloudGraphStore());
+export function resolveGraphs(mode: 'demo' | 'cloud'): Promise<HelmGraphs | null> {
+  return mode === 'demo' ? getDemoGraphs() : Promise.resolve(getCloudGraphs());
+}
+
+/** Entity-graph-only convenience for the Ontology Explorer. */
+export async function resolveGraphStore(mode: 'demo' | 'cloud'): Promise<GraphStore | null> {
+  const graphs = await resolveGraphs(mode);
+  return graphs?.graphStore ?? null;
 }
 
 export const demoStoreIfBuilt = (): GraphStore | null => demoStore;

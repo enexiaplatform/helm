@@ -51,3 +51,4 @@ a new one, so the reasoning history stays readable.
 | [0012](0012-defer-pnpm-turborepo-and-vitest.md) | Use npm workspaces; defer pnpm, Turborepo and Vitest | accepted | 1 |
 | [0013](0013-provenance-as-first-class-records.md) | Provenance as first-class records, not entity columns | accepted | 1 |
 | [0014](0014-bitemporal-lite.md) | Bitemporal-lite — separate valid time from record time | accepted | 1 |
+| [0015](0015-value-graph-specialized-storage.md) | The Value Graph gets specialized storage, not the generic GraphStore | accepted | 2 |

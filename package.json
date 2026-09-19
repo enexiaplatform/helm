@@ -16,8 +16,12 @@
     "verify:ontology": "node scripts/verify-ontology.mjs",
     "verify:graph": "node scripts/verify-graph.mjs",
     "verify:memoire-boundary": "node scripts/verify-memoire-boundary.mjs",
-    "verify": "npm run verify:architecture && npm run verify:schema && npm run verify:ontology && npm run verify:graph && npm run verify:memoire-boundary",
-    "check": "npm run typecheck && npm run lint && npm run test && npm run verify"
+    "verify": "npm run verify:architecture && npm run verify:schema && npm run verify:ontology && npm run verify:graph && npm run verify:memoire-boundary && npm run verify:value-schema && npm run verify:value-metrics && npm run verify:value-graph && npm run verify:value-observations",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run verify",
+    "verify:value-schema": "node scripts/verify-value-schema.mjs",
+    "verify:value-metrics": "node scripts/verify-value-metrics.mjs",
+    "verify:value-graph": "node scripts/verify-value-graph.mjs",
+    "verify:value-observations": "node scripts/verify-value-observations.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.3",
@@ -29,7 +33,8 @@
     "zustand": "^4.5.7",
     "@helm/shared": "0.1.0",
     "@helm/ontology": "0.1.0",
-    "@helm/graph-store": "0.1.0"
+    "@helm/graph-store": "0.1.0",
+    "@helm/value-graph": "0.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

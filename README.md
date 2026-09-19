@@ -34,28 +34,37 @@ managerial attention, analysis, decisions, and learning.
 | [ADRs](docs/adr/README.md) | architectural decisions and their reasoning |
 | [Discovery findings](docs/architecture/discovery-findings.md) | what the repo and shared database actually contain |
 | [Phase 1 implemented](docs/architecture/phase-1-implemented.md) | the enterprise ontology as built, with its debt |
+| [Phase 2 implemented](docs/architecture/phase-2-implemented.md) | the enterprise value graph as built, with its debt |
+| [Projection decisions](docs/architecture/projection-decisions.md) | which domain tables become ontology entities, and why |
+| [Scenario / Decision integration](docs/architecture/scenario-decision-integration.md) | the contract Phases 4–5 implement against |
 | [Identity resolution](docs/architecture/identity-resolution.md) | canonical identity now, entity resolution later |
 | [Implemented MVP](docs/architecture/implemented-mvp.md) | record of the decision-workspace build |
 
 ## Current state
 
-Phases 0 (architecture foundation) and 1 (enterprise ontology) are complete.
+Phases 0 (architecture foundation), 1 (enterprise ontology) and 2 (enterprise
+value graph) are complete.
 
-HELM now has a semantic kernel — entities and relationships that are org-scoped,
-bitemporal, provenance-bearing and extensible without a migration — reachable only
-through a `GraphStore` port with an in-memory and a Postgres adapter. The canonical
-enterprise graph is queryable end to end, and the Ontology Explorer at `/ontology`
-lets you inspect any entity, its provenance, its validity and its neighbours.
+HELM has a semantic kernel — entities and relationships that are org-scoped,
+bitemporal, provenance-bearing and extensible without a migration — and a value
+layer over it: metrics with machine-readable semantics, typed value links, and
+observations that keep *what is*, *what we expect*, *what we want* and *what
+might happen* apart. Enterprise value is modelled as several competing
+dimensions, never one score.
 
-What HELM cannot do yet is *compute*: value metrics, calculations and propagation
-are Phases 2 and 3. See
-[phase-1-implemented.md](docs/architecture/phase-1-implemented.md) for exactly what
-was proven, and the [roadmap](docs/architecture/roadmap.md) for per-phase status.
+Two read-only engineering surfaces expose the kernel: `/ontology` and
+`/value-graph`.
+
+What HELM cannot do yet is *calculate*. Expected revenue is 2.94B because
+Memoire said so, not because HELM multiplied value by probability — and changing
+probability changes nothing downstream. Propagation is Phase 3. See
+[phase-2-implemented.md](docs/architecture/phase-2-implemented.md) and the
+[roadmap](docs/architecture/roadmap.md).
 
 ```bash
 npm install
-npm run dev      # app + Ontology Explorer
-npm run check    # typecheck, lint, tests, and the 5 architecture contracts
+npm run dev      # app + Ontology and Value Graph explorers
+npm run check    # typecheck, lint, tests, and the 9 architecture contracts
 ```
 
 ## The operating loop (as implemented today)
@@ -147,13 +156,13 @@ optimism). Demo data never syncs.
 ## Verification
 
 ```bash
-npm run check   # typecheck + lint + tests + all architecture contracts
+npm run check   # typecheck + lint + tests + all 9 architecture contracts
 ```
 
 Or individually:
 
 ```bash
-npm test                      # 126 unit, conformance and canonical-scenario tests
+npm test                      # 164 unit, conformance and canonical-scenario tests
 npm run typecheck             # tsc -b across the app and every package
 npm run lint
 npm run build                 # production build
@@ -162,6 +171,10 @@ npm run verify:schema         # namespace, org scoping, RLS, append-only tables
 npm run verify:ontology       # ontology integrity; migration matches the seed
 npm run verify:graph          # canonical graph, bounded traversal, isolation
 npm run verify:memoire-boundary
+npm run verify:value-schema   # value tables, append-only observations, constraints
+npm run verify:value-metrics  # metric semantics; migration matches the seed
+npm run verify:value-graph    # canonical value chain, contention, no propagation
+npm run verify:value-observations
 ```
 
 The `verify:*` scripts make architectural invariants executable: a violation

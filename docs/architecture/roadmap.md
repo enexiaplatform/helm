@@ -1,7 +1,7 @@
 # Implementation Roadmap
 
 Sixteen phases, in order, with what already exists credited and the gates that
-make each phase complete. Status as of **2026-09-19** (Phases 0 and 1 delivered).
+make each phase complete. Status as of **2026-09-19** (Phases 0, 1 and 2 delivered).
 
 ## 1. Sequencing principle
 
@@ -17,7 +17,7 @@ what exists, then returns to 4–6 to reconnect them.
 ```mermaid
 flowchart LR
     P0["0 ✅<br/>Foundation"] --> P1["1 ✅<br/>Ontology"]
-    P1 --> P2["2 ▶<br/>Value Graph"] --> P3["3<br/>Propagation"]
+    P1 --> P2["2 ✅<br/>Value Graph"] --> P3["3 ▶<br/>Propagation"]
     P3 --> P4["4 ♻<br/>Scenario"] --> P5["5 ♻<br/>Decision"] --> P6["6 🔒<br/>Authority"]
     P6 --> P7["7<br/>Digital Twin"] --> P8["8<br/>Causal"]
     P8 --> P9["9 ♻<br/>Genome"] --> P10["10<br/>Counterfactual"]
@@ -37,8 +37,8 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | 0 | Architecture Foundation | **✅ done** | — | docs + 11 ADRs + backlog |
 | 1 | Enterprise Ontology | **✅ done** | 3 packages, 8 tables, 43+34 seeded types | [phase-1-implemented.md](phase-1-implemented.md) |
-| 2 | Value Graph | **▶ next** | ontology + graph-store to build on | canonical chain *computable* end to end |
-| 3 | Propagation Engine | planned | 8 pure engines to wrap | `explain()` reaches source facts for every number |
+| 2 | Value Graph | **✅ done** | metrics, nodes, links, typed observations | [phase-2-implemented.md](phase-2-implemented.md) |
+| 3 | Propagation Engine | **▶ next** | value graph + 8 pure engines to wrap | `explain()` reaches source facts for every number |
 | 4 | Scenario Engine | ♻ reconnect | `engines/scenario.ts`, `helm_scenarios`, tornado | scenarios become graph overrides |
 | 5 | Decision Engine | ♻ reconnect | full lifecycle, alternatives, assumptions, audit | options carry scenario ids; lines become overrides |
 | 6 | Authority Graph | 🔒 redesign | amount-threshold rules only | multi-dimensional rules + chain + escalation + unit RLS |
@@ -73,17 +73,20 @@ Full record, including deviations and debt:
 [phase-1-implemented.md](phase-1-implemented.md).
 Original task breakdown: [../product/backlog-phase-1.md](../product/backlog-phase-1.md).
 
-## 4. Phases 2–3 — the value spine
+## 4. Phase 2 — Value Graph (delivered) and Phase 3 — Propagation (next)
 
-**Phase 2** adds value metrics, nodes, links and observations, and makes the
-canonical chain — Opportunity → Revenue → Demand → Inventory → Working Capital →
-Margin → Cash → Enterprise Value — a real traversable structure with a visual
-explorer. Gate: the chain resolves end to end for the demo org and every edge
-shows its calculation, weight and confidence.
+**Phase 2** added value metrics with machine-readable semantics, value nodes
+attached to ontology entities, twelve typed value link types, and observations
+that keep actual, forecast, target and scenario apart. The canonical chain —
+Opportunity → Expected Revenue → Demand → Inventory → Working Capital → Margin
+→ Cash → Enterprise Value — is traversable in both directions, and enterprise
+value is represented as six competing dimensions rather than one score.
+Record: [phase-2-implemented.md](phase-2-implemented.md).
 
 **Phase 3** is the pivot from "a management app" to "management infrastructure".
 The calculation registry, dependency ordering, execution and the calculation
-audit log arrive; the eight existing engines become registered calculations.
+audit log arrive; the eight existing engines become registered calculations that
+write `DERIVED` observations onto the value nodes Phase 2 built.
 
 Gate for Phase 3, stated as the product promise: **a manager clicks any number
 and sees source, formula, inputs, timestamp, assumptions, confidence and upstream

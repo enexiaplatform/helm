@@ -10,6 +10,7 @@ import {
   LogOut,
   Ship,
   Network,
+  Workflow,
 } from 'lucide-react';
 import { useHelmStore } from '../services/helmStore.ts';
 
@@ -22,6 +23,7 @@ const navItems = [
   { to: '/memory', label: 'Memory', icon: BookOpenCheck },
   // Phase 1 kernel instrument, not a management surface.
   { to: '/ontology', label: 'Ontology', icon: Network },
+  { to: '/value-graph', label: 'Value Graph', icon: Workflow },
 ];
 
 export function AppShell() {

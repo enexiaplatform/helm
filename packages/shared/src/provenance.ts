@@ -37,7 +37,16 @@ export const provenanceMethods = [
 ] as const;
 export type ProvenanceMethod = (typeof provenanceMethods)[number];
 
-export const provenanceSubjects = ['entity', 'relationship', 'entity_version'] as const;
+export const provenanceSubjects = [
+  'entity',
+  'relationship',
+  'entity_version',
+  // Phase 2: the value graph reuses this mechanism rather than inventing a
+  // second source model (ADR-0013, ADR-0015).
+  'value_node',
+  'value_link',
+  'value_observation',
+] as const;
 export type ProvenanceSubject = (typeof provenanceSubjects)[number];
 
 export type ProvenanceRecord = {

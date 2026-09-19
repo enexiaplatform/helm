@@ -42,10 +42,13 @@ const APPEND_ONLY = [
   'helm_decision_events',
   'helm_entity_versions',
   'helm_provenance',
+  // A recorded claim about what was, what we expected or what we wanted must
+  // not be quietly rewritten later.
+  'helm_value_observations',
 ];
 
 /** Registry tables are global config, not org data — org_id is nullable there. */
-const REGISTRY_TABLES = ['helm_entity_types', 'helm_relationship_types'];
+const REGISTRY_TABLES = ['helm_entity_types', 'helm_relationship_types', 'helm_value_metrics'];
 
 /** Tables carrying facts about the world, which need both time dimensions. */
 const TEMPORAL_TABLES = ['helm_entities', 'helm_relationships'];
@@ -221,8 +224,31 @@ for (const p of policies) {
 // (7) destructive statements
 for (const f of files) {
   const sql = stripComments(readFileSync(join(migrationsDir, f), 'utf8'));
-  for (const m of sql.matchAll(/\b(DROP\s+TABLE|TRUNCATE|DROP\s+COLUMN|DROP\s+CONSTRAINT)\b[^;]*/gi)) {
+  for (const m of sql.matchAll(/\b(DROP\s+TABLE|TRUNCATE|DROP\s+COLUMN)\b[^;]*/gi)) {
     fail('destructive-migration', `${f}: ${m[0].trim().slice(0, 90)}`);
+  }
+
+  // A CHECK constraint on a HELM-owned table may be WIDENED: dropping it with
+  // IF EXISTS and immediately re-adding the same name in the same migration is
+  // additive evolution. Dropping one without replacing it is not, and dropping
+  // one on a Memoire table never is (verify:memoire-boundary also refuses it).
+  const readded = new Set(
+    [...sql.matchAll(/ADD\s+CONSTRAINT\s+([a-z_]+)/gi)].map((m) => m[1].toLowerCase()),
+  );
+  for (const m of sql.matchAll(
+    /ALTER\s+TABLE\s+public\.([a-z_]+)\s+DROP\s+CONSTRAINT\s+(IF\s+EXISTS\s+)?([a-z_]+)/gi,
+  )) {
+    const [, table, guard, constraint] = m;
+    const isWidening =
+      table.toLowerCase().startsWith('helm_') &&
+      Boolean(guard) &&
+      readded.has(constraint.toLowerCase());
+    if (!isWidening) {
+      fail(
+        'destructive-migration',
+        `${f}: DROP CONSTRAINT ${constraint} on ${table} is not a guarded widening`,
+      );
+    }
   }
   // DROP POLICY/TRIGGER/FUNCTION are fine when guarded with IF EXISTS — that is
   // the idempotency pattern, not a destructive change.

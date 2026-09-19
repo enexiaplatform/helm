@@ -13,6 +13,7 @@ import { EconomicsPage } from './pages/EconomicsPage.tsx';
 import { OperationsPage } from './pages/OperationsPage.tsx';
 import { MemoryPage } from './pages/MemoryPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
+import { OntologyPage } from './pages/OntologyPage.tsx';
 
 export default function App() {
   const authReady = useHelmStore((s) => s.authReady);
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="economics" element={<EconomicsPage />} />
           <Route path="operations" element={<OperationsPage />} />
           <Route path="memory" element={<MemoryPage />} />
+          <Route path="ontology" element={<OntologyPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

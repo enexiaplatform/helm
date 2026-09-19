@@ -48,3 +48,6 @@ a new one, so the reasoning history stays readable.
 | [0009](0009-connector-contract-for-sources.md) | All enterprise sources enter through a connector contract | accepted | 0 |
 | [0010](0010-test-and-contract-strategy.md) | Vitest in packages plus executable architecture contracts | accepted | 0 |
 | [0011](0011-reconcile-decision-and-value-models.md) | Preserve the decision kernel; reconcile it with the value model | accepted | 0 |
+| [0012](0012-defer-pnpm-turborepo-and-vitest.md) | Use npm workspaces; defer pnpm, Turborepo and Vitest | accepted | 1 |
+| [0013](0013-provenance-as-first-class-records.md) | Provenance as first-class records, not entity columns | accepted | 1 |
+| [0014](0014-bitemporal-lite.md) | Bitemporal-lite — separate valid time from record time | accepted | 1 |

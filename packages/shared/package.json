@@ -1,0 +1,15 @@
+{
+  "name": "@helm/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "HELM kernel primitives: branded ids, Result, temporal types, Scope, ports. No I/O.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "helm": {
+    "layer": "kernel",
+    "pure": true
+  },
+  "dependencies": {}
+}

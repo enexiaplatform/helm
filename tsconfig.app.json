@@ -2,9 +2,15 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "target": "es2023",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "esnext",
-    "types": ["vite/client"],
+    "types": [
+      "vite/client"
+    ],
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
@@ -16,7 +22,27 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@helm/shared": [
+        "./packages/shared/src/index.ts"
+      ],
+      "@helm/ontology": [
+        "./packages/ontology/src/index.ts"
+      ],
+      "@helm/graph-store": [
+        "./packages/graph-store/src/index.ts"
+      ],
+      "@helm/graph-store/postgres": [
+        "./packages/graph-store/src/postgres.ts"
+      ],
+      "@helm/graph-store/conformance": [
+        "./packages/graph-store/src/conformance.ts"
+      ]
+    }
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "packages/*/src"
+  ]
 }

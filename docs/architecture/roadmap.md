@@ -1,7 +1,7 @@
 # Implementation Roadmap
 
 Sixteen phases, in order, with what already exists credited and the gates that
-make each phase complete. Status as of **2026-09-19** (Phase 0 delivered).
+make each phase complete. Status as of **2026-09-19** (Phases 0 and 1 delivered).
 
 ## 1. Sequencing principle
 
@@ -16,8 +16,8 @@ what exists, then returns to 4–6 to reconnect them.
 
 ```mermaid
 flowchart LR
-    P0["0 ✅<br/>Foundation"] --> P1["1 ▶<br/>Ontology"]
-    P1 --> P2["2<br/>Value Graph"] --> P3["3<br/>Propagation"]
+    P0["0 ✅<br/>Foundation"] --> P1["1 ✅<br/>Ontology"]
+    P1 --> P2["2 ▶<br/>Value Graph"] --> P3["3<br/>Propagation"]
     P3 --> P4["4 ♻<br/>Scenario"] --> P5["5 ♻<br/>Decision"] --> P6["6 🔒<br/>Authority"]
     P6 --> P7["7<br/>Digital Twin"] --> P8["8<br/>Causal"]
     P8 --> P9["9 ♻<br/>Genome"] --> P10["10<br/>Counterfactual"]
@@ -36,8 +36,8 @@ flowchart LR
 | # | Phase | Status | Exists today | Gate |
 | --- | --- | --- | --- | --- |
 | 0 | Architecture Foundation | **✅ done** | — | docs + 11 ADRs + backlog |
-| 1 | Enterprise Ontology | **▶ next** | nothing | registry + graph-store (2 adapters) + traversal + explorer |
-| 2 | Value Graph | planned | nothing | canonical chain queryable end to end |
+| 1 | Enterprise Ontology | **✅ done** | 3 packages, 8 tables, 43+34 seeded types | [phase-1-implemented.md](phase-1-implemented.md) |
+| 2 | Value Graph | **▶ next** | ontology + graph-store to build on | canonical chain *computable* end to end |
 | 3 | Propagation Engine | planned | 8 pure engines to wrap | `explain()` reaches source facts for every number |
 | 4 | Scenario Engine | ♻ reconnect | `engines/scenario.ts`, `helm_scenarios`, tornado | scenarios become graph overrides |
 | 5 | Decision Engine | ♻ reconnect | full lifecycle, alternatives, assumptions, audit | options carry scenario ids; lines become overrides |
@@ -52,26 +52,26 @@ flowchart LR
 | 14 | Country GM Cockpit | **blocked on 6, 7** | signal inbox | attention-first; every card traces to kernel objects |
 | 15 | Management Review Loop | planned | nothing | W/M/Q reviews generated from the model |
 
-## 3. Phase 1 — Enterprise Ontology (next)
+## 3. Phase 1 — Enterprise Ontology (delivered)
 
-**Objective.** A semantic spine: entities and relationships that are org-scoped,
-temporal, provenance-bearing, confidence-carrying and extensible without a
-migration.
+Built: `@helm/shared`, `@helm/ontology`, `@helm/graph-store` (in-memory **and**
+Postgres adapters behind one conformance suite), eight additive `helm_*` tables
+with RLS, 43 entity types and 34 relationship types seeded as registry data, the
+canonical Meridian Vietnam graph, five `verify:*` contracts, and a read-only
+Ontology Explorer.
 
-**Deliverables.** `packages/shared`, `packages/ontology`, `packages/graph-store`
-(Postgres + in-memory), migration `helm_entity_types` / `helm_relationship_types`
-/ `helm_entities` / `helm_relationships` + RLS, seed ontology from
-[ontology.md](../domain/ontology.md), traversal with temporal and scenario
-filters, a read-only ontology explorer in the console, and the first three
-`verify:*` contracts.
+Gates met: idempotent ingestion · `asOf` valid-time queries · record-time history
+per entity · provenance on every entity and relationship · cross-system identity
+resolution through aliases · bounded traversal · tenant isolation proven
+server-side · 126 tests green · typecheck, lint and build clean.
 
-**Gate.** Both adapters pass one shared suite · a Memoire opportunity projects
-into an `Opportunity` entity with provenance · traversal answers "what does this
-opportunity touch?" to depth 4 · re-running ingestion changes nothing · `asOf`
-returns the historical graph · unit and integration tests green · typecheck and
-lint clean · docs updated.
+One gate deferred with cause: the TypeScript conformance suite has not been run
+against Postgres, because that needs authenticated test credentials. The write
+path and RLS were instead verified server-side with 24 live assertions.
 
-Full task breakdown: [../product/backlog-phase-1.md](../product/backlog-phase-1.md).
+Full record, including deviations and debt:
+[phase-1-implemented.md](phase-1-implemented.md).
+Original task breakdown: [../product/backlog-phase-1.md](../product/backlog-phase-1.md).
 
 ## 4. Phases 2–3 — the value spine
 

@@ -33,16 +33,30 @@ managerial attention, analysis, decisions, and learning.
 | [Canonical scenario](docs/domain/canonical-scenario.md) | the acceptance test for the kernel |
 | [ADRs](docs/adr/README.md) | architectural decisions and their reasoning |
 | [Discovery findings](docs/architecture/discovery-findings.md) | what the repo and shared database actually contain |
+| [Phase 1 implemented](docs/architecture/phase-1-implemented.md) | the enterprise ontology as built, with its debt |
+| [Identity resolution](docs/architecture/identity-resolution.md) | canonical identity now, entity resolution later |
 | [Implemented MVP](docs/architecture/implemented-mvp.md) | record of the decision-workspace build |
 
 ## Current state
 
-Phase 0 (architecture foundation) is complete. What is **implemented** today is
-the decision workspace described below — a deterministic management-accounting
-system with an auditable decision lifecycle. The ontology, value graph and
-propagation engine that make it *enterprise infrastructure* are Phases 1–3 and
-come before any new surface. See the
-[roadmap](docs/architecture/roadmap.md) for honest per-phase status.
+Phases 0 (architecture foundation) and 1 (enterprise ontology) are complete.
+
+HELM now has a semantic kernel — entities and relationships that are org-scoped,
+bitemporal, provenance-bearing and extensible without a migration — reachable only
+through a `GraphStore` port with an in-memory and a Postgres adapter. The canonical
+enterprise graph is queryable end to end, and the Ontology Explorer at `/ontology`
+lets you inspect any entity, its provenance, its validity and its neighbours.
+
+What HELM cannot do yet is *compute*: value metrics, calculations and propagation
+are Phases 2 and 3. See
+[phase-1-implemented.md](docs/architecture/phase-1-implemented.md) for exactly what
+was proven, and the [roadmap](docs/architecture/roadmap.md) for per-phase status.
+
+```bash
+npm install
+npm run dev      # app + Ontology Explorer
+npm run check    # typecheck, lint, tests, and the 5 architecture contracts
+```
 
 ## The operating loop (as implemented today)
 
@@ -133,7 +147,22 @@ optimism). Demo data never syncs.
 ## Verification
 
 ```bash
-npm test        # engine + state machine unit tests
-npm run build   # typecheck + production build
-npm run lint
+npm run check   # typecheck + lint + tests + all architecture contracts
 ```
+
+Or individually:
+
+```bash
+npm test                      # 126 unit, conformance and canonical-scenario tests
+npm run typecheck             # tsc -b across the app and every package
+npm run lint
+npm run build                 # production build
+npm run verify:architecture   # layering, kernel purity, no AI in the kernel
+npm run verify:schema         # namespace, org scoping, RLS, append-only tables
+npm run verify:ontology       # ontology integrity; migration matches the seed
+npm run verify:graph          # canonical graph, bounded traversal, isolation
+npm run verify:memoire-boundary
+```
+
+The `verify:*` scripts make architectural invariants executable: a violation
+fails the build rather than surviving review.

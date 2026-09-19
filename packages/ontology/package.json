@@ -1,0 +1,17 @@
+{
+  "name": "@helm/ontology",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "HELM enterprise ontology: entity/relationship type registry, validation, seed taxonomy. No I/O.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "helm": {
+    "layer": "kernel",
+    "pure": true
+  },
+  "dependencies": {
+    "@helm/shared": "0.1.0"
+  }
+}

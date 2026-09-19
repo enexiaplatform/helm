@@ -1,8 +1,20 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    // Kernel packages are consumed straight from source in dev and build: there
+    // is no compile step between a package and the app, so a kernel change is
+    // visible immediately and typechecking covers both at once.
+    alias: {
+      '@helm/shared': fileURLToPath(new URL('./packages/shared/src/index.ts', import.meta.url)),
+      '@helm/ontology': fileURLToPath(new URL('./packages/ontology/src/index.ts', import.meta.url)),
+      '@helm/graph-store/postgres': fileURLToPath(new URL('./packages/graph-store/src/postgres.ts', import.meta.url)),
+      '@helm/graph-store': fileURLToPath(new URL('./packages/graph-store/src/index.ts', import.meta.url)),
+    },
+  },
   server: {
     port: 5183,
   },

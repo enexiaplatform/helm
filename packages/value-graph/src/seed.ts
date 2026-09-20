@@ -218,6 +218,31 @@ export const seedValueMetrics: readonly SeedValueMetric[] = [
     scopeCategories: ANY,
   },
   {
+    key: 'AverageSellingPrice',
+    name: 'Average Selling Price',
+    description:
+      'Realised price per unit after discount. Normally a management assumption rather than a measurement, which is why calculations that use it require an ASSUMPTION observation.',
+    dimension: 'COMMERCIAL',
+    unitType: 'currency',
+    aggregation: 'WEIGHTED_AVERAGE',
+    directionality: 'HIGHER_IS_BETTER',
+    timeBehavior: 'POINT_IN_TIME',
+    scopeCategories: ANY,
+    metadata: { weightBy: 'DemandQuantity' },
+  },
+  {
+    key: 'Cogs',
+    name: 'Cost of Goods Sold',
+    description:
+      'Product cost of the units expected to be sold over a period. Distinct from inventory value, which follows what is held rather than what is sold.',
+    dimension: 'FINANCIAL',
+    unitType: 'currency',
+    aggregation: 'SUM',
+    directionality: 'LOWER_IS_BETTER',
+    timeBehavior: 'PERIOD',
+    scopeCategories: ANY,
+  },
+  {
     key: 'GrossMargin',
     name: 'Gross Margin',
     description: 'Revenue less cost of goods sold, in currency, over a period.',

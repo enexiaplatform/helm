@@ -15,6 +15,7 @@ import { MemoryPage } from './pages/MemoryPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
 import { OntologyPage } from './pages/OntologyPage.tsx';
 import { ValueGraphPage } from './pages/ValueGraphPage.tsx';
+import { CalculationsPage } from './pages/CalculationsPage.tsx';
 
 export default function App() {
   const authReady = useHelmStore((s) => s.authReady);
@@ -57,6 +58,7 @@ export default function App() {
           <Route path="memory" element={<MemoryPage />} />
           <Route path="ontology" element={<OntologyPage />} />
           <Route path="value-graph" element={<ValueGraphPage />} />
+          <Route path="calculations" element={<CalculationsPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

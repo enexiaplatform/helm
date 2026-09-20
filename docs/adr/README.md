@@ -52,3 +52,5 @@ a new one, so the reasoning history stays readable.
 | [0013](0013-provenance-as-first-class-records.md) | Provenance as first-class records, not entity columns | accepted | 1 |
 | [0014](0014-bitemporal-lite.md) | Bitemporal-lite — separate valid time from record time | accepted | 1 |
 | [0015](0015-value-graph-specialized-storage.md) | The Value Graph gets specialized storage, not the generic GraphStore | accepted | 2 |
+| [0016](0016-decimal-arithmetic.md) | Exact decimal arithmetic on BigInt fixed-point, not floats | accepted | 3 |
+| [0017](0017-calculation-semantics.md) | Calculation semantics — definitions in code, metadata in data, and how inputs are chosen | accepted | 3 |

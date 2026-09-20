@@ -73,7 +73,7 @@ Full record, including deviations and debt:
 [phase-1-implemented.md](phase-1-implemented.md).
 Original task breakdown: [../product/backlog-phase-1.md](../product/backlog-phase-1.md).
 
-## 4. Phase 2 — Value Graph (delivered) and Phase 3 — Propagation (next)
+## 4. Phases 2 and 3 — Value Graph and Propagation (both delivered)
 
 **Phase 2** added value metrics with machine-readable semantics, value nodes
 attached to ontology entities, twelve typed value link types, and observations
@@ -83,15 +83,25 @@ Opportunity → Expected Revenue → Demand → Inventory → Working Capital �
 value is represented as six competing dimensions rather than one score.
 Record: [phase-2-implemented.md](phase-2-implemented.md).
 
-**Phase 3** is the pivot from "a management app" to "management infrastructure".
-The calculation registry, dependency ordering, execution and the calculation
-audit log arrive; the eight existing engines become registered calculations that
-write `DERIVED` observations onto the value nodes Phase 2 built.
+**Phase 3** was the pivot from "a management app" to "management
+infrastructure". The calculation registry, dependency ordering, deterministic
+execution and the append-only calculation trace arrived, along with the Meridian
+Pharma Value Model v1 — nine governed calculations that write `DERIVED`
+observations onto the value nodes Phase 2 built.
 
-Gate for Phase 3, stated as the product promise: **a manager clicks any number
-and sees source, formula, inputs, timestamp, assumptions, confidence and upstream
-dependencies, all the way down to a source-system fact.** No number in HELM may
-exist without that chain.
+The gate was the product promise: **a manager clicks any number and sees source,
+formula, inputs, timestamp, assumptions, confidence and upstream dependencies,
+all the way down to a source-system fact.** `verify:lineage` makes it
+executable, and every derived number in the canonical chain passes it.
+Record: [phase-3-implemented.md](phase-3-implemented.md).
+
+One expectation stated here did not survive contact with the work: the eight
+existing engines did **not** become registered calculations. Four of them are
+not calculations at all, and the other four need value metrics or entity
+projections that do not exist yet. Wrapping them would have filled the
+dependency graph with calculations that could not run. See
+[the assessment](engine-integration-assessment.md) for the engine-by-engine
+verdict and what each is blocked on.
 
 ## 5. Phases 4–6 — reconnect governance
 

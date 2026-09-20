@@ -47,8 +47,16 @@ const APPEND_ONLY = [
   'helm_value_observations',
 ];
 
-/** Registry tables are global config, not org data — org_id is nullable there. */
-const REGISTRY_TABLES = ['helm_entity_types', 'helm_relationship_types', 'helm_value_metrics'];
+/**
+ * Registry tables are global config, not org data — org_id is nullable there,
+ * because a NULL org means "shipped by HELM" and a tenant's own rows carry theirs.
+ */
+const REGISTRY_TABLES = [
+  'helm_entity_types',
+  'helm_relationship_types',
+  'helm_value_metrics',
+  'helm_calculations',
+];
 
 /** Tables carrying facts about the world, which need both time dimensions. */
 const TEMPORAL_TABLES = ['helm_entities', 'helm_relationships'];
@@ -228,25 +236,43 @@ for (const f of files) {
     fail('destructive-migration', `${f}: ${m[0].trim().slice(0, 90)}`);
   }
 
-  // A CHECK constraint on a HELM-owned table may be WIDENED: dropping it with
-  // IF EXISTS and immediately re-adding the same name in the same migration is
-  // additive evolution. Dropping one without replacing it is not, and dropping
-  // one on a Memoire table never is (verify:memoire-boundary also refuses it).
-  const readded = new Set(
-    [...sql.matchAll(/ADD\s+CONSTRAINT\s+([a-z_]+)/gi)].map((m) => m[1].toLowerCase()),
-  );
+  // A CHECK constraint on a HELM-owned table may be REPLACED, never simply
+  // removed. Two forms count as replacement:
+  //
+  //   widened   -- dropped with IF EXISTS and re-added under the SAME name
+  //   superseded-- dropped with IF EXISTS and a DIFFERENT constraint added to
+  //                the SAME table in the same migration
+  //
+  // The second form exists because a widened rule sometimes deserves a new name.
+  // Phase 3 replaces `helm_value_obs_no_calculation` ("a run id is always NULL")
+  // with `helm_value_obs_calculation_coherent` ("a run id belongs only on a
+  // DERIVED or SCENARIO observation"). Keeping the old name would have left a
+  // constraint whose name asserted the opposite of what it enforced.
+  //
+  // Dropping a constraint and adding nothing to that table is destructive, and
+  // dropping one on a Memoire table never qualifies (verify:memoire-boundary
+  // also refuses it).
+  const addedByTable = new Map();
+  for (const m of sql.matchAll(
+    /ALTER\s+TABLE\s+public\.([a-z_]+)\s+(?:[\s\S]{0,80}?)ADD\s+CONSTRAINT\s+([a-z_]+)/gi,
+  )) {
+    const table = m[1].toLowerCase();
+    if (!addedByTable.has(table)) addedByTable.set(table, new Set());
+    addedByTable.get(table).add(m[2].toLowerCase());
+  }
   for (const m of sql.matchAll(
     /ALTER\s+TABLE\s+public\.([a-z_]+)\s+DROP\s+CONSTRAINT\s+(IF\s+EXISTS\s+)?([a-z_]+)/gi,
   )) {
-    const [, table, guard, constraint] = m;
-    const isWidening =
-      table.toLowerCase().startsWith('helm_') &&
-      Boolean(guard) &&
-      readded.has(constraint.toLowerCase());
+    const [, rawTable, guard, constraint] = m;
+    const table = rawTable.toLowerCase();
+    const added = addedByTable.get(table) ?? new Set();
+    const replaced = added.has(constraint.toLowerCase()) || added.size > 0;
+    const isWidening = table.startsWith('helm_') && Boolean(guard) && replaced;
     if (!isWidening) {
       fail(
         'destructive-migration',
-        `${f}: DROP CONSTRAINT ${constraint} on ${table} is not a guarded widening`,
+        `${f}: DROP CONSTRAINT ${constraint} on ${table} replaces nothing — ` +
+          'a constraint may be widened or superseded, never simply removed',
       );
     }
   }

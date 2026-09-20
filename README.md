@@ -35,6 +35,10 @@ managerial attention, analysis, decisions, and learning.
 | [Discovery findings](docs/architecture/discovery-findings.md) | what the repo and shared database actually contain |
 | [Phase 1 implemented](docs/architecture/phase-1-implemented.md) | the enterprise ontology as built, with its debt |
 | [Phase 2 implemented](docs/architecture/phase-2-implemented.md) | the enterprise value graph as built, with its debt |
+| [Phase 3 implemented](docs/architecture/phase-3-implemented.md) | the propagation engine as built, with its debt |
+| [Meridian Value Model v1](docs/domain/meridian-value-model-v1.md) | the nine calculations, worked, with what each assumes |
+| [Value links vs calculation dependencies](docs/architecture/value-links-vs-calculation-dependencies.md) | why HELM keeps two graphs |
+| [Engine integration assessment](docs/architecture/engine-integration-assessment.md) | which pre-kernel engines become calculations, and when |
 | [Projection decisions](docs/architecture/projection-decisions.md) | which domain tables become ontology entities, and why |
 | [Scenario / Decision integration](docs/architecture/scenario-decision-integration.md) | the contract Phases 4–5 implement against |
 | [Identity resolution](docs/architecture/identity-resolution.md) | canonical identity now, entity resolution later |
@@ -42,8 +46,8 @@ managerial attention, analysis, decisions, and learning.
 
 ## Current state
 
-Phases 0 (architecture foundation), 1 (enterprise ontology) and 2 (enterprise
-value graph) are complete.
+Phases 0 (architecture foundation), 1 (enterprise ontology), 2 (enterprise
+value graph) and 3 (value propagation) are complete.
 
 HELM has a semantic kernel — entities and relationships that are org-scoped,
 bitemporal, provenance-bearing and extensible without a migration — and a value
@@ -52,19 +56,25 @@ observations that keep *what is*, *what we expect*, *what we want* and *what
 might happen* apart. Enterprise value is modelled as several competing
 dimensions, never one score.
 
-Two read-only engineering surfaces expose the kernel: `/ontology` and
-`/value-graph`.
+Over that sits an executable model. Expected revenue is 2.94B **because HELM
+multiplied 4.2B by 0.70**, and raising the probability to 90% moves it to 3.78B
+and demand from 8.4 to 10.8 units — while leaving the cost branch untouched,
+because nothing in it depends on probability. Every derived number explains
+itself down to the Memoire record that asserted its inputs.
 
-What HELM cannot do yet is *calculate*. Expected revenue is 2.94B because
-Memoire said so, not because HELM multiplied value by probability — and changing
-probability changes nothing downstream. Propagation is Phase 3. See
-[phase-2-implemented.md](docs/architecture/phase-2-implemented.md) and the
+Three engineering surfaces expose the kernel: `/ontology`, `/value-graph` and
+`/calculations`.
+
+What HELM cannot do yet is *compare*. It can compute one scenario; ranking them,
+recommending between them and governing the decision that follows are Phases 4
+and 5. `verify:phase-boundary` fails the build if any of that appears early. See
+[phase-3-implemented.md](docs/architecture/phase-3-implemented.md) and the
 [roadmap](docs/architecture/roadmap.md).
 
 ```bash
 npm install
-npm run dev      # app + Ontology and Value Graph explorers
-npm run check    # typecheck, lint, tests, and the 9 architecture contracts
+npm run dev      # app + Ontology, Value Graph and Calculation explorers
+npm run check    # typecheck, lint, tests, and the 15 architecture contracts
 ```
 
 ## The operating loop (as implemented today)
@@ -162,7 +172,7 @@ npm run check   # typecheck + lint + tests + all 9 architecture contracts
 Or individually:
 
 ```bash
-npm test                      # 164 unit, conformance and canonical-scenario tests
+npm test                      # 274 unit, conformance and canonical-scenario tests
 npm run typecheck             # tsc -b across the app and every package
 npm run lint
 npm run build                 # production build
@@ -175,6 +185,12 @@ npm run verify:value-schema   # value tables, append-only observations, constrai
 npm run verify:value-metrics  # metric semantics; migration matches the seed
 npm run verify:value-graph    # canonical value chain, contention, no propagation
 npm run verify:value-observations
+npm run verify:calculations        # governance, code/metadata agreement, no code in the DB
+npm run verify:calculation-graph   # acyclic, deterministic, incremental
+npm run verify:propagation         # the canonical proof: 2.94B → 3.78B, branch isolation
+npm run verify:lineage             # every derived number traces to stated facts
+npm run verify:phase-boundary      # no scenario management, decisions, authority or optimization
+npm run verify:docs                # every relative link in the documentation resolves
 ```
 
 The `verify:*` scripts make architectural invariants executable: a violation

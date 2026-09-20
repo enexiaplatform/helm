@@ -29,7 +29,7 @@ import {
 } from '@helm/shared';
 import type { GraphStore } from '@helm/graph-store';
 import type { OntologyRegistry } from '@helm/ontology';
-import { ValueErrorCodes, type ValueMetricRegistry } from './registry.ts';
+import { ValueErrorCodes, byRecency, type ValueMetricRegistry } from './registry.ts';
 import type {
   ValueDirection,
   ValueGraph,
@@ -463,7 +463,12 @@ export function createInMemoryValueGraph(opts: InMemoryValueGraphOptions): Value
         const t = new Date(query.to).getTime();
         rows = rows.filter((o) => new Date(anchor(o)).getTime() <= t);
       }
-      rows = [...rows].sort((a, b) => String(anchor(b)).localeCompare(String(anchor(a))));
+      // Newest first: by valid time, then by RECORD time. The second key is not
+      // cosmetic — two claims can be valid at the same instant, and the one
+      // recorded later is the current belief. Without it "latest" would depend
+      // on storage order, which is exactly the kind of thing a derived value
+      // must never depend on.
+      rows = [...rows].sort(byRecency);
       return ok(rows.slice(0, query.limit ?? 200));
     },
 
@@ -476,9 +481,7 @@ export function createInMemoryValueGraph(opts: InMemoryValueGraphOptions): Value
         ? rows.filter((o) => new Date(anchor(o)).getTime() <= new Date(query.asOf!).getTime())
         : rows;
       if (eligible.length === 0) return ok(null);
-      const latest = [...eligible].sort((a, b) =>
-        String(anchor(b)).localeCompare(String(anchor(a))),
-      )[0];
+      const latest = [...eligible].sort(byRecency)[0];
       return ok(latest);
     },
 
@@ -636,6 +639,16 @@ export function createInMemoryValueGraph(opts: InMemoryValueGraphOptions): Value
       return ok(record);
     },
 
+    /**
+     * Provenance for one observation, from either direction.
+     *
+     * A stated fact's provenance names the observation as its subject. A DERIVED
+     * value's names the calculation run instead, because the run id is the only
+     * subject knowable before the observation exists and this table is
+     * append-only. Falling back to the observation's own `provenance_id` means
+     * "where did this number come from?" has one answer for every observation
+     * type, rather than silently returning nothing for the derived ones.
+     */
     async getObservationProvenance(scope, observationId) {
       const rows = db.provenance.filter(
         (p) =>
@@ -643,7 +656,14 @@ export function createInMemoryValueGraph(opts: InMemoryValueGraphOptions): Value
           p.subjectKind === 'value_observation' &&
           p.subjectId === observationId,
       );
-      return ok(rows);
+      if (rows.length > 0) return ok(rows);
+
+      const obs = db.observations.find((o) => o.id === observationId && o.orgId === scope.orgId);
+      if (!obs || !obs.provenanceId) return ok([]);
+      const byId = db.provenance.filter(
+        (p) => p.orgId === scope.orgId && p.id === obs.provenanceId,
+      );
+      return ok(byId);
     },
   };
 

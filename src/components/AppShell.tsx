@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
+  Calculator,
   Bell,
   GitBranch,
   Scale,
@@ -24,6 +25,7 @@ const navItems = [
   // Phase 1 kernel instrument, not a management surface.
   { to: '/ontology', label: 'Ontology', icon: Network },
   { to: '/value-graph', label: 'Value Graph', icon: Workflow },
+  { to: '/calculations', label: 'Calculations', icon: Calculator },
 ];
 
 export function AppShell() {

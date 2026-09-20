@@ -8,7 +8,7 @@
  *   2. Observations are append-only (no UPDATE, no DELETE policy).
  *   3. A SCENARIO observation must carry a scenario, and no other type may.
  *   4. Unit/currency coherence is enforced at the database, not just in TS.
- *   5. Phase 2 cannot write a calculation run.
+ *   5. A calculation run id belongs only on a DERIVED or SCENARIO observation.
  *   6. Metric semantics are constrained (no summable proportions).
  *   7. Value nodes reference entities by FK rather than copying them.
  *   8. Causal link types are absent from the value link vocabulary.
@@ -106,6 +106,14 @@ if (!obsPolicies.some((p) => p.command === 'INSERT')) {
 
 const obsBody = bodies.get('helm_value_observations') ?? '';
 
+/**
+ * Constraints added by a later ALTER live outside the CREATE TABLE body, so the
+ * rules below look at both. A check that only read the table body would silently
+ * pass once a rule moved into a migration of its own.
+ */
+const alteredConstraints = combined.split(/ADD\s+CONSTRAINT\s+/i).slice(1).join(' ');
+const calculationCoherence = `${obsBody} ${alteredConstraints}`;
+
 if (!/scenario_entity_id\s+IS\s+NOT\s+NULL/i.test(obsBody) ||
     !/observation_type\s*=\s*'SCENARIO'/i.test(obsBody)) {
   fail(
@@ -123,10 +131,29 @@ if (!/observation_type\s*<>\s*'SCENARIO'\s+AND\s+scenario_entity_id\s+IS\s+NULL/
 if (!/unit_type\s*=\s*'currency'\s+AND\s+currency\s+IS\s+NOT\s+NULL/i.test(obsBody)) {
   fail('unit-coherence', 'currency is not required on currency-typed observations');
 }
-if (!/calculation_run_id\s+IS\s+NULL/i.test(obsBody)) {
+// Phase 2 required calculation_run_id to be NULL always, because nothing
+// computed. Phase 3 replaced that with the rule that actually matters: a number
+// may say it was calculated only if it IS a calculated number. An ACTUAL that
+// claimed a calculation run would be a category error — a measurement presented
+// as a derivation.
+if (
+  !/calculation_run_id\s+IS\s+NULL\s+OR\s+observation_type\s+IN\s*\(\s*'DERIVED'\s*,\s*'SCENARIO'\s*\)/i.test(
+    calculationCoherence,
+  )
+) {
   fail(
-    'phase-boundary',
-    'helm_value_observations does not forbid calculation_run_id — Phase 2 computes nothing',
+    'derivation-honesty',
+    'helm_value_observations does not restrict calculation_run_id to DERIVED and ' +
+      'SCENARIO observations — a stated fact could claim to have been calculated',
+  );
+}
+// The column was reserved in Phase 2 with no target. A run id pointing at
+// nothing would make lineage unresolvable.
+if (!/helm_value_obs_calculation_run_fk/i.test(combined)) {
+  fail(
+    'derivation-honesty',
+    'calculation_run_id has no foreign key to helm_calculation_runs — a derived ' +
+      'value could reference a run that does not exist',
   );
 }
 if (!/effective_at\s+IS\s+NOT\s+NULL\s+OR\s*\(\s*period_start/i.test(obsBody)) {

@@ -8,12 +8,15 @@
 import { fail, ok, type Result } from '@helm/shared';
 import {
   currencyBearingUnits,
+  timeHorizons,
   unitBounds,
   valueDimensions,
+  valueScopeKinds,
   type ObservationType,
   type ValueDimension,
   type ValueMetricDefinition,
   type ValueNodeInput,
+  type ValueObservation,
   type ValueObservationInput,
 } from './types.ts';
 import { seedValueMetrics } from './seed.ts';
@@ -35,6 +38,8 @@ export const ValueErrorCodes = {
   UNEXPECTED_SCENARIO: 'value.unexpected_scenario_context',
   MISSING_PROVENANCE: 'value.missing_provenance',
   SCOPE_INCOMPATIBLE: 'value.scope_incompatible',
+  INVALID_SCOPE_KIND: 'value.invalid_scope_kind',
+  INVALID_TIME_HORIZON: 'value.invalid_time_horizon',
   NODE_NOT_FOUND: 'value.node_not_found',
   NODE_SUBJECT_REQUIRED: 'value.node_subject_required',
   DUPLICATE_NODE: 'value.duplicate_node',
@@ -101,6 +106,23 @@ export function createValueMetricRegistry(
         return fail(
           ValueErrorCodes.NODE_SUBJECT_REQUIRED,
           `A value node needs either a subject entity or a scope — "${m.key}" has neither.`,
+        );
+      }
+      // The scope kind and horizon are CHECK constraints in Postgres. Validating
+      // them here keeps the in-memory adapter honest: a fixture that the
+      // database would reject must not quietly succeed in a test.
+      if (input.scopeKind && !valueScopeKinds.includes(input.scopeKind)) {
+        return fail(
+          ValueErrorCodes.INVALID_SCOPE_KIND,
+          `"${input.scopeKind}" is not a value scope kind. One of: ${valueScopeKinds.join(', ')}.`,
+          { scopeKind: input.scopeKind },
+        );
+      }
+      if (input.timeHorizon && !timeHorizons.includes(input.timeHorizon)) {
+        return fail(
+          ValueErrorCodes.INVALID_TIME_HORIZON,
+          `"${input.timeHorizon}" is not a time horizon. One of: ${timeHorizons.join(', ')}.`,
+          { timeHorizon: input.timeHorizon },
         );
       }
       if (!acceptsScope(input.metricKey, subjectCategory)) {
@@ -348,4 +370,29 @@ export function validateMetricRegistry(registry: ValueMetricRegistry): MetricPro
   }
 
   return problems;
+}
+
+// ------------------------------------------------------- observation recency
+
+/**
+ * The valid-time instant an observation speaks to. A point-in-time claim
+ * anchors on `effectiveAt`, a period claim on the period's start, and a claim
+ * with neither falls back to when HELM learned it.
+ */
+export function observationAnchor(o: ValueObservation): string {
+  return o.effectiveAt ?? o.periodStart ?? o.recordedAt;
+}
+
+/**
+ * Newest first: valid time descending, then RECORD time descending.
+ *
+ * Both adapters share this comparator so "latest observation" cannot mean two
+ * different things in two stores. The record-time key matters: a recalculated
+ * derived value has the same valid time as the one it supersedes, and the only
+ * thing that distinguishes them is that HELM learned it later.
+ */
+export function byRecency(a: ValueObservation, b: ValueObservation): number {
+  const valid = String(observationAnchor(b)).localeCompare(String(observationAnchor(a)));
+  if (valid !== 0) return valid;
+  return String(b.recordedAt).localeCompare(String(a.recordedAt));
 }

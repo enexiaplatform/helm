@@ -46,6 +46,12 @@ export const provenanceSubjects = [
   'value_node',
   'value_link',
   'value_observation',
+  // Phase 3: a derived value's provenance names the RUN that produced it. The
+  // run id is the only subject known before the observation exists, and
+  // helm_provenance is append-only, so a placeholder subject could never be
+  // corrected. The observation points back through its own provenance_id.
+  'calculation_run',
+  'calculation_step',
 ] as const;
 export type ProvenanceSubject = (typeof provenanceSubjects)[number];
 

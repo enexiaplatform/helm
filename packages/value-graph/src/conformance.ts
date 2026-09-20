@@ -189,6 +189,33 @@ export function runValueConformanceSuite(api: TestApi, harness: ValueAdapterHarn
       }
     });
 
+    test('rejects a scope kind or horizon the database would reject', async () => {
+      const h = await harness.create();
+      try {
+        const product = await mkEntity(h.graphStore, h.scopeA, 'Product', 'sku-x', 'SKU-X');
+        // Both of these are CHECK constraints in Postgres. An in-memory adapter
+        // that accepted them would let a fixture pass in tests and fail in
+        // production, which is the exact failure this suite exists to prevent.
+        const badScope = await h.valueGraph.createValueNode(h.scopeA, {
+          metricKey: 'UnitCost',
+          subjectEntityId: product,
+          scopeKind: 'FUNCTION' as never,
+        });
+        assert.equal(badScope.ok, false, 'an unknown scope kind is refused');
+        if (!badScope.ok) assert.equal(badScope.error.code, 'value.invalid_scope_kind');
+
+        const badHorizon = await h.valueGraph.createValueNode(h.scopeA, {
+          metricKey: 'UnitCost',
+          subjectEntityId: product,
+          timeHorizon: 'fortnight' as never,
+        });
+        assert.equal(badHorizon.ok, false, 'an unknown time horizon is refused');
+        if (!badHorizon.ok) assert.equal(badHorizon.error.code, 'value.invalid_time_horizon');
+      } finally {
+        await h.cleanup?.();
+      }
+    });
+
     test('upsertValueNode is idempotent', async () => {
       const h = await harness.create();
       try {

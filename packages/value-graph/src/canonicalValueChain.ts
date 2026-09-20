@@ -20,6 +20,13 @@
  *
  * Nothing here computes. Observations are recorded as stated facts of a given
  * type; no value is derived from another.
+ *
+ * A few nodes are declared with NO observation at all — COGS, cash impact,
+ * working capital for one product, gross margin % for one deal. That is
+ * deliberate: the enterprise genuinely has those value positions, and nothing
+ * in the operational systems states them. They are the holes an executable
+ * model fills, and declaring them here is what keeps the calculation layer from
+ * inventing value positions of its own.
  */
 
 import {
@@ -106,6 +113,8 @@ export const canonicalValueNodeSpecs: readonly NodeSpec[] = [
   // --- the competing tender ---
   { handle: 'oppValueNext', metric: 'OpportunityValue', subject: 'memoire:tender:opp-8940',
     horizon: 'current', label: 'Opportunity Value — provincial tender' },
+  { handle: 'oppProbNext', metric: 'OpportunityProbability', subject: 'memoire:tender:opp-8940',
+    horizon: 'current', label: 'Opportunity Probability — provincial tender' },
   { handle: 'expRevenueNext', metric: 'ExpectedRevenue', subject: 'memoire:tender:opp-8940',
     horizon: 'quarter', label: 'Expected Revenue — provincial tender' },
   { handle: 'demandNext', metric: 'DemandQuantity', subject: 'memoire:tender:opp-8940',
@@ -114,14 +123,20 @@ export const canonicalValueNodeSpecs: readonly NodeSpec[] = [
   // --- demand and supply ---
   { handle: 'demand', metric: 'DemandQuantity', subject: 'memoire:opportunity:opp-8821',
     horizon: 'quarter', label: 'Product Demand — SKU-X for Rohto' },
+  // The price that converts money into units. A management assumption about the
+  // PRODUCT, not a constant in any calculation's code (§20).
+  { handle: 'aspProduct', metric: 'AverageSellingPrice', subject: 'helm:product:sku-x',
+    horizon: 'current', label: 'Average Selling Price — SKU-X' },
   { handle: 'invRequirement', metric: 'InventoryRequirement', subject: 'helm:product:sku-x',
     horizon: 'quarter', label: 'Inventory Requirement — SKU-X' },
   { handle: 'availOwn', metric: 'AvailableInventory', subject: 'helm:inventory:sku-x@wh-hcmc',
     horizon: 'current', label: 'Available Inventory — SKU-X @ HCMC' },
   { handle: 'availDist', metric: 'AvailableInventory', subject: 'helm:inventory:sku-x@dist-d',
     horizon: 'current', label: 'Available Inventory — SKU-X @ Distributor D' },
+  // The gap is measured over the same period as the requirement it compares
+  // against, not "as of now" — a quarter's shortfall is a quarter's number.
   { handle: 'invGap', metric: 'InventoryGap', subject: 'helm:product:sku-x',
-    horizon: 'current', label: 'Inventory Gap — SKU-X' },
+    horizon: 'quarter', label: 'Inventory Gap — SKU-X' },
   { handle: 'leadTime', metric: 'LeadTime', subject: 'helm:supplier:supplier-a',
     horizon: 'current', label: 'Lead Time — Supplier A' },
   { handle: 'capUtil', metric: 'CapacityUtilization', subject: 'helm:capacity:field-service-vn',
@@ -136,12 +151,23 @@ export const canonicalValueNodeSpecs: readonly NodeSpec[] = [
     horizon: 'current', label: 'Unit Cost — SKU-X' },
   { handle: 'invValue', metric: 'InventoryValue', subject: 'helm:inventory:sku-x@wh-hcmc',
     horizon: 'current', label: 'Inventory Value — SKU-X @ HCMC' },
+  // Working capital exists at two levels that must not be confused: the capital
+  // ONE product's required stock ties up, and the Vietnam inventory position as
+  // a whole. The second is a finance aggregate nobody in HELM computes yet.
+  { handle: 'wcProduct', metric: 'WorkingCapital', subject: 'helm:product:sku-x',
+    horizon: 'quarter', label: 'Working Capital — SKU-X required stock' },
   { handle: 'workingCapital', metric: 'WorkingCapital', subject: 'helm:workingcapital:inventory-vn',
     horizon: 'current', label: 'Working Capital — Vietnam inventory' },
+  { handle: 'cogsOpp', metric: 'Cogs', subject: 'memoire:opportunity:opp-8821',
+    horizon: 'quarter', label: 'Cost of Goods Sold — Rohto Q4 tender' },
   { handle: 'grossMargin', metric: 'GrossMargin', subject: 'memoire:opportunity:opp-8821',
     horizon: 'quarter', label: 'Gross Margin — Rohto Q4 tender' },
+  { handle: 'grossMarginPctOpp', metric: 'GrossMarginPct', subject: 'memoire:opportunity:opp-8821',
+    horizon: 'quarter', label: 'Gross Margin % — Rohto Q4 tender' },
   { handle: 'grossMarginPct', metric: 'GrossMarginPct', subject: 'helm:businessunit:bu-pharma',
     horizon: 'quarter', label: 'Gross Margin % — Pharma BU' },
+  { handle: 'cashOpp', metric: 'CashImpact', subject: 'memoire:opportunity:opp-8821',
+    horizon: 'quarter', label: 'Cash Impact — Rohto Q4 tender' },
   { handle: 'freightOpex', metric: 'Opex', subject: 'helm:cost:expedited-freight',
     horizon: 'quarter', label: 'Operating Expense — expedited freight' },
 
@@ -188,9 +214,15 @@ export const canonicalValueLinkSpecs: readonly LinkSpec[] = [
 
   // revenue drives demand drives requirement
   { type: 'DRIVES', from: 'expRevenue', to: 'demand', weight: 12, confidence: 0.7 },
+  { type: 'DRIVES', from: 'aspProduct', to: 'demand', confidence: 0.85,
+    note: 'the assumed price is what turns money into units' },
   { type: 'DRIVES', from: 'demand', to: 'invRequirement', weight: 1, confidence: 0.9 },
   { type: 'DRIVES', from: 'oppValueNext', to: 'expRevenueNext', confidence: 1 },
+  { type: 'DRIVES', from: 'oppProbNext', to: 'expRevenueNext', confidence: 1 },
   { type: 'DRIVES', from: 'expRevenueNext', to: 'demandNext', weight: 9, confidence: 0.45 },
+  { type: 'DRIVES', from: 'aspProduct', to: 'demandNext', confidence: 0.85 },
+  { type: 'DRIVES', from: 'demandNext', to: 'invRequirement', weight: 1, confidence: 0.45,
+    note: 'the SECOND tender adds to the same product requirement' },
 
   // THE CONTENTION: two demands consume one inventory position's availability
   { type: 'CONSUMES', from: 'demand', to: 'availOwn', weight: 4, confidence: 0.7,
@@ -215,13 +247,27 @@ export const canonicalValueLinkSpecs: readonly LinkSpec[] = [
   { type: 'DRIVES', from: 'unitCost', to: 'invValue', confidence: 1 },
   { type: 'CONSUMES', from: 'invValue', to: 'workingCapital', confidence: 0.9,
     note: 'stock ties up capital' },
+  { type: 'DRIVES', from: 'invRequirement', to: 'wcProduct', confidence: 0.85 },
+  { type: 'DRIVES', from: 'unitCost', to: 'wcProduct', confidence: 1 },
+  { type: 'CONTRIBUTES_TO', from: 'wcProduct', to: 'workingCapital', confidence: 0.7,
+    note: 'one product rolls up into the Vietnam position — no roll-up model in v1' },
 
   // economics
+  { type: 'DRIVES', from: 'demand', to: 'cogsOpp', confidence: 0.7 },
+  { type: 'DRIVES', from: 'unitCost', to: 'cogsOpp', confidence: 1 },
   { type: 'DRIVES', from: 'expRevenue', to: 'grossMargin', confidence: 0.7 },
+  { type: 'REDUCES', from: 'cogsOpp', to: 'grossMargin', confidence: 0.9 },
   { type: 'REDUCES', from: 'unitCost', to: 'grossMargin', confidence: 0.9 },
   { type: 'REDUCES', from: 'freightOpex', to: 'grossMargin', confidence: 0.8,
     note: 'expediting protects revenue and costs margin — the trade-off in one edge' },
+  { type: 'DRIVES', from: 'grossMargin', to: 'grossMarginPctOpp', confidence: 0.9 },
+  { type: 'DRIVES', from: 'expRevenue', to: 'grossMarginPctOpp', confidence: 0.7 },
+  { type: 'CONTRIBUTES_TO', from: 'grossMarginPctOpp', to: 'grossMarginPct', confidence: 0.7,
+    note: 'one deal rolls up into the BU percentage — no roll-up model in v1' },
   { type: 'CONTRIBUTES_TO', from: 'grossMargin', to: 'grossMarginPct', confidence: 0.9 },
+  { type: 'DRIVES', from: 'grossMargin', to: 'cashOpp', confidence: 0.8 },
+  { type: 'CONSUMES', from: 'wcProduct', to: 'cashOpp', confidence: 0.85,
+    note: 'capital tied up in stock is cash the deal does not return' },
 
   // risk
   { type: 'EXPOSES', from: 'leadTime', to: 'supplyRisk', confidence: 0.8 },
@@ -242,6 +288,8 @@ export const canonicalValueLinkSpecs: readonly LinkSpec[] = [
     note: 'capital tied up is cash not available' },
   { type: 'CONTRIBUTES_TO', from: 'grossMargin', to: 'evMargin', confidence: 0.9 },
   { type: 'CONTRIBUTES_TO', from: 'grossMargin', to: 'evCash', confidence: 0.8 },
+  { type: 'CONTRIBUTES_TO', from: 'cashOpp', to: 'evCash', confidence: 0.75,
+    note: 'one deal contributes to the cash dimension — no enterprise roll-up in v1' },
   { type: 'CONTRIBUTES_TO', from: 'serviceLevel', to: 'evService', confidence: 0.8 },
   { type: 'CONTRIBUTES_TO', from: 'supplyRisk', to: 'evRisk', confidence: 0.8 },
   { type: 'CONTRIBUTES_TO', from: 'futureOppRisk', to: 'evRisk', confidence: 0.6 },
@@ -270,10 +318,18 @@ export const canonicalObservationSpecs: readonly ObsSpec[] = [
 
   { node: 'oppValueNext', type: 'ACTUAL', value: 3.1e9, unit: 'currency', currency: 'VND',
     effectiveAt: TODAY, observedAt: '2026-09-17T15:40:00.000Z', source: 'memoire', confidence: 1 },
+  { node: 'oppProbNext', type: 'ACTUAL', value: 0.45, unit: 'ratio',
+    effectiveAt: TODAY, observedAt: '2026-09-17T15:40:00.000Z', source: 'memoire', confidence: 0.45 },
   { node: 'expRevenueNext', type: 'FORECAST', value: 1.395e9, unit: 'currency', currency: 'VND',
     periodStart: Q4_START, periodEnd: Q4_END, source: 'memoire', confidence: 0.45 },
   { node: 'demandNext', type: 'FORECAST', value: 9, unit: 'units',
     periodStart: Q4_START, periodEnd: Q4_END, source: 'memoire', confidence: 0.45 },
+
+  // A management ASSUMPTION, deliberately not an ACTUAL: nobody measured it,
+  // somebody decided it. 12 units at this price is the 4.2B opportunity value.
+  { node: 'aspProduct', type: 'ASSUMPTION', value: 3.5e8, unit: 'currency', currency: 'VND',
+    effectiveAt: '2026-09-01T00:00:00.000Z', source: 'manual', confidence: 0.85,
+    note: 'Realised price per SKU-X unit after standard discount; reviewed quarterly' },
 
   // --- operations, from SCM ---
   { node: 'demand', type: 'FORECAST', value: 12, unit: 'units',

@@ -31,7 +31,7 @@ import {
 } from '@helm/shared';
 import type { GraphStore } from '@helm/graph-store';
 import type { OntologyRegistry } from '@helm/ontology';
-import { ValueErrorCodes, type ValueMetricRegistry } from './registry.ts';
+import { ValueErrorCodes, byRecency, type ValueMetricRegistry } from './registry.ts';
 import type {
   ContentionPoint,
   LatestObservationQuery,
@@ -741,7 +741,12 @@ export function createPostgresValueGraph(opts: PostgresValueGraphOptions): Value
         const t = new Date(query.to).getTime();
         rows = rows.filter((o) => new Date(anchor(o)).getTime() <= t);
       }
-      rows.sort((a, b) => String(anchor(b)).localeCompare(String(anchor(a))));
+      // Newest first: by valid time, then by RECORD time. The second key is not
+      // cosmetic — two claims can be valid at the same instant, and the one
+      // recorded later is the current belief. Without it "latest" would depend
+      // on storage order, which is exactly the kind of thing a derived value
+      // must never depend on.
+      rows.sort(byRecency);
       return ok(rows.slice(0, query.limit ?? 200));
     },
 
@@ -972,6 +977,16 @@ export function createPostgresValueGraph(opts: PostgresValueGraphOptions): Value
       return ok(toProv(data as ProvRow));
     },
 
+    /**
+     * Provenance for one observation, from either direction.
+     *
+     * A stated fact's provenance names the observation as its subject. A DERIVED
+     * value's names the calculation run instead, because the run id is the only
+     * subject knowable before the observation exists and this table is
+     * append-only. Falling back to the observation's own `provenance_id` means
+     * "where did this number come from?" has one answer for every observation
+     * type, rather than silently returning nothing for the derived ones.
+     */
     async getObservationProvenance(scope, observationId) {
       const { data, error } = await client
         .from('helm_provenance')
@@ -983,7 +998,30 @@ export function createPostgresValueGraph(opts: PostgresValueGraphOptions): Value
       if (error) {
         return fail(ValueErrorCodes.READ_FAILED, `Provenance read failed: ${error.message}`);
       }
-      return ok(((data ?? []) as ProvRow[]).map(toProv));
+      const rows = ((data ?? []) as ProvRow[]).map(toProv);
+      if (rows.length > 0) return ok(rows);
+
+      const obs = await client
+        .from('helm_value_observations')
+        .select('provenance_id')
+        .eq('org_id', scope.orgId)
+        .eq('id', observationId)
+        .maybeSingle();
+      if (obs.error) {
+        return fail(ValueErrorCodes.READ_FAILED, `Provenance read failed: ${obs.error.message}`);
+      }
+      const provenanceId = (obs.data as { provenance_id: string | null } | null)?.provenance_id;
+      if (!provenanceId) return ok([]);
+
+      const byId = await client
+        .from('helm_provenance')
+        .select('*')
+        .eq('org_id', scope.orgId)
+        .eq('id', provenanceId);
+      if (byId.error) {
+        return fail(ValueErrorCodes.READ_FAILED, `Provenance read failed: ${byId.error.message}`);
+      }
+      return ok(((byId.data ?? []) as ProvRow[]).map(toProv));
     },
   };
 

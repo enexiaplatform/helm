@@ -10,3 +10,5 @@ export * from './result.ts';
 export * from './temporal.ts';
 export * from './scope.ts';
 export * from './provenance.ts';
+export * from './decimal.ts';
+export * from './quantity.ts';

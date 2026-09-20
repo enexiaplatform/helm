@@ -65,9 +65,9 @@ async function freshValueChain() {
 describe('canonical value chain — Meridian Life Sciences Vietnam', () => {
   test('the value layer builds over the entity graph', async () => {
     const { built } = await freshValueChain();
-    assert.equal(built.nodeCount, 33, 'value nodes');
-    assert.equal(built.linkCount, 39, 'value links');
-    assert.equal(built.observationCount, 40, 'observations');
+    assert.equal(built.nodeCount, 39, 'value nodes');
+    assert.equal(built.linkCount, 55, 'value links');
+    assert.equal(built.observationCount, 42, 'observations');
   });
 
   test('value nodes reference ontology entities rather than duplicating them', async () => {

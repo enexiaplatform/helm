@@ -26,6 +26,16 @@ import {
   type ValueMetricRegistry,
 } from '@helm/value-graph';
 import { createPostgresValueGraph } from '@helm/value-graph/postgres';
+import {
+  createCalculationRegistry,
+  createInMemoryCalculationStore,
+  createPropagationEngine,
+  meridianValueModelV1,
+  type CalculationRegistry,
+  type CalculationStore,
+  type PropagationEngine,
+} from '@helm/propagation-engine';
+import { createPostgresCalculationStore } from '@helm/propagation-engine/postgres';
 import { asOrgId, asUserId, systemClock, uuidIdGen, type Scope } from '@helm/shared';
 import { supabaseClient } from '../lib/supabaseClient.ts';
 
@@ -59,7 +69,42 @@ export function cloudScope(orgId: string, userId: string, role: Scope['role']): 
 export type HelmGraphs = {
   graphStore: GraphStore;
   valueGraph: ValueGraph;
+  /** Phase 3: the executable layer over the two graphs above. */
+  engine: PropagationEngine;
+  store: CalculationStore;
 };
+
+/**
+ * The calculation registry, built once. It validates every definition against
+ * the metric registry, so a model that could produce a wrong number fails here
+ * rather than in front of a manager.
+ */
+export const calculations: CalculationRegistry = (() => {
+  const built = createCalculationRegistry(meridianValueModelV1, valueMetrics);
+  if (!built.ok) {
+    throw new Error(`calculation registry invalid: ${built.error.message}`);
+  }
+  return built.value;
+})();
+
+function buildEngine(
+  graphStore: GraphStore,
+  valueGraph: ValueGraph,
+  store: CalculationStore,
+): PropagationEngine {
+  const engine = createPropagationEngine({
+    registry: calculations,
+    valueGraph,
+    graphStore,
+    ontology: registry,
+    store,
+    clock: systemClock,
+  });
+  if (!engine.ok) {
+    throw new Error(`propagation engine could not be built: ${engine.error.message}`);
+  }
+  return engine.value;
+}
 
 let demoStore: GraphStore | null = null;
 let demoReady: Promise<HelmGraphs> | null = null;
@@ -95,8 +140,9 @@ export function getDemoGraphs(): Promise<HelmGraphs> {
       throw new Error(`demo value chain failed: ${values.error.code} ${values.error.message}`);
     }
 
+    const store = createInMemoryCalculationStore({ clock: systemClock, idGen: uuidIdGen });
     demoStore = graphStore;
-    return { graphStore, valueGraph };
+    return { graphStore, valueGraph, engine: buildEngine(graphStore, valueGraph, store), store };
   })();
   return demoReady;
 }
@@ -116,7 +162,12 @@ export function getCloudGraphs(): HelmGraphs | null {
     graphStore,
     clock: systemClock,
   });
-  return { graphStore, valueGraph };
+  const store = createPostgresCalculationStore({
+    client: supabaseClient,
+    metrics: valueMetrics,
+    clock: systemClock,
+  });
+  return { graphStore, valueGraph, engine: buildEngine(graphStore, valueGraph, store), store };
 }
 
 export function resolveGraphs(mode: 'demo' | 'cloud'): Promise<HelmGraphs | null> {

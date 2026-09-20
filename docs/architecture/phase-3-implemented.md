@@ -52,9 +52,14 @@ down to source facts.
 
 ### Executable contracts
 
-Five new, each negative-tested: `verify:calculations`,
+Six new, each negative-tested: `verify:calculations`,
 `verify:calculation-graph`, `verify:propagation`, `verify:lineage`,
-`verify:phase-boundary`. Fourteen in total across the four phases.
+`verify:phase-boundary`, `verify:docs`. Fifteen in total across the four phases.
+
+`verify:lineage` deliberately creates two interleaved runs rather than asserting
+into a single sequential one: same-run consistency is accidentally true when
+nothing races, so a contract that only checked the easy case would have had no
+teeth.
 
 ---
 
@@ -107,13 +112,26 @@ derived value in HELM permanently stale the moment the clock moved. The
 fingerprint covers the calculation reference, horizon, scenario and the exact
 input observations and values.
 
-### 2.6 The metric decides the time context, not the node
+### 2.6 A run consumes its own derived output
+
+Downstream steps take the observation **this run** produced, not whichever
+DERIVED observation is newest on the node. Re-querying worked only because a
+run's own write has the latest record time; two interleaved runs broke it, and a
+step consumed the other run's output. The values happened to match, which is
+worse rather than better — the number was right by luck and the trace cited an
+observation its run did not produce. See [ADR-0017](../adr/0017-calculation-semantics.md).
+
+Not provided: snapshot isolation over the source world. Two runs at the same
+`asOf` can still read different facts if one is recorded between their reads.
+Both are correct as of that `asOf`; replay is the mitigation.
+
+### 2.7 The metric decides the time context, not the node
 
 Working capital is a balance even when it is the balance implied by a quarter's
 demand. Deriving the observation's time context from the node's horizon wrote a
 period onto a stock, and the value graph correctly refused it.
 
-### 2.7 Every input declares its horizon
+### 2.8 Every input declares its horizon
 
 An opportunity's value is a `current` fact; the revenue it implies is a
 `quarter` figure. Leaving that implicit made the engine silently drop
@@ -123,14 +141,14 @@ it wants, and a metric that exists only at another horizon produces
 rather than a bare missing-input error that sends a reader hunting for data that
 was never missing.
 
-### 2.8 The ontology decides what a category is
+### 2.9 The ontology decides what a category is
 
 Scope compatibility was checked against a hand-maintained list of entity type
 keys inside the engine. It is now the injected `OntologyRegistry`: a calculation
 that says it applies to "commercial" subjects means what the ontology means, and
 a new entity type does not require an edit to the engine.
 
-### 2.9 A derived value's provenance names the RUN
+### 2.10 A derived value's provenance names the RUN
 
 The provenance record has to exist before the observation that points at it, and
 `helm_provenance` is append-only, so a placeholder subject could never be
@@ -140,7 +158,7 @@ lineage record. `getObservationProvenance` falls back to the observation's own
 `provenance_id`, so "where did this number come from?" has one answer for every
 observation type.
 
-### 2.10 The CalculationStore has no provenance methods
+### 2.11 The CalculationStore has no provenance methods
 
 Giving it its own meant two provenance stores in memory and one table in
 Postgres — a divergence the conformance suite could not paper over. Provenance
@@ -213,12 +231,12 @@ removal. Negative-tested.
 ## 4. Test results
 
 ```
-274 tests, 271 pass, 3 skipped (Postgres conformance — needs credentials)
-14 verify contracts, all passing, each negative-tested
+277 tests, 274 pass, 3 skipped (Postgres conformance — needs credentials)
+15 verify contracts, all passing, each negative-tested
 typecheck clean, lint clean
 ```
 
-New this phase: 20 quantity tests, 14 canonical propagation tests, 43 engine
+New this phase: 20 quantity tests, 14 canonical propagation tests, 46 engine
 semantics tests, 11 CalculationStore conformance tests.
 
 The canonical proof:
@@ -275,6 +293,7 @@ because it is outside this phase.
 | Aggregation is SUM only | the value graph models 8 aggregation behaviours; the engine implements one | Phase 4, with `MAX` for bottlenecks |
 | No consolidation model | BU and enterprise roll-ups are declared uncomputable rather than faked | Phase 7 |
 | Two forecasts for different future periods on one node would resolve by "furthest out wins" | the horizon filter keeps periods apart today; the case does not arise | before multi-period forecasting |
+| No snapshot isolation over the source world | two runs at the same `asOf` can read different facts if one lands between their reads; both are correct as of that `asOf` | when runs are scheduled rather than manual |
 | A calculation can reference a metric pair with no value link | the semantic model can fall behind the executable one, unflagged | a future verifier |
 | `metricKeyOf` in the Postgres store is a linear scan | the registry has 32 metrics | when it matters |
 | Eight pre-kernel engines remain unintegrated | assessed individually, not wrapped — see [the assessment](engine-integration-assessment.md) | Phases 4, 5, 7, 8, 10 |

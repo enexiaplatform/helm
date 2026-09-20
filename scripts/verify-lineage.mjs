@@ -16,10 +16,20 @@
  *      weakest input.
  *   7. A stated observation explains as stated: explain() does not invent a
  *      derivation for a number nobody derived.
+ *   8. A run consumes its OWN derived output:
+ *
+ *        source world (actual / forecast / assumption)
+ *          -> calculation run
+ *            -> same-run derived output
+ *              -> downstream calculations
+ *
+ *      A trace that cites an observation its run did not produce cannot
+ *      demonstrate that the run was internally consistent, however plausible
+ *      each individual number looks.
  */
 
 import { buildSeedRegistry } from '../packages/ontology/src/index.ts';
-import { asOrgId, asUserId, seqIdGen } from '../packages/shared/src/index.ts';
+import { asOrgId, asUserId, asValidTime, seqIdGen } from '../packages/shared/src/index.ts';
 import { createInMemoryGraphStore } from '../packages/graph-store/src/inMemory.ts';
 import { buildCanonicalScenario } from '../packages/graph-store/src/canonicalScenario.ts';
 import { createInMemoryValueGraph } from '../packages/value-graph/src/inMemory.ts';
@@ -169,6 +179,155 @@ for (const obs of written) {
         (s.renderedExpression ?? '').includes(input.value),
         `${obs.id}: input ${input.name} = ${input.value} does not appear in the rendered formula`,
       );
+    }
+  }
+}
+
+// ------------------- 8: every derived input came from this same run
+
+{
+  const producedForNode = new Map();
+  for (const step of result.value.steps) {
+    if (step.outputObservationId) producedForNode.set(step.outputNodeId, step.outputObservationId);
+  }
+  const ownOutputs = new Set(producedForNode.values());
+
+  for (const step of result.value.steps) {
+    if (step.status !== 'CALCULATED' && step.status !== 'UNCHANGED') continue;
+    for (const input of step.inputs) {
+      // An aggregated input records its nodes and observations in matching
+      // order, so they must be zipped rather than cross-paired.
+      const nodeIds = String(input.nodeId).split('+');
+      const observationIds = String(input.observationId).split('+');
+      for (let i = 0; i < nodeIds.length; i += 1) {
+        const nodeId = nodeIds[i];
+        const id = observationIds[i];
+        // Only inputs on nodes this run computed are constrained. An input from
+        // a node outside the plan legitimately comes from the stored world.
+        if (!producedForNode.has(nodeId)) continue;
+        check(
+          'same-run-consistency',
+          producedForNode.get(nodeId) === id,
+          `${step.calculationKey} consumed observation ${id} for a node this run ` +
+            `computed as ${producedForNode.get(nodeId)}. A run must consume its own ` +
+            'derived output, or its trace describes a derivation that never happened',
+        );
+        check(
+          'same-run-consistency',
+          ownOutputs.has(id),
+          `${step.calculationKey} consumed ${id}, which no step of this run produced`,
+        );
+      }
+    }
+  }
+}
+
+// ------------- 8b: the rule needs a race to have any teeth
+//
+// A single sequential run is same-run consistent by ACCIDENT: its own write
+// always has the latest record time, so re-querying the node returns it anyway.
+// The property only becomes falsifiable when two runs are in flight, so the
+// contract creates that situation rather than asserting into an easy case.
+{
+  let raceTick = 0;
+  const raceClock = {
+    now: () => new Date(Date.parse('2026-09-19T08:00:00.000Z') + (raceTick += 1) * 1000),
+  };
+  const raceIdGen = seqIdGen('rl');
+  const raceOntology = buildSeedRegistry();
+  const raceMetrics = buildSeedValueRegistry();
+
+  const raceGraphStore = createInMemoryGraphStore({
+    registry: raceOntology,
+    clock: raceClock,
+    idGen: raceIdGen,
+  });
+  const raceEntities = await buildCanonicalScenario(raceGraphStore, scope);
+  const raceValueGraph = createInMemoryValueGraph({
+    metrics: raceMetrics,
+    ontology: raceOntology,
+    graphStore: raceGraphStore,
+    clock: raceClock,
+    idGen: raceIdGen,
+  });
+  const raceChain = await buildCanonicalValueChain(raceValueGraph, raceGraphStore, scope);
+  const raceRegistry = createCalculationRegistry(meridianValueModelV1, raceMetrics);
+  const raceStore = createInMemoryCalculationStore({ clock: raceClock, idGen: raceIdGen });
+  const raceEngineResult =
+    raceEntities.ok && raceChain.ok && raceRegistry.ok
+      ? createPropagationEngine({
+          registry: raceRegistry.value,
+          valueGraph: raceValueGraph,
+          graphStore: raceGraphStore,
+          ontology: raceOntology,
+          store: raceStore,
+          clock: raceClock,
+        })
+      : { ok: false, error: { message: 'race fixture failed to build' } };
+
+  check('same-run-consistency', raceEngineResult.ok, 'the race fixture could not be built');
+
+  if (raceEngineResult.ok && raceChain.ok) {
+    const raceEngine = raceEngineResult.value;
+    const raceIds = raceChain.value.nodeIds;
+    const probability = (value, at, confidence) =>
+      raceValueGraph.recordObservation(scope, {
+        nodeId: raceIds.oppProb,
+        observationType: 'ACTUAL',
+        numericValue: value,
+        unitType: 'ratio',
+        effectiveAt: asValidTime(at),
+        observedAt: asValidTime(at),
+        sourceSystem: 'memoire',
+        confidence,
+      });
+
+    await raceEngine.execute(scope, { fromMetricKeys: ROOTS, asOf: AS_OF, horizon: 'quarter' });
+    await probability(0.9, '2026-09-19T10:00:00.000Z', 0.9);
+
+    // A scheduled recalculation and a manual one, overlapping.
+    const runA = raceEngine.propagateFrom(scope, 'OpportunityProbability', {
+      asOf: AS_OF,
+      horizon: 'quarter',
+    });
+    await Promise.resolve();
+    await probability(0.5, '2026-09-19T11:00:00.000Z', 1);
+    const runB = raceEngine.propagateFrom(scope, 'OpportunityProbability', {
+      asOf: AS_OF,
+      horizon: 'quarter',
+    });
+    const [ra, rb] = await Promise.all([runA, runB]);
+
+    check('same-run-consistency', ra.ok && rb.ok, 'an interleaved run failed outright');
+
+    if (ra.ok && rb.ok) {
+      check(
+        'same-run-consistency',
+        ra.value.run.id !== rb.value.run.id,
+        'the two interleaved propagations were the same run',
+      );
+      for (const [label, res] of [
+        ['A', ra.value],
+        ['B', rb.value],
+      ]) {
+        const revenue = res.steps.find((s) => s.outputNodeId === raceIds.expRevenue);
+        const demand = res.steps.find((s) => s.outputNodeId === raceIds.demand);
+        check(
+          'same-run-consistency',
+          Boolean(revenue && demand),
+          `interleaved run ${label} did not compute the revenue and demand steps`,
+        );
+        if (!revenue || !demand) continue;
+        const consumed = demand.inputs.find((i) => i.metricKey === 'ExpectedRevenue');
+        check(
+          'same-run-consistency',
+          consumed?.observationId === revenue.outputObservationId,
+          `interleaved run ${label}: demand consumed expected revenue ` +
+            `${consumed?.observationId}, but this run produced ` +
+            `${revenue.outputObservationId}. With two runs in flight, reading the ` +
+            'newest observation on a node silently crosses run boundaries',
+        );
+      }
     }
   }
 }

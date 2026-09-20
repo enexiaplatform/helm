@@ -69,7 +69,10 @@ import type { CalculationRegistry } from './registry.ts';
 import { buildDependencyGraph, downstreamOf, type MetricDependencyGraph } from './dependencyGraph.ts';
 import type { CalculationStore, PropagationEngine, PropagationRequest } from './port.ts';
 
-export const ENGINE_VERSION = '3.0.0';
+export const ENGINE_VERSION = '3.1.0';
+
+/** No run in progress: freshness and ad-hoc resolution read the stored world. */
+const EMPTY_RUN_OUTPUTS: ReadonlyMap<string, string> = new Map();
 const MAX_DEPTH = 12;
 
 export type PropagationEngineOptions = {
@@ -89,6 +92,26 @@ export type PropagationEngineOptions = {
 };
 
 type ResolvedInput = { quantity: Quantity; traced: TracedInput };
+
+/**
+ * What THIS run has produced so far, keyed by the value node it produced it for.
+ *
+ * A downstream calculation must consume the derived output of its own run:
+ *
+ *   source world (actual / forecast / assumption)
+ *     -> calculation run
+ *       -> same-run derived output
+ *         -> downstream calculations
+ *
+ * Re-querying the node instead makes that chain accidental — it holds only
+ * because the run's own write happens to have the latest record time. Two runs
+ * in flight at once break it, and the trace then cites an observation the run
+ * did not produce, which makes a run's internal consistency unprovable.
+ *
+ * An UNCHANGED step contributes too: it produced no new observation, but it
+ * confirmed the existing one as this run's answer for that node.
+ */
+type RunOutputs = ReadonlyMap<string, string>;
 
 export function createPropagationEngine(
   opts: PropagationEngineOptions,
@@ -114,6 +137,7 @@ export function createPropagationEngine(
     preference: ObservationPreference,
     asOf: Date,
     scenarioEntityId: EntityId | null,
+    runOutputs: RunOutputs,
   ): Promise<Result<ValueObservation | null>> {
     // A scenario run reads scenario values AND reality; a baseline run reads
     // only reality, so a scenario can never leak into a baseline number.
@@ -161,6 +185,18 @@ export function createPropagationEngine(
       // true later. Period claims are exempt: being about a period is the point.
       candidates = candidates.filter((o) => o.effectiveAt === null || ms(o.effectiveAt) <= cutoff);
       if (candidates.length === 0) continue;
+
+      // If THIS run already produced an answer for this node, that answer is
+      // the one to use — not whichever observation of the same kind happens to
+      // be newest. This is what keeps a run internally consistent when another
+      // run is writing to the same nodes at the same time.
+      if (type === 'DERIVED' || type === 'SCENARIO') {
+        const ownId = runOutputs.get(nodeId);
+        if (ownId) {
+          const own = candidates.find((o) => o.id === ownId);
+          if (own) return ok(own);
+        }
+      }
 
       const bestValid = Math.max(...candidates.map(validAt));
       let winners = candidates.filter((o) => validAt(o) === bestValid);
@@ -288,6 +324,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
     asOf: Date,
     horizon: TimeHorizon | null,
     scenarioEntityId: EntityId | null,
+    runOutputs: RunOutputs,
   ): Promise<Result<ResolvedInput | null>> {
     const bound = await resolveInputNodes(scope, spec, outputNode, horizon);
     if (!bound.ok) return bound;
@@ -341,6 +378,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
         effectivePreference,
         asOf,
         scenarioEntityId,
+        runOutputs,
       );
       if (!obs.ok) return obs;
       if (obs.value) picked.push({ node, obs: obs.value });
@@ -608,6 +646,8 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
       const steps: CalculationStep[] = [];
       const written: ValueObservation[] = [];
       const summary = emptySummary();
+      // This run's answer per value node — see RunOutputs.
+      const runOutputs = new Map<string, string>();
       let sequence = 0;
 
       for (const planNode of plan.nodes) {
@@ -638,6 +678,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
             asOf,
             horizon,
             scenarioEntityId,
+            runOutputs,
           );
           if (!r.ok) {
             blocked = { code: r.error.code, message: r.error.message };
@@ -683,6 +724,9 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
             confidence: previous.value.confidence,
             inputFingerprint: fp,
           }, steps, summary);
+          if (previous.value.outputObservationId) {
+            runOutputs.set(node.value.id, previous.value.outputObservationId);
+          }
           continue;
         }
 
@@ -817,6 +861,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
         }
 
         written.push(obs.value);
+        runOutputs.set(node.value.id, obs.value.id);
         await recordStep(scope, run.id, sequence, calc, node.value.id, {
           status: 'CALCULATED',
           inputs: traced,
@@ -924,6 +969,9 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
             asOf,
             contextHorizon,
             scenarioEntityId,
+            // Freshness asks what the inputs are NOW, outside any run, so
+            // there are no same-run outputs to prefer.
+            EMPTY_RUN_OUTPUTS,
           );
           if (!r.ok) {
             resolvable = false;

@@ -1057,6 +1057,175 @@ describe('scenario isolation — a scenario never leaks into reality', () => {
   });
 });
 
+// ========================================================= run consistency
+
+describe('a run consumes its own derived output, not whatever is newest', () => {
+  /**
+   *   source world (actual / forecast / assumption)
+   *     -> calculation run
+   *       -> same-run derived output
+   *         -> downstream calculations
+   *
+   * The chain has to hold structurally. Re-reading the node instead works only
+   * while a run's own write happens to have the latest record time, which stops
+   * being true the moment two runs are in flight — and then a trace cites an
+   * observation its run did not produce, so the run's internal consistency
+   * cannot be demonstrated at all.
+   */
+  test('two interleaved runs do not consume each other outputs', async () => {
+    const { engine, valueGraph, ids } = await buildStack();
+    unwrap(
+      await engine.execute(scope, { fromMetricKeys: BASELINE_ROOTS, asOf: AS_OF, horizon: 'quarter' }),
+      'baseline',
+    );
+
+    const probability = (value, at, confidence) =>
+      valueGraph.recordObservation(scope, {
+        nodeId: ids.oppProb,
+        observationType: 'ACTUAL',
+        numericValue: value,
+        unitType: 'ratio',
+        effectiveAt: asValidTime(at),
+        observedAt: asValidTime(at),
+        sourceSystem: 'memoire',
+        confidence,
+      });
+
+    unwrap(await probability(0.9, '2026-09-19T10:00:00.000Z', 0.9), 'p=0.9');
+
+    // A starts. Before it reaches its first await-heavy step, a corrected
+    // probability lands and a second run is kicked off — a scheduled
+    // recalculation racing a manual one, which is an ordinary Tuesday.
+    const runA = engine.propagateFrom(scope, 'OpportunityProbability', {
+      asOf: AS_OF,
+      horizon: 'quarter',
+    });
+    await Promise.resolve();
+    unwrap(await probability(0.5, '2026-09-19T11:00:00.000Z', 1), 'p=0.5');
+    const runB = engine.propagateFrom(scope, 'OpportunityProbability', {
+      asOf: AS_OF,
+      horizon: 'quarter',
+    });
+
+    const [a, b] = await Promise.all([runA, runB]);
+    const A = unwrap(a, 'run A');
+    const B = unwrap(b, 'run B');
+    assert.notEqual(A.run.id, B.run.id, 'two distinct runs');
+
+    for (const [label, result] of [
+      ['A', A],
+      ['B', B],
+    ]) {
+      const revenue = result.steps.find((s) => s.outputNodeId === ids.expRevenue);
+      const demand = result.steps.find((s) => s.outputNodeId === ids.demand);
+      assert.ok(revenue && demand, `run ${label} computed both steps`);
+      const consumed = demand.inputs.find((i) => i.metricKey === 'ExpectedRevenue');
+      assert.equal(
+        consumed.observationId,
+        revenue.outputObservationId,
+        `run ${label} consumed an expected revenue it did not produce`,
+      );
+    }
+
+    // And in general: no step may consume an observation produced by the other
+    // run's steps.
+    const producedBy = (result) =>
+      new Set(result.steps.map((s) => s.outputObservationId).filter(Boolean));
+    const aOutputs = producedBy(A);
+    const bOutputs = producedBy(B);
+    for (const [label, result, own, other] of [
+      ['A', A, aOutputs, bOutputs],
+      ['B', B, bOutputs, aOutputs],
+    ]) {
+      for (const step of result.steps.filter((s) => s.status === 'CALCULATED')) {
+        for (const input of step.inputs) {
+          for (const id of String(input.observationId).split('+')) {
+            assert.ok(
+              !other.has(id) || own.has(id),
+              `run ${label}: ${step.calculationKey} consumed ${id} from the other run`,
+            );
+          }
+        }
+      }
+    }
+  });
+
+  test('an UNCHANGED step still stands as this run answer for its node', async () => {
+    const { engine, ids } = await buildStack();
+    const first = unwrap(
+      await engine.execute(scope, { fromMetricKeys: BASELINE_ROOTS, asOf: AS_OF, horizon: 'quarter' }),
+      'first',
+    );
+    const second = unwrap(
+      await engine.execute(scope, { fromMetricKeys: BASELINE_ROOTS, asOf: AS_OF, horizon: 'quarter' }),
+      'second',
+    );
+    assert.equal(second.summary.CALCULATED, 0, 'nothing changed');
+
+    // The second run wrote no observations, so its downstream steps must have
+    // read the ones the FIRST run wrote — carried forward, not re-derived.
+    const revenue = second.steps.find((s) => s.outputNodeId === ids.expRevenue);
+    const demand = second.steps.find((s) => s.outputNodeId === ids.demand);
+    assert.equal(revenue.status, 'UNCHANGED');
+    const consumed = demand.inputs.find((i) => i.metricKey === 'ExpectedRevenue');
+    assert.equal(
+      consumed.observationId,
+      revenue.outputObservationId,
+      'an UNCHANGED step must still name the observation that stands as its output',
+    );
+    const firstRevenue = first.steps.find((s) => s.outputNodeId === ids.expRevenue);
+    assert.equal(
+      revenue.outputObservationId,
+      firstRevenue.outputObservationId,
+      'and it is the one the first run produced',
+    );
+  });
+
+  test('the same-run rule does not override a declared preference', async () => {
+    // ACTUALS_FIRST deliberately puts a measurement ahead of a model. If the
+    // run's own output short-circuited the preference order, every such input
+    // would silently become a model read.
+    const { engine, valueGraph, graphStore, ids } = await buildStack();
+
+    // A measured ACTUAL lands on the demand node, alongside what the run derives.
+    unwrap(
+      await valueGraph.recordObservation(scope, {
+        nodeId: ids.demand,
+        observationType: 'ACTUAL',
+        numericValue: 7,
+        unitType: 'units',
+        periodStart: asValidTime('2026-10-01T00:00:00.000Z'),
+        periodEnd: asValidTime('2027-01-01T00:00:00.000Z'),
+        observedAt: asValidTime('2026-09-19T09:00:00.000Z'),
+        sourceSystem: 'erp',
+        confidence: 1,
+      }),
+      'measured demand',
+    );
+
+    const result = unwrap(
+      await engine.execute(scope, { fromMetricKeys: BASELINE_ROOTS, asOf: AS_OF, horizon: 'quarter' }),
+      'run',
+    );
+
+    // inventory_gap reads AvailableInventory under ACTUALS_FIRST; the gap's
+    // requirement input is BASELINE and does take the run's derived value.
+    const gap = result.steps.find((s) => s.outputNodeId === ids.invGap);
+    assert.equal(gap.status, 'CALCULATED');
+    const available = gap.inputs.find((i) => i.metricKey === 'AvailableInventory');
+    assert.equal(available.observationType, 'ACTUAL', 'stock on hand stays a measurement');
+
+    const requirement = gap.inputs.find((i) => i.metricKey === 'InventoryRequirement');
+    const requirementStep = result.steps.find((s) => s.outputNodeId === ids.invRequirement);
+    assert.equal(
+      requirement.observationId,
+      requirementStep.outputObservationId,
+      'while the derived requirement comes from this run',
+    );
+    assert.ok(graphStore, 'graph store present');
+  });
+});
+
 // ================================================================== dry run
 
 describe('a dry run plans and writes nothing', () => {

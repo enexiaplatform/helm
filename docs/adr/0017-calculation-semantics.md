@@ -141,6 +141,43 @@ rule.
 The chosen observation's id is recorded in the trace, so "which number did it
 use?" is always answerable.
 
+### A run consumes its own derived output
+
+```
+source world (actual / forecast / assumption)
+  -> calculation run
+    -> same-run derived output
+      -> downstream calculations
+```
+
+When a downstream step needs a value the same run has already produced, it takes
+**that** observation — not whichever observation of the same kind happens to be
+newest on the node.
+
+The first implementation re-queried the node every time, and it appeared to work
+because a run's own write always has the latest record time. It is accidental.
+Two runs in flight — a scheduled recalculation overlapping a manual one — and a
+step consumes the other run's output. The numbers can even come out identical
+and the defect still matters: the trace then cites an observation its run did not
+produce, so the run's internal consistency cannot be demonstrated at all, which
+is the one thing a trace exists to do.
+
+The rule applies only within the tier the preference would have chosen anyway.
+An `ACTUALS_FIRST` input still prefers a measurement over the run's own model
+output; otherwise the rule would quietly convert every such input into a model
+read.
+
+An `UNCHANGED` step contributes to this map too. It wrote no new observation,
+but it confirmed the existing one as this run's answer for that node, and
+downstream steps must read that rather than searching again.
+
+*What this does NOT provide.* Snapshot isolation over the source world. Two runs
+declaring the same `asOf` can still read different facts if one of them is
+recorded between their reads — both answers are correct as of that `asOf`, but
+which one a given run sees depends on timing. `asOf` bounds what is eligible and
+replay re-reads at the same `asOf`, which is the mitigation; genuine snapshot
+isolation is a transactional concern and is not attempted here.
+
 ### What `asOf` is, and what it is not
 
 `asOf` is the **lens** that selects inputs. It is recorded on the run, and it is

@@ -507,10 +507,14 @@ ON CONFLICT (id) DO NOTHING;
 
 const target = join(root, MIGRATION);
 const check = process.argv.includes('--check');
-const existing = existsSync(target) ? readFileSync(target, 'utf8') : null;
+// Compared with line endings normalized: with core.autocrlf a Windows checkout
+// rewrites this file to CRLF, and a byte-for-byte check would then fail for
+// anyone who cloned the repository rather than generated the file.
+const lf = (text) => text.replace(/\r\n/g, '\n');
+const existing = existsSync(target) ? lf(readFileSync(target, 'utf8')) : null;
 
 if (check) {
-  if (existing === sql) {
+  if (existing === lf(sql)) {
     console.log(`migration in sync (${meridianValueModelV1.length} calculations)`);
     process.exit(0);
   }

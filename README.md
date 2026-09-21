@@ -13,7 +13,8 @@ produces **management truth**: what requires attention, why, what it costs
 elsewhere, who may decide, and what the organization learned last time.
 
 It shares one database and one identity system with
-[Memoire](../Memoire/README.md) (the commercial system of record), while keeping
+Memoire (the commercial system of record, a separate repository — see
+[HELM vs Memoire](docs/architecture/helm-vs-memoire.md)), while keeping
 strict application boundaries: Memoire owns commercial execution, HELM owns
 managerial attention, analysis, decisions, and learning.
 

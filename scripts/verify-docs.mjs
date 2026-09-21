@@ -32,7 +32,19 @@ for (const file of files) {
     // External links and anchors within the same file are out of scope.
     if (/^(https?:|mailto:|#)/.test(target)) continue;
     checked += 1;
-    if (!existsSync(resolve(dirname(file), target))) {
+    const resolved = resolve(dirname(file), target);
+    // A relative link that climbs out of the repository resolves only on a
+    // machine that happens to have the same sibling folders. The README's link
+    // to ../Memoire passed this check because Memoire sits next to HELM on the
+    // development machine, and was broken for every other reader. Such a link is never verifiable, so
+    // it is a failure regardless of whether the target exists locally.
+    const insideRepo = !relative(root, resolved).startsWith('..');
+    if (!insideRepo) {
+      broken.push({
+        from: relative(root, file).replaceAll('\\', '/'),
+        target: `${target}  (leaves the repository — link a URL or an in-repo document)`,
+      });
+    } else if (!existsSync(resolved)) {
       broken.push({ from: relative(root, file).replaceAll('\\', '/'), target });
     }
   }

@@ -228,6 +228,23 @@ describe('the calculation registry refuses a definition that could produce a wro
     );
   });
 
+  test('two calculations producing one metric for overlapping subjects', () => {
+    // Otherwise the planner would silently use whichever was registered first,
+    // and "which formula produced this number?" would depend on file order.
+    const rival = definition({ key: 'rival_cash', expression: 'gross_margin' });
+    const e = expectFail(
+      registryOf([definition(), rival]),
+      CalculationErrors.CALCULATION_NOT_FOUND,
+      'ambiguous producer',
+    );
+    assert.match(e.message, /ambiguous_producer/);
+
+    // Disjoint scopes are fine: each subject has exactly one producer.
+    const commercial = definition({ key: 'deal_cash', scopeCompatibility: ['commercial'] });
+    const finance = definition({ key: 'ledger_cash', scopeCompatibility: ['finance'] });
+    unwrap(registryOf([commercial, finance]), 'disjoint producers');
+  });
+
   test('the real Meridian model passes every rule', () => {
     const registry = unwrap(registryOf(meridianValueModelV1), 'meridian');
     assert.equal(registry.active().length, 9, 'nine active calculations');
@@ -509,7 +526,11 @@ describe('observation selection is policy, never "the latest number"', () => {
     assert.equal(await latest(valueGraph, ids.expRevenue, 'DERIVED'), '2100000000');
   });
 
-  test('a claim HELM did not yet know at asOf is not used', async () => {
+  test('a point-in-time claim effective after the modelled instant is not used', async () => {
+    // The EFFECTIVE lens. A probability that only becomes true tomorrow is not
+    // a fact about the world this run is modelling. Period claims are exempt —
+    // see the next test — because being about a future period is what a
+    // forecast IS.
     const { engine, valueGraph, ids } = await buildStack();
     unwrap(
       await valueGraph.recordObservation(scope, {
@@ -517,22 +538,25 @@ describe('observation selection is policy, never "the latest number"', () => {
         observationType: 'ACTUAL',
         numericValue: 0.95,
         unitType: 'ratio',
-        effectiveAt: asValidTime('2026-09-19T11:00:00.000Z'),
-        // Observed AFTER the run's asOf: the model must not read the future.
-        observedAt: asValidTime('2026-09-20T09:00:00.000Z'),
+        effectiveAt: asValidTime('2026-09-25T09:00:00.000Z'),
+        observedAt: asValidTime('2026-09-25T09:00:00.000Z'),
         sourceSystem: 'memoire',
         confidence: 1,
       }),
-      'tomorrow\'s probability',
+      'next week probability',
     );
     unwrap(
-      await engine.execute(scope, { fromMetricKeys: BASELINE_ROOTS, asOf: AS_OF, horizon: 'quarter' }),
+      await engine.execute(scope, {
+        fromMetricKeys: BASELINE_ROOTS,
+        effectiveAsOf: AS_OF,
+        horizon: 'quarter',
+      }),
       'run',
     );
     assert.equal(
       await latest(valueGraph, ids.expRevenue, 'DERIVED'),
       '2940000000',
-      'still the 0.70 answer — tomorrow has not happened yet',
+      'still the 0.70 answer — next week has not happened yet',
     );
   });
 
@@ -1226,6 +1250,195 @@ describe('a run consumes its own derived output, not whatever is newest', () => 
   });
 });
 
+// =========================================================== source snapshot
+
+describe('source-world snapshot: a run sees one reproducible information boundary', () => {
+  /**
+   * The two lenses, and why they are two.
+   *
+   *   effectiveAsOf     what business time are we modelling
+   *   recordedThrough   what was HELM allowed to KNOW when the run began
+   *
+   * A forecast filed at 20:16 can be perfectly valid for the December the run is
+   * modelling and still must not enter a run that started at 20:15. Otherwise a
+   * run's inputs depend on how long the run took, and nothing is reproducible.
+   */
+  test('an observation recorded after the cutoff does not enter the run, but does enter the next one', async () => {
+    const { engine, valueGraph, ids } = await buildStack();
+
+    // 1-3. Run A pins its knowledge boundary at its own start and reads the
+    //      world as it stood then: probability 0.70.
+    const runA = unwrap(
+      await engine.execute(scope, {
+        fromMetricKeys: BASELINE_ROOTS,
+        effectiveAsOf: AS_OF,
+        horizon: 'quarter',
+      }),
+      'run A',
+    );
+    const recordedThrough = new Date(runA.run.context.recordedThrough);
+    assert.equal(await latest(valueGraph, ids.expRevenue, 'DERIVED'), '2940000000');
+
+    // 4. A correction lands. Its EFFECTIVE time qualifies for what run A is
+    //    modelling — it is about 19 September, before the modelled instant —
+    //    but HELM only learns it now, after run A's cutoff.
+    const late = unwrap(
+      await valueGraph.recordObservation(scope, {
+        nodeId: ids.oppProb,
+        observationType: 'ACTUAL',
+        numericValue: 0.9,
+        unitType: 'ratio',
+        effectiveAt: asValidTime('2026-09-19T09:00:00.000Z'),
+        observedAt: asValidTime('2026-09-19T09:00:00.000Z'),
+        sourceSystem: 'memoire',
+        confidence: 1,
+      }),
+      'late-recorded probability',
+    );
+    assert.ok(
+      new Date(late.recordedAt).getTime() > recordedThrough.getTime(),
+      'the fixture must actually record it after the cutoff, or this proves nothing',
+    );
+    assert.ok(
+      new Date(late.effectiveAt).getTime() <= AS_OF.getTime(),
+      'and its effective time must qualify, or the effective lens would be doing the work',
+    );
+
+    // 5-6. Run A resolves again under its ORIGINAL boundary and must not see it.
+    const runAgain = unwrap(
+      await engine.execute(scope, {
+        fromMetricKeys: BASELINE_ROOTS,
+        effectiveAsOf: AS_OF,
+        recordedThrough,
+        horizon: 'quarter',
+      }),
+      'run A, same boundary',
+    );
+    const revenueStep = runAgain.steps.find((s) => s.outputNodeId === ids.expRevenue);
+    const probability = revenueStep.inputs.find((i) => i.metricKey === 'OpportunityProbability');
+    assert.equal(
+      probability.value,
+      '0.7',
+      'a run bounded at 08:30 must not see a fact recorded afterwards',
+    );
+    assert.notEqual(probability.observationId, late.id);
+
+    // 7-8. A run that starts now MAY see it.
+    const runB = unwrap(
+      await engine.execute(scope, {
+        fromMetricKeys: BASELINE_ROOTS,
+        effectiveAsOf: AS_OF,
+        horizon: 'quarter',
+      }),
+      'run B',
+    );
+    assert.ok(
+      new Date(runB.run.context.recordedThrough).getTime() > recordedThrough.getTime(),
+      'run B must genuinely start later, or it proves nothing',
+    );
+    const revenueB = runB.steps.find((s) => s.outputNodeId === ids.expRevenue);
+    const probabilityB = revenueB.inputs.find((i) => i.metricKey === 'OpportunityProbability');
+    assert.equal(probabilityB.value, '0.9', 'a later run sees what was learned since');
+    assert.equal(probabilityB.observationId, late.id);
+    assert.equal(await latest(valueGraph, ids.expRevenue, 'DERIVED'), '3780000000');
+  });
+
+  test('recordedThrough is pinned ONCE at run start, not advanced as the run proceeds', async () => {
+    // The default is the whole mechanism: it fixes the boundary before the first
+    // read so a long run cannot drift into facts that arrive while it executes.
+    const { engine, clock } = await buildStack();
+    const before = clock.now().getTime();
+    const result = unwrap(
+      await engine.execute(scope, {
+        fromMetricKeys: BASELINE_ROOTS,
+        effectiveAsOf: AS_OF,
+        horizon: 'quarter',
+      }),
+      'run',
+    );
+    const after = clock.now().getTime();
+    const cutoff = new Date(result.run.context.recordedThrough).getTime();
+
+    assert.ok(cutoff >= before, 'the cutoff comes from the run clock');
+    // The run advanced the clock by many ticks; the cutoff must sit at the
+    // START of that span, not at the end.
+    const span = after - before;
+    assert.ok(span > 0, 'the run consumed clock ticks, so this comparison is meaningful');
+    assert.ok(
+      cutoff - before < span / 2,
+      `the cutoff drifted ${cutoff - before}ms into a ${span}ms run — it is being ` +
+        'taken per read rather than once at the start',
+    );
+  });
+
+  test('the two lenses are independent, and the run records both', async () => {
+    const { engine } = await buildStack();
+    const effectiveAsOf = new Date('2026-12-31T00:00:00.000Z');
+    const recordedThrough = new Date('2026-09-19T20:15:00.000Z');
+    const result = unwrap(
+      await engine.execute(scope, {
+        fromMetricKeys: BASELINE_ROOTS,
+        effectiveAsOf,
+        recordedThrough,
+        horizon: 'quarter',
+      }),
+      'run',
+    );
+    assert.equal(result.run.context.effectiveAsOf, effectiveAsOf.toISOString());
+    assert.equal(result.run.context.recordedThrough, recordedThrough.toISOString());
+    assert.notEqual(
+      result.run.context.effectiveAsOf,
+      result.run.context.recordedThrough,
+      'modelling December from what was known in September is a normal thing to ask',
+    );
+  });
+
+  test('replay reconstructs the original knowledge boundary, not just the arithmetic', async () => {
+    const { engine, valueGraph, ids } = await buildStack();
+    const original = unwrap(
+      await engine.execute(scope, {
+        fromMetricKeys: BASELINE_ROOTS,
+        effectiveAsOf: AS_OF,
+        horizon: 'quarter',
+      }),
+      'original',
+    );
+    const recordedThrough = new Date(original.run.context.recordedThrough);
+    assert.equal(await latest(valueGraph, ids.expRevenue, 'DERIVED'), '2940000000');
+
+    // The world moves on.
+    unwrap(
+      await valueGraph.recordObservation(scope, {
+        nodeId: ids.oppProb,
+        observationType: 'ACTUAL',
+        numericValue: 0.9,
+        unitType: 'ratio',
+        effectiveAt: asValidTime('2026-09-19T09:00:00.000Z'),
+        observedAt: asValidTime('2026-09-19T09:00:00.000Z'),
+        sourceSystem: 'memoire',
+        confidence: 1,
+      }),
+      'later correction',
+    );
+
+    // A replay must answer "what could HELM know when this ran?", so it still
+    // reads 0.70 — otherwise a replay is a fresh run wearing an old run's id.
+    const replayed = unwrap(await engine.replay(scope, original.run.id), 'replay');
+    assert.equal(replayed.run.context.recordedThrough, recordedThrough.toISOString());
+    assert.equal(replayed.run.context.effectiveAsOf, AS_OF.toISOString());
+
+    const replayedRevenue = replayed.steps.find((s) => s.outputNodeId === ids.expRevenue);
+    const probability = replayedRevenue.inputs.find(
+      (i) => i.metricKey === 'OpportunityProbability',
+    );
+    assert.equal(probability.value, '0.7', 'the replay sees the world the original saw');
+
+    const originalFps = original.steps.filter((s) => s.inputFingerprint).map((s) => s.inputFingerprint);
+    const replayFps = replayed.steps.filter((s) => s.inputFingerprint).map((s) => s.inputFingerprint);
+    assert.deepEqual(replayFps, originalFps, 'identical inputs, identical fingerprints');
+  });
+});
+
 // ================================================================== dry run
 
 describe('a dry run plans and writes nothing', () => {
@@ -1321,19 +1534,57 @@ describe('exactness end to end', () => {
     assert.equal(await latest(valueGraph, ids.cogsOpp, 'DERIVED'), '1822800000');
     assert.equal(await latest(valueGraph, ids.grossMargin, 'DERIVED'), '977200000');
     // 1.395B ÷ 350M recurs; it is carried to the declared scale and no further.
-    assert.equal(await latest(valueGraph, ids.demandNext, 'DERIVED'), '3.985714285714');
-    assert.equal(await latest(valueGraph, ids.invRequirement, 'DERIVED'), '12.385714285714');
-    assert.equal(await latest(valueGraph, ids.invGap, 'DERIVED'), '8.385714285714');
+    assert.equal(await latest(valueGraph, ids.demandNext, 'DERIVED'), '3.985714');
+    assert.equal(await latest(valueGraph, ids.invRequirement, 'DERIVED'), '12.385714');
+    assert.equal(await latest(valueGraph, ids.invGap, 'DERIVED'), '8.385714');
   });
 
-  test('the recurring value is carried, not silently rounded to a tidy number', async () => {
+  test('a recurring division is normalized for the business and kept raw in the trace', async () => {
+    // 1.395B / 350M is 279/70 and does not terminate. The business value is a
+    // whole number of dong; the residue is an artefact of decimal division and
+    // belongs in the trace, not in the ledger.
+    const { engine, valueGraph, ids } = await buildStack();
+    const result = unwrap(
+      await engine.execute(scope, { fromMetricKeys: BASELINE_ROOTS, asOf: AS_OF, horizon: 'quarter' }),
+      'run',
+    );
+
+    const stored = await latest(valueGraph, ids.wcProduct, 'DERIVED');
+    assert.equal(stored, '2687700000', 'the business value is whole dong');
+
+    const step = result.steps.find((s) => s.outputNodeId === ids.wcProduct);
+    assert.equal(step.outputValue, '2687700000', 'the trace records what was written down');
+    assert.ok(step.outputValueRaw, 'and what the arithmetic actually produced');
+    assert.match(
+      step.outputValueRaw,
+      /^2687699999\.9{15}/,
+      'the raw value is the computation, residue and all',
+    );
+    // The residue is now far below anything a currency could express. At scale
+    // 12 it was 6.2e-5 VND, which normalization would have been hiding.
+    const residue = Math.abs(2687700000 - Number(step.outputValueRaw));
+    assert.ok(residue < 1e-9, `residue ${residue} should be negligible, not concealed`);
+  });
+
+  test('a fractional quantity flowing into money produces a whole-dong result', async () => {
+    // 8.4 units of demand, each costing 217,000,000 VND. The quantity stays
+    // fractional because expected demand is a statistical value; the money it
+    // implies is normalized to the currency's minor unit.
     const { engine, valueGraph, ids } = await buildStack();
     unwrap(
       await engine.execute(scope, { fromMetricKeys: BASELINE_ROOTS, asOf: AS_OF, horizon: 'quarter' }),
       'run',
     );
-    const wc = await latest(valueGraph, ids.wcProduct, 'DERIVED');
-    assert.equal(wc, '2687699999.999938');
-    assert.notEqual(wc, '2687700000', 'the residue of a recurring division is not hidden');
+    assert.equal(await latest(valueGraph, ids.demand, 'DERIVED'), '8.4', 'demand stays fractional');
+    assert.equal(
+      await latest(valueGraph, ids.cogsOpp, 'DERIVED'),
+      '1822800000',
+      '8.4 x 217,000,000 is whole dong',
+    );
+    assert.equal(
+      await latest(valueGraph, ids.cashOpp, 'DERIVED'),
+      '-1710500000',
+      'and so is the cash it implies, negative or not',
+    );
   });
 });

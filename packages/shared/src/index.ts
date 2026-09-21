@@ -12,3 +12,4 @@ export * from './scope.ts';
 export * from './provenance.ts';
 export * from './decimal.ts';
 export * from './quantity.ts';
+export * from './precision.ts';

@@ -113,14 +113,14 @@ const run = (engine, extra = {}) =>
     eq('exactness', await derived(valueGraph, ids.expRevenue), '2940000000', 'expected revenue');
     eq('exactness', await derived(valueGraph, ids.demand), '8.4', 'demand');
     eq('exactness', await derived(valueGraph, ids.expRevenueNext), '1395000000', 'competing revenue');
-    eq('exactness', await derived(valueGraph, ids.demandNext), '3.985714285714', 'competing demand');
-    eq('exactness', await derived(valueGraph, ids.invRequirement), '12.385714285714', 'requirement');
-    eq('exactness', await derived(valueGraph, ids.invGap), '8.385714285714', 'inventory gap');
+    eq('exactness', await derived(valueGraph, ids.demandNext), '3.985714', 'competing demand');
+    eq('exactness', await derived(valueGraph, ids.invRequirement), '12.385714', 'requirement');
+    eq('exactness', await derived(valueGraph, ids.invGap), '8.385714', 'inventory gap');
     eq('exactness', await derived(valueGraph, ids.cogsOpp), '1822800000', 'COGS');
     eq('exactness', await derived(valueGraph, ids.grossMargin), '977200000', 'gross margin');
-    eq('exactness', await derived(valueGraph, ids.wcProduct), '2687699999.999938', 'working capital');
-    eq('exactness', await derived(valueGraph, ids.cashOpp), '-1710499999.999938', 'cash impact');
-    eq('exactness', await derived(valueGraph, ids.grossMarginPctOpp), '33.2380952381', 'gross margin %');
+    eq('exactness', await derived(valueGraph, ids.wcProduct), '2687700000', 'working capital');
+    eq('exactness', await derived(valueGraph, ids.cashOpp), '-1710500000', 'cash impact');
+    eq('exactness', await derived(valueGraph, ids.grossMarginPctOpp), '33.2381', 'gross margin %');
 
     // The float route really is wrong, which is why the above matters.
     check(
@@ -385,7 +385,7 @@ const run = (engine, extra = {}) =>
     eq(
       'contention',
       await derived(valueGraph, ids.invGap),
-      '8.385714285714',
+      '8.385714',
       'the quantified shortfall',
     );
   }

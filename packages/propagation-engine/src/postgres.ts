@@ -33,7 +33,7 @@ import {
   CalculationErrors,
   type CalculationRun,
   type CalculationStep,
-  type ObservationPreference,
+  type RunObservationPolicy,
   type RunStatus,
   type StepStatus,
   type TracedInput,
@@ -61,9 +61,10 @@ type RunRow = {
   org_id: string;
   status: RunStatus;
   trigger_type: TriggerType;
-  as_of: string;
+  effective_as_of: string;
+  recorded_through: string;
   horizon: TimeHorizon | null;
-  preference: ObservationPreference;
+  preference: RunObservationPolicy;
   scenario_entity_id: EntityId | null;
   root_node_ids: string[] | null;
   engine_version: string;
@@ -85,6 +86,7 @@ type StepRow = {
   output_metric_id: string;
   status: StepStatus;
   output_value: string | null;
+  output_value_raw: string | null;
   output_unit: QuantityUnit | null;
   output_currency: string | null;
   output_observation_id: string | null;
@@ -101,11 +103,12 @@ const num = (v: number | string | null | undefined): number | null =>
   v === null || v === undefined ? null : typeof v === 'number' ? v : Number(v);
 
 const RUN_COLS =
-  'id, org_id, status, trigger_type, as_of, horizon, preference, scenario_entity_id, ' +
+  'id, org_id, status, trigger_type, effective_as_of, recorded_through, horizon, ' +
+  'preference, scenario_entity_id, ' +
   'root_node_ids, engine_version, started_at, completed_at, replay_of_run_id, notes, created_by';
 const STEP_COLS =
   'id, org_id, run_id, sequence, calculation_key, calculation_version, output_node_id, ' +
-  'output_metric_id, status, output_value, output_unit, output_currency, ' +
+  'output_metric_id, status, output_value, output_value_raw, output_unit, output_currency, ' +
   'output_observation_id, rendered_expression, inputs, confidence, input_fingerprint, ' +
   'error_code, error_message, recorded_at';
 
@@ -126,7 +129,8 @@ export function createPostgresCalculationStore(
     status: r.status,
     triggerType: r.trigger_type,
     context: {
-      asOf: r.as_of,
+      effectiveAsOf: r.effective_as_of,
+      recordedThrough: r.recorded_through,
       horizon: r.horizon,
       preference: r.preference,
       scenarioEntityId: r.scenario_entity_id,
@@ -153,6 +157,7 @@ export function createPostgresCalculationStore(
     outputMetricKey: metricKeyOf(r.output_metric_id),
     status: r.status,
     outputValue: r.output_value,
+    outputValueRaw: r.output_value_raw,
     outputUnit: r.output_unit,
     outputCurrency: r.output_currency,
     outputObservationId: r.output_observation_id,
@@ -183,7 +188,8 @@ export function createPostgresCalculationStore(
           org_id: scope.orgId,
           status: run.status,
           trigger_type: run.triggerType,
-          as_of: run.context.asOf,
+          effective_as_of: run.context.effectiveAsOf,
+          recorded_through: run.context.recordedThrough,
           horizon: run.context.horizon,
           preference: run.context.preference,
           scenario_entity_id: run.context.scenarioEntityId,
@@ -267,6 +273,7 @@ export function createPostgresCalculationStore(
           output_metric_id: valueMetricId(step.outputMetricKey),
           status: step.status,
           output_value: step.outputValue,
+          output_value_raw: step.outputValueRaw,
           output_unit: step.outputUnit,
           output_currency: step.outputCurrency,
           output_observation_id: step.outputObservationId,

@@ -36,6 +36,7 @@ managerial attention, analysis, decisions, and learning.
 | [Phase 1 implemented](docs/architecture/phase-1-implemented.md) | the enterprise ontology as built, with its debt |
 | [Phase 2 implemented](docs/architecture/phase-2-implemented.md) | the enterprise value graph as built, with its debt |
 | [Phase 3 implemented](docs/architecture/phase-3-implemented.md) | the propagation engine as built, with its debt |
+| [Phase 3 hardening](docs/architecture/phase-3-hardening.md) | truth layers, run-bound lineage, the knowledge boundary, precision |
 | [Meridian Value Model v1](docs/domain/meridian-value-model-v1.md) | the nine calculations, worked, with what each assumes |
 | [Value links vs calculation dependencies](docs/architecture/value-links-vs-calculation-dependencies.md) | why HELM keeps two graphs |
 | [Engine integration assessment](docs/architecture/engine-integration-assessment.md) | which pre-kernel engines become calculations, and when |
@@ -61,6 +62,12 @@ multiplied 4.2B by 0.70**, and raising the probability to 90% moves it to 3.78B
 and demand from 8.4 to 10.8 units — while leaving the cost branch untouched,
 because nothing in it depends on probability. Every derived number explains
 itself down to the Memoire record that asserted its inputs.
+
+HELM keeps **what the business says** and **what its model computes** apart: if
+Finance forecasts 5.00B and the model computes 4.70B, both stand, with the
+variance between them, and neither silently becomes "the" number. Each run reads
+one reproducible information boundary — nothing recorded after it began can
+enter it — and replay reconstructs that boundary exactly.
 
 Three engineering surfaces expose the kernel: `/ontology`, `/value-graph` and
 `/calculations`.
@@ -172,7 +179,7 @@ npm run check   # typecheck + lint + tests + all 9 architecture contracts
 Or individually:
 
 ```bash
-npm test                      # 274 unit, conformance and canonical-scenario tests
+npm test                      # unit, conformance and canonical-scenario tests
 npm run typecheck             # tsc -b across the app and every package
 npm run lint
 npm run build                 # production build

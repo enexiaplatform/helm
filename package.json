@@ -27,7 +27,8 @@
     "verify:propagation": "node scripts/verify-propagation.mjs",
     "verify:lineage": "node scripts/verify-lineage.mjs",
     "verify:phase-boundary": "node scripts/verify-phase-boundary.mjs",
-    "verify:docs": "node scripts/verify-docs.mjs"
+    "verify:docs": "node scripts/verify-docs.mjs",
+    "generate:calculation-governance": "node scripts/generate-calculation-governance.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.3",

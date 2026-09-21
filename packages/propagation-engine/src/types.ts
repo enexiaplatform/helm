@@ -54,31 +54,105 @@ export const CalculationErrors = {
 // -------------------------------------------------- observation selection
 
 /**
- * Which kind of claim a calculation should prefer as an input (ADR-0017 §2).
- * TARGET is never selectable: a target is what we want, not what we believe.
+ * THE THREE TRUTH LAYERS
+ *
+ * HELM holds three different kinds of number and must never conflate them.
+ *
+ *   BUSINESS / SOURCE TRUTH   ACTUAL, FORECAST, TARGET, ASSUMPTION.
+ *                             Claims made by a business system or an authorized
+ *                             person. Finance's Q4 forecast is source truth
+ *                             whether or not HELM agrees with it.
+ *
+ *   MODEL TRUTH               DERIVED. What a HELM model computed, under a named
+ *                             calculation version and a recorded context. It is
+ *                             explainable output. It is NOT automatically the
+ *                             authoritative business number, and a model result
+ *                             must never silently displace what Finance said.
+ *
+ *   EXECUTION STATE           Values bound to a run that is currently executing.
+ *                             Not a third persistent category — runtime bindings
+ *                             that exist so one execution is internally
+ *                             consistent. They live in `RunOutputs`, never in the
+ *                             observation store.
+ *
+ * The policies below select from the PERSISTENT world, which is layers one and
+ * two. No policy that answers "what does the business say?" may return DERIVED,
+ * because that would make a historical HELM calculation authoritative merely by
+ * virtue of its observation type.
  */
-export const observationPreferences = [
-  'BASELINE',
+export const observationPolicies = [
+  'SOURCE_TRUTH',
+  'ACTUALS_FIRST',
+  'SCENARIO',
+  'ASSUMPTION_ONLY',
+  'MODEL_OUTPUT',
+] as const;
+export type ObservationPolicy = (typeof observationPolicies)[number];
+
+/** Policies a RUN may declare. `MODEL_OUTPUT` is per-input only (see below). */
+export const runObservationPolicies = [
+  'SOURCE_TRUTH',
   'ACTUALS_FIRST',
   'SCENARIO',
   'ASSUMPTION_ONLY',
 ] as const;
-export type ObservationPreference = (typeof observationPreferences)[number];
+export type RunObservationPolicy = (typeof runObservationPolicies)[number];
 
 /**
- * DERIVED comes before FORECAST in every policy that admits both, and the
- * reason is the whole point of this phase: if HELM can compute a number, the
- * computed one is the baseline, because it is the only one that can be
- * explained. A stated forecast is the fallback for what HELM cannot compute.
- * ACTUALS_FIRST still puts a measurement ahead of a model, which is right — a
- * model that overrode what actually happened would be worse than useless.
+ * Ordering within each policy.
+ *
+ * Note what is absent: DERIVED does not appear in SOURCE_TRUTH, ACTUALS_FIRST or
+ * SCENARIO. An earlier version put DERIVED first in the baseline policy so that
+ * chained calculations would see each other's output. That was the wrong fix for
+ * a real problem — it made every historical model result outrank the forecast a
+ * human actually committed to, so Finance's 5.00B and HELM's 4.70B could not
+ * coexist and the variance between them was unstateable.
+ *
+ * Chaining is now an EXECUTION concern, handled by `InputResolution` below, not
+ * by promoting a whole observation type.
  */
-export const preferenceOrder: Record<ObservationPreference, readonly ObservationType[]> = {
-  BASELINE: ['DERIVED', 'FORECAST', 'ACTUAL', 'ESTIMATE', 'ASSUMPTION'],
-  ACTUALS_FIRST: ['ACTUAL', 'DERIVED', 'FORECAST', 'ESTIMATE', 'ASSUMPTION'],
-  SCENARIO: ['SCENARIO', 'DERIVED', 'FORECAST', 'ACTUAL', 'ESTIMATE', 'ASSUMPTION'],
+export const policyOrder: Record<ObservationPolicy, readonly ObservationType[]> = {
+  SOURCE_TRUTH: ['FORECAST', 'ACTUAL', 'ESTIMATE', 'ASSUMPTION'],
+  ACTUALS_FIRST: ['ACTUAL', 'FORECAST', 'ESTIMATE', 'ASSUMPTION'],
+  SCENARIO: ['SCENARIO', 'FORECAST', 'ACTUAL', 'ESTIMATE', 'ASSUMPTION'],
   ASSUMPTION_ONLY: ['ASSUMPTION'],
+  // Persisted model truth, asked for explicitly.
+  MODEL_OUTPUT: ['DERIVED'],
 };
+
+/**
+ * Where an input's value comes from. This is the distinction between reading the
+ * world and reading the model.
+ *
+ *   SOURCE_POLICY_ONLY      Always the persistent observation world, under the
+ *                           declared policy. For measurements and commitments
+ *                           that must remain source truth — available inventory,
+ *                           unit cost, a finance forecast.
+ *
+ *   RUN_OUTPUT_IF_PLANNED   If the current execution plan produces this metric
+ *                           for this node, consume THAT output — the execution
+ *                           frame's value, not whichever DERIVED observation is
+ *                           newest. Otherwise fall back to persisted model truth,
+ *                           and then to the source world.
+ *                           For executable value-model dependencies:
+ *                           Expected Revenue -> Demand Quantity.
+ */
+export const inputResolutions = ['SOURCE_POLICY_ONLY', 'RUN_OUTPUT_IF_PLANNED'] as const;
+export type InputResolution = (typeof inputResolutions)[number];
+
+/**
+ * Fallback order for an executable dependency whose upstream was NOT planned.
+ * Persisted model truth first — the input has explicitly said it wants the
+ * model — then the source world, so a gap degrades to what the business says
+ * rather than to nothing.
+ */
+export const unplannedDependencyOrder: readonly ObservationType[] = [
+  'DERIVED',
+  'FORECAST',
+  'ACTUAL',
+  'ESTIMATE',
+  'ASSUMPTION',
+];
 
 // ----------------------------------------------------------- input binding
 
@@ -115,8 +189,13 @@ export type CalculationInputSpec = {
   required: boolean;
   /** Unit the implementation expects. Validated before `compute` runs. */
   expectUnit: QuantityUnit;
-  /** Overrides the run's preference — e.g. an assumption must stay an assumption. */
-  preference?: ObservationPreference;
+  /**
+   * Where this input comes from. Defaults to SOURCE_POLICY_ONLY: reading the
+   * world is the safe default, and an executable dependency has to say so.
+   */
+  resolution?: InputResolution;
+  /** Overrides the run's policy — e.g. an assumption must stay an assumption. */
+  preference?: ObservationPolicy;
   /** Horizon the input must carry. Defaults to the output node's horizon. */
   horizon?: TimeHorizon;
   /**
@@ -206,10 +285,32 @@ export const stepStatuses = [
 ] as const;
 export type StepStatus = (typeof stepStatuses)[number];
 
+/**
+ * The two independent lenses a run looks through (§6-§8 of the hardening brief).
+ *
+ *   effectiveAsOf     What business time are we modelling? Governs valid time:
+ *                     a point-in-time claim effective after this instant is not
+ *                     about the world we are modelling.
+ *
+ *   recordedThrough   What was HELM allowed to KNOW when this run began? Governs
+ *                     record time. An observation recorded after this cutoff must
+ *                     not enter the run even if its effective time qualifies.
+ *
+ * They must not be collapsed. A Q4 forecast that Finance files at 20:16 is valid
+ * for the period a 20:15 run is modelling, and that run still must not see it —
+ * otherwise a run's inputs depend on how long the run took, and nothing is
+ * reproducible. A later run sees it, which is correct.
+ *
+ * This gives a deterministic knowledge boundary without holding a database
+ * transaction open across the whole propagation.
+ */
 export type CalculationRunContext = {
-  asOf: string;
+  /** Business/effective time being modelled. */
+  effectiveAsOf: string;
+  /** Knowledge cutoff: nothing recorded after this instant enters the run. */
+  recordedThrough: string;
   horizon: TimeHorizon | null;
-  preference: ObservationPreference;
+  preference: RunObservationPolicy;
   scenarioEntityId: EntityId | null;
   /** Value node ids the propagation started from. */
   rootNodeIds: readonly string[];
@@ -245,6 +346,13 @@ export type TracedInput = {
   sourceSystem: string;
   effectiveAt: ValidTime | null;
   /**
+   * Which layer this value came from — the execution frame of the current run,
+   * or the persistent observation world. A reader auditing a trace has to be
+   * able to tell "the number my run computed one step earlier" from "what the
+   * business had on file".
+   */
+  boundTo?: 'RUN_OUTPUT' | 'SOURCE_OBSERVATION';
+  /**
    * For an AGGREGATED input, the individual claims that were summed.
    *
    * Without this the trace of a summed input reads `Σ 12.385714285714 =
@@ -276,8 +384,18 @@ export type CalculationStep = {
   outputNodeId: string;
   outputMetricKey: string;
   status: StepStatus;
-  /** Exact decimal string of the computed value, when status is CALCULATED. */
+  /**
+   * The BUSINESS-NORMALIZED value that was written down — what the observation
+   * holds, at the metric's storage precision.
+   */
   outputValue: string | null;
+  /**
+   * The raw computation before business normalization, at full internal
+   * precision. Kept so a reader can see that 2 687 700 000 is a rounding of
+   * 2 687 699 999.9999999999999999999969 rather than a number HELM invented.
+   * Null when it is identical to `outputValue`.
+   */
+  outputValueRaw: string | null;
   outputUnit: QuantityUnit | null;
   outputCurrency: string | null;
   outputObservationId: string | null;

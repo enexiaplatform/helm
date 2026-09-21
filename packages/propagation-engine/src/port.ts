@@ -14,11 +14,13 @@ import type {
   CalculationStep,
   Explanation,
   Freshness,
-  ObservationPreference,
+  ObservationPolicy,
+  RunObservationPolicy,
   PropagationPlan,
   PropagationResult,
   TriggerType,
 } from './types.ts';
+import type { TruthLayerReading } from './selection.ts';
 
 /** What a caller asks the engine to do. */
 export type PropagationRequest = {
@@ -30,9 +32,20 @@ export type PropagationRequest = {
   fromMetricKeys?: readonly string[];
   /** Restrict to these subject entities; omitted means every affected subject. */
   subjectEntityIds?: readonly EntityId[];
+  /**
+   * Business/effective time being modelled. `asOf` is accepted as a synonym for
+   * backwards compatibility; prefer the explicit name.
+   */
+  effectiveAsOf?: Date;
   asOf?: Date;
+  /**
+   * Knowledge cutoff. Nothing recorded after this instant enters the run.
+   * Defaults to the clock at run start, which is what makes a run's inputs
+   * independent of how long the run takes.
+   */
+  recordedThrough?: Date;
   horizon?: TimeHorizon | null;
-  preference?: ObservationPreference;
+  preference?: RunObservationPolicy;
   /** Present for a scenario run: outputs become SCENARIO observations. */
   scenarioEntityId?: EntityId | null;
   triggerType?: TriggerType;
@@ -63,8 +76,32 @@ export interface PropagationEngine {
   checkFreshness(
     scope: Scope,
     nodeIds: readonly string[],
-    options?: { asOf?: Date; preference?: ObservationPreference; scenarioEntityId?: EntityId | null },
+    options?: {
+      effectiveAsOf?: Date;
+      asOf?: Date;
+      recordedThrough?: Date;
+      preference?: RunObservationPolicy;
+      scenarioEntityId?: EntityId | null;
+    },
   ): Promise<Result<readonly Freshness[]>>;
+
+  /**
+   * Business truth and model truth for one value node, side by side.
+   *
+   * The source side reads under a SOURCE policy and can never return a DERIVED
+   * observation; the model side reads persisted DERIVED output only. Neither is
+   * promoted over the other — the point is that both can be stated, with the
+   * variance between them, without HELM declaring either one the truth.
+   */
+  truthLayers(
+    scope: Scope,
+    nodeId: string,
+    options?: {
+      effectiveAsOf?: Date;
+      recordedThrough?: Date;
+      sourcePolicy?: ObservationPolicy;
+    },
+  ): Promise<Result<TruthLayerReading>>;
 
   /** Re-executes a historical run against the observations it originally used. */
   replay(scope: Scope, runId: string): Promise<Result<PropagationResult>>;

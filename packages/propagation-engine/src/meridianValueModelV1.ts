@@ -21,6 +21,12 @@
  * ASSUMPTION observation on a value node, not a number in this file (§20) —
  * which is why `demand_quantity` has two inputs rather than one.
  *
+ * Every input also declares WHERE it comes from. An `Opportunity Probability` is
+ * read from the source world under an observation policy; an `Expected Revenue`
+ * feeding `Demand Quantity` is an execution dependency and is taken from the run
+ * that produced it. The two are different questions and the file says which is
+ * which rather than leaving it to the ranking of observation types.
+ *
  * Every input declares the time horizon it expects. An opportunity's value is a
  * `current` fact; the revenue it implies is a `quarter` figure. Leaving that
  * implicit would make the engine silently mix a point-in-time number with a
@@ -74,6 +80,7 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
     inputs: [
       {
         name: 'opportunity_value',
+        resolution: 'SOURCE_POLICY_ONLY',
         metricKey: 'OpportunityValue',
         binding: { kind: 'SAME_SUBJECT' },
         required: true,
@@ -84,6 +91,7 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
       },
       {
         name: 'opportunity_probability',
+        resolution: 'SOURCE_POLICY_ONLY',
         metricKey: 'OpportunityProbability',
         binding: { kind: 'SAME_SUBJECT' },
         required: true,
@@ -121,6 +129,8 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
     inputs: [
       {
         name: 'expected_revenue',
+        // Executable dependency: this run computes it upstream.
+        resolution: 'RUN_OUTPUT_IF_PLANNED',
         metricKey: 'ExpectedRevenue',
         binding: { kind: 'SAME_SUBJECT' },
         required: true,
@@ -130,6 +140,7 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
       },
       {
         name: 'average_selling_price',
+        resolution: 'SOURCE_POLICY_ONLY',
         metricKey: 'AverageSellingPrice',
         // The price belongs to the product, not the opportunity. The ontology
         // says which product: Opportunity --SELLS--> Product.
@@ -174,6 +185,8 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
     inputs: [
       {
         name: 'demand_quantity',
+        // Executable dependency: this run computes it upstream.
+        resolution: 'RUN_OUTPUT_IF_PLANNED',
         metricKey: 'DemandQuantity',
         // The requirement is about the Product; demand is about the Opportunity
         // that sells it, so walk the SELLS relationship backwards. Several
@@ -218,6 +231,8 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
     inputs: [
       {
         name: 'inventory_requirement',
+        // Executable dependency: this run computes it upstream.
+        resolution: 'RUN_OUTPUT_IF_PLANNED',
         metricKey: 'InventoryRequirement',
         binding: { kind: 'SAME_SUBJECT' },
         required: true,
@@ -227,6 +242,7 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
       },
       {
         name: 'available_inventory',
+        resolution: 'SOURCE_POLICY_ONLY',
         metricKey: 'AvailableInventory',
         // Inventory --POSITIONS--> Product, so from the product walk inwards.
         // The filter is what excludes distributor-held stock.
@@ -278,6 +294,8 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
     inputs: [
       {
         name: 'inventory_requirement',
+        // Executable dependency: this run computes it upstream.
+        resolution: 'RUN_OUTPUT_IF_PLANNED',
         metricKey: 'InventoryRequirement',
         binding: { kind: 'SAME_SUBJECT' },
         required: true,
@@ -287,6 +305,7 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
       },
       {
         name: 'unit_cost',
+        resolution: 'SOURCE_POLICY_ONLY',
         metricKey: 'UnitCost',
         binding: { kind: 'SAME_SUBJECT' },
         required: true,
@@ -322,6 +341,8 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
     inputs: [
       {
         name: 'demand_quantity',
+        // Executable dependency: this run computes it upstream.
+        resolution: 'RUN_OUTPUT_IF_PLANNED',
         metricKey: 'DemandQuantity',
         binding: { kind: 'SAME_SUBJECT' },
         required: true,
@@ -331,6 +352,7 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
       },
       {
         name: 'unit_cost',
+        resolution: 'SOURCE_POLICY_ONLY',
         metricKey: 'UnitCost',
         binding: { kind: 'RELATED_ENTITY', relationshipTypeKey: 'SELLS', direction: 'out' },
         required: true,
@@ -366,6 +388,8 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
     inputs: [
       {
         name: 'expected_revenue',
+        // Executable dependency: this run computes it upstream.
+        resolution: 'RUN_OUTPUT_IF_PLANNED',
         metricKey: 'ExpectedRevenue',
         binding: { kind: 'SAME_SUBJECT' },
         required: true,
@@ -375,6 +399,8 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
       },
       {
         name: 'cogs',
+        // Executable dependency: this run computes it upstream.
+        resolution: 'RUN_OUTPUT_IF_PLANNED',
         metricKey: 'Cogs',
         binding: { kind: 'SAME_SUBJECT' },
         required: true,
@@ -384,6 +410,7 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
       },
       {
         name: 'fulfilment_cost',
+        resolution: 'SOURCE_POLICY_ONLY',
         metricKey: 'Opex',
         binding: { kind: 'RELATED_ENTITY', relationshipTypeKey: 'INCURS', direction: 'out' },
         required: false,
@@ -425,6 +452,8 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
     inputs: [
       {
         name: 'gross_margin',
+        // Executable dependency: this run computes it upstream.
+        resolution: 'RUN_OUTPUT_IF_PLANNED',
         metricKey: 'GrossMargin',
         binding: { kind: 'SAME_SUBJECT' },
         required: true,
@@ -434,6 +463,8 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
       },
       {
         name: 'expected_revenue',
+        // Executable dependency: this run computes it upstream.
+        resolution: 'RUN_OUTPUT_IF_PLANNED',
         metricKey: 'ExpectedRevenue',
         binding: { kind: 'SAME_SUBJECT' },
         required: true,
@@ -473,6 +504,8 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
     inputs: [
       {
         name: 'gross_margin',
+        // Executable dependency: this run computes it upstream.
+        resolution: 'RUN_OUTPUT_IF_PLANNED',
         metricKey: 'GrossMargin',
         binding: { kind: 'SAME_SUBJECT' },
         required: true,
@@ -482,6 +515,8 @@ export const meridianValueModelV1: readonly CalculationDefinition[] = [
       },
       {
         name: 'working_capital',
+        // Executable dependency: this run computes it upstream.
+        resolution: 'RUN_OUTPUT_IF_PLANNED',
         metricKey: 'WorkingCapital',
         // The capital belongs to the product's stock, not to the deal. Note the
         // consequence: this deal carries the capital cost of stock the OTHER

@@ -283,6 +283,47 @@ for (const f of files) {
   }
 }
 
+// (8) every HELM function pins its search_path
+//
+// A function that resolves names through the CALLER'S search_path can be made
+// to call a different object than it was written against — a temp table named
+// helm_entities, a shadowing function. Supabase flags it as
+// function_search_path_mutable. The HELM convention is `public, pg_temp`, with
+// pg_temp last so a temporary object can never shadow a real one.
+//
+// Either the CREATE carries `SET search_path`, or a later migration pins it
+// with `ALTER FUNCTION ... SET search_path`. Checked across ALL migrations, so
+// a fix in a later file satisfies a function defined in an earlier one.
+{
+  const helmFunctions = new Map();
+  for (const m of combined.matchAll(
+    /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.(helm_[a-z_]+)\s*\(([\s\S]*?)\$(\w*)\$/gi,
+  )) {
+    const name = m[1].toLowerCase();
+    const header = m[2];
+    const pinnedInCreate = /SET\s+search_path/i.test(header);
+    helmFunctions.set(name, (helmFunctions.get(name) ?? false) || pinnedInCreate);
+  }
+  for (const m of combined.matchAll(
+    /ALTER\s+FUNCTION\s+public\.(helm_[a-z_]+)\s*\([^;]*?\)\s*SET\s+search_path/gi,
+  )) {
+    helmFunctions.set(m[1].toLowerCase(), true);
+  }
+  for (const [name, pinned] of helmFunctions) {
+    if (!pinned) {
+      fail(
+        'function-search-path',
+        `function public.${name} does not pin its search_path. Add ` +
+          "SET search_path TO 'public', 'pg_temp' to it, or pin it with ALTER FUNCTION " +
+          'in a later migration',
+      );
+    }
+  }
+  if (helmFunctions.size === 0) {
+    fail('function-search-path', 'no helm_* functions were found, so this rule proved nothing');
+  }
+}
+
 // ------------------------------------------------------------------ report
 
 const tableCount = [...tableBodies.keys()].filter((t) => t.startsWith('helm_')).length;

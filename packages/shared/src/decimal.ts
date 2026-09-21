@@ -13,8 +13,23 @@
  * Pure: no I/O, no ambient state, no dependency.
  */
 
-/** Internal precision. Business values need far fewer; ratios need headroom. */
-export const DECIMAL_SCALE = 12;
+/**
+ * Internal precision, carried through intermediate arithmetic.
+ *
+ * This is NOT the precision a business value is stored or shown at — see
+ * `precision.ts`. It is headroom, and it needs to be generous because rounding
+ * an intermediate result and then multiplying amplifies the residue:
+ *
+ *   1 395 000 000 / 350 000 000 = 279/70, non-terminating
+ *   at scale 12 the residue is ~1e-12
+ *   x 217 000 000 (unit cost)   -> an error of ~2e-4 VND
+ *
+ * That is how HELM's working capital came out as 2 687 699 999.999938 when the
+ * exact answer is 2 687 700 000 with remainder zero. At scale 28 the same chain
+ * carries an error around 1e-20, which the business normalization step then
+ * removes legitimately rather than papering over.
+ */
+export const DECIMAL_SCALE = 28;
 const SCALE_FACTOR = 10n ** BigInt(DECIMAL_SCALE);
 
 declare const decimalBrand: unique symbol;

@@ -38,14 +38,23 @@ cost. A competing provincial tender: 3.1B VND at 45%. Company stock: 4 units.
 | Expected Revenue (Rohto) | 4 200 000 000 × 0.7 | **2 940 000 000 VND** | 0.70 |
 | Expected Revenue (tender) | 3 100 000 000 × 0.45 | 1 395 000 000 VND | 0.45 |
 | Demand (Rohto) | 2 940 000 000 ÷ 350 000 000 | **8.4 units** | 0.63 |
-| Demand (tender) | 1 395 000 000 ÷ 350 000 000 | 3.985714285714 units | 0.41 |
-| Inventory Requirement | Σ (8.4 + 3.985714285714) | **12.385714285714 units** | 0.32 |
-| Inventory Gap | max(12.385714285714 − 4, 0) | **8.385714285714 units** | 0.29 |
+| Demand (tender) | 1 395 000 000 ÷ 350 000 000 | 3.985714 units | 0.41 |
+| Inventory Requirement | Σ (8.4 + 3.985714) | **12.385714 units** | 0.32 |
+| Inventory Gap | max(12.385714 − 4, 0) | **8.385714 units** | 0.29 |
 | COGS | 8.4 × 217 000 000 | 1 822 800 000 VND | 0.60 |
 | Gross Margin | 2 940 000 000 − 1 822 800 000 − 140 000 000 | **977 200 000 VND** | 0.54 |
-| Gross Margin % | 977 200 000 ÷ 2 940 000 000 × 100 | 33.2380952381 % | 0.54 |
-| Working Capital | 12.385714285714 × 217 000 000 | 2 687 699 999.999938 VND | 0.28 |
-| Cash Impact | 977 200 000 − 2 687 699 999.999938 | **−1 710 499 999.999938 VND** | 0.19 |
+| Gross Margin % | 977 200 000 ÷ 2 940 000 000 × 100 | 33.2381 % (shown 33.24 %) | 0.54 |
+| Working Capital | 12.3857142857… × 217 000 000 | **2 687 700 000 VND** | 0.28 |
+| Cash Impact | 977 200 000 − 2 687 700 000 | **−1 710 500 000 VND** | 0.19 |
+
+Every value above is the **business-normalized** figure that gets written down:
+whole dong for VND, four decimals for a percentage, six for units. The raw
+computation is kept beside it in the trace. Working capital, for instance, is
+computed as 2 687 699 999.9999999999999999999969 and stored as 2 687 700 000 —
+the exact answer, since 867/70 × 217 000 000 has remainder zero. (An earlier
+version of this table showed 2 687 699 999.999938: a rounding error from carrying
+too few intermediate digits, not a real quantity. See
+[ADR-0018](../adr/0018-numerical-normalization.md).)
 
 Three of these are worth pausing on.
 
@@ -53,7 +62,7 @@ Three of these are worth pausing on.
 70% of 12 units. Rounding it to 8 or 9 is a commercial commitment decision, and
 the model deliberately does not make it.
 
-**12.385714285714 is where the contention becomes a number.** Phase 2 could say
+**12.385714 is where the contention becomes a number.** Phase 2 could say
 that two value streams claimed the same stock position. Phase 3 says the claim
 is 12.39 units against 4 on hand — a shortfall of 8.39. That difference is the
 whole point of the phase.
@@ -106,7 +115,9 @@ assumption is missing: an assumption presented as a measurement is the most
 dangerous kind of number in a management system.
 
 `verify:calculations` enforces this mechanically — it scans every `compute()`
-body and fails on any numeric literal other than 0 or 1.
+body and fails on any numeric literal other than 0 or 1, and on any local
+rounding (`Math.round`, `toFixed`, `round()`), because rounding belongs to the
+precision policy at storage, not to a formula.
 
 ---
 
@@ -119,9 +130,12 @@ body and fails on any numeric literal other than 0 or 1.
   faked. Consolidation is not summation, and v1 has no consolidation model.
 * **It does not optimize.** It quantifies a trade-off — 8.39 units short,
   −1.71B in cash — and stops. Resolving the trade-off is a manager's job.
-* **It does not round.** `2 687 699 999.999938` is carried as it is. The residue
-  of a recurring division is part of the number, and hiding it would be a
-  small, silent lie of exactly the kind that compounds.
+* **It does not round inside a formula.** Arithmetic runs at 28 decimal places;
+  the result is normalized once, when it is written down, to the precision the
+  metric and currency actually have. The raw value stays in the trace.
+* **It does not turn expected demand into an order.** 8.4 units stays 8.4.
+  Rounding it up to 9 for procurement is a business rule and would be its own
+  calculation, with its own owner — not a side effect of how numbers are stored.
 * **It does not compare scenarios.** It can compute one. Ranking them is Phase 4.
 
 ---

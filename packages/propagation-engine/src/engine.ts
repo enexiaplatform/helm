@@ -20,6 +20,9 @@ import {
   chainConfidence,
   clampConfidence,
   decimal,
+  normalize,
+  overrideFromMetadata,
+  policyFor,
   fail,
   formatQuantity,
   mustQuantity,
@@ -50,7 +53,8 @@ import type {
 import {
   CalculationErrors,
   calculationRef,
-  preferenceOrder,
+  policyOrder,
+  unplannedDependencyOrder,
   type CalculationDefinition,
   type CalculationInputSpec,
   type CalculationRun,
@@ -58,7 +62,9 @@ import {
   type ComputeContext,
   type Explanation,
   type Freshness,
-  type ObservationPreference,
+  type InputResolution,
+  type ObservationPolicy,
+  type RunObservationPolicy,
   type PropagationPlan,
   type PropagationPlanNode,
   type ResolvedInputs,
@@ -66,13 +72,39 @@ import {
   type TracedInput,
 } from './types.ts';
 import type { CalculationRegistry } from './registry.ts';
+import {
+  inputFingerprint,
+  readTruthLayers,
+  selectObservation,
+  type Lens,
+} from './selection.ts';
 import { buildDependencyGraph, downstreamOf, type MetricDependencyGraph } from './dependencyGraph.ts';
 import type { CalculationStore, PropagationEngine, PropagationRequest } from './port.ts';
 
 export const ENGINE_VERSION = '3.1.0';
 
 /** No run in progress: freshness and ad-hoc resolution read the stored world. */
-const EMPTY_RUN_OUTPUTS: ReadonlyMap<string, string> = new Map();
+const EMPTY_RUN_OUTPUTS: RunOutputs = new Map();
+
+/**
+ * The two lenses, resolved from a request.
+ *
+ * `recordedThrough` defaults to the clock at run start. That default is the
+ * whole mechanism: it pins the knowledge boundary once, so an observation
+ * recorded while the run is still executing cannot enter it, and a run's inputs
+ * stop depending on how long the run happens to take.
+ */
+function lensFor(
+  request: { effectiveAsOf?: Date; asOf?: Date; recordedThrough?: Date },
+  clock: Clock,
+): Lens {
+  const now = clock.now();
+  const effectiveAsOf = request.effectiveAsOf ?? request.asOf ?? now;
+  return {
+    effectiveAsOf,
+    recordedThrough: request.recordedThrough ?? now,
+  };
+}
 const MAX_DEPTH = 12;
 
 export type PropagationEngineOptions = {
@@ -111,7 +143,21 @@ type ResolvedInput = { quantity: Quantity; traced: TracedInput };
  * An UNCHANGED step contributes too: it produced no new observation, but it
  * confirmed the existing one as this run's answer for that node.
  */
-type RunOutputs = ReadonlyMap<string, string>;
+type RunOutput = {
+  readonly observationId: string;
+  /**
+   * The RAW quantity, at full internal precision — not the normalized value the
+   * observation holds. A downstream step in the same run must continue from the
+   * computation, not from its business-rounded representation, or normalization
+   * error compounds at every link in the chain.
+   */
+  readonly quantity: Quantity;
+  readonly observationType: ObservationType;
+  readonly sourceSystem: string;
+  readonly confidence: Confidence | null;
+  readonly effectiveAt: ValidTime | null;
+};
+type RunOutputs = ReadonlyMap<string, RunOutput>;
 
 export function createPropagationEngine(
   opts: PropagationEngineOptions,
@@ -125,104 +171,6 @@ export function createPropagationEngine(
   const depGraph: MetricDependencyGraph = graphResult.value;
 
   // --------------------------------------------------------- input resolution
-
-  /**
-   * Chooses ONE observation for an input, by declared preference then valid
-   * time. Never "the latest" (§5): an actual, a forecast and a target are
-   * different kinds of claim and the calculation says which it wants.
-   */
-  async function selectObservation(
-    scope: Scope,
-    nodeId: string,
-    preference: ObservationPreference,
-    asOf: Date,
-    scenarioEntityId: EntityId | null,
-    runOutputs: RunOutputs,
-  ): Promise<Result<ValueObservation | null>> {
-    // A scenario run reads scenario values AND reality; a baseline run reads
-    // only reality, so a scenario can never leak into a baseline number.
-    const scenarioArg = preference === 'SCENARIO' ? undefined : null;
-    const all = await valueGraph.getObservations(scope, {
-      nodeId,
-      scenarioEntityId: scenarioArg,
-      limit: 200,
-    });
-    if (!all.ok) return all;
-
-    const cutoff = asOf.getTime();
-    const ms = (t: string): number => new Date(t).getTime();
-
-    /**
-     * Was this claim KNOWN at asOf? Record time, not the period it describes.
-     * A Q4 forecast made on 18 September is available on 19 September; the
-     * alternative reading — that a forecast about October cannot be used in
-     * September — would make forecasting impossible.
-     */
-    const knownBy = (o: ValueObservation): number => ms(o.observedAt ?? o.recordedAt);
-
-    /**
-     * Which claim SPEAKS TO the latest moment. A point-in-time observation
-     * anchors on `effectiveAt`, a period one on `periodStart`.
-     *
-     * Known limitation: two forecasts for different future periods on the same
-     * node would be separated by period here, and the later one would win. The
-     * horizon filter is what keeps periods apart today; genuine multi-period
-     * forecasting on one node is not modelled yet.
-     */
-    const validAt = (o: ValueObservation): number =>
-      ms(o.effectiveAt ?? o.periodStart ?? o.observedAt ?? o.recordedAt);
-
-    for (const type of preferenceOrder[preference]) {
-      let candidates = all.value.filter((o) => o.observationType === type);
-      if (type === 'SCENARIO') {
-        candidates = candidates.filter((o) => o.scenarioEntityId === scenarioEntityId);
-      } else {
-        candidates = candidates.filter((o) => o.scenarioEntityId === null);
-      }
-      // The model must not read what it did not yet know.
-      candidates = candidates.filter((o) => knownBy(o) <= cutoff);
-      // A point-in-time fact cannot describe the present if it only becomes
-      // true later. Period claims are exempt: being about a period is the point.
-      candidates = candidates.filter((o) => o.effectiveAt === null || ms(o.effectiveAt) <= cutoff);
-      if (candidates.length === 0) continue;
-
-      // If THIS run already produced an answer for this node, that answer is
-      // the one to use — not whichever observation of the same kind happens to
-      // be newest. This is what keeps a run internally consistent when another
-      // run is writing to the same nodes at the same time.
-      if (type === 'DERIVED' || type === 'SCENARIO') {
-        const ownId = runOutputs.get(nodeId);
-        if (ownId) {
-          const own = candidates.find((o) => o.id === ownId);
-          if (own) return ok(own);
-        }
-      }
-
-      const bestValid = Math.max(...candidates.map(validAt));
-      let winners = candidates.filter((o) => validAt(o) === bestValid);
-
-      // Same kind of claim, same valid time: the more recently RECORDED belief
-      // supersedes. That is what record time is for, and it is the rule a
-      // recalculated derived value relies on — not an arbitrary pick.
-      if (winners.length > 1) {
-        const bestRecord = Math.max(...winners.map((o) => ms(o.recordedAt)));
-        winners = winners.filter((o) => ms(o.recordedAt) === bestRecord);
-      }
-
-      if (winners.length > 1) {
-        // Identical in valid time AND record time. Nothing distinguishes them,
-        // so choosing would make the result unexplainable.
-        return fail(
-          CalculationErrors.AMBIGUOUS_INPUT,
-          `Value node ${nodeId} has ${winners.length} ${type} observations with the same ` +
-            'valid time and the same record time. HELM will not pick one arbitrarily.',
-          { nodeId, observationType: type, candidates: winners.map((w) => w.id) },
-        );
-      }
-      return ok(winners[0]);
-    }
-    return ok(null);
-  }
 
 /**
  * The nodes an input binding reached, split by whether their time horizon is the
@@ -320,8 +268,8 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
     scope: Scope,
     spec: CalculationInputSpec,
     outputNode: ValueNode,
-    preference: ObservationPreference,
-    asOf: Date,
+    policy: RunObservationPolicy,
+    lens: Lens,
     horizon: TimeHorizon | null,
     scenarioEntityId: EntityId | null,
     runOutputs: RunOutputs,
@@ -369,29 +317,113 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
       );
     }
 
-    const effectivePreference = spec.preference ?? preference;
-    const picked: { node: ValueNode; obs: ValueObservation }[] = [];
+    const resolution: InputResolution = spec.resolution ?? 'SOURCE_POLICY_ONLY';
+    const effectivePolicy: ObservationPolicy = spec.preference ?? policy;
+
+    // ---------------------------------------------------------------------
+    // EXECUTION DEPENDENCY. If this run's plan produced the upstream value,
+    // that output IS the input — bound to the execution frame, carrying the
+    // raw quantity rather than its business-rounded representation, and
+    // without consulting the persistent world at all.
+    //
+    // This is what makes "Expected Revenue -> Demand Quantity" an execution
+    // dependency rather than "read whichever DERIVED observation is newest".
+    // ---------------------------------------------------------------------
+    if (resolution === 'RUN_OUTPUT_IF_PLANNED') {
+      const fromRun = usable
+        .map((node) => ({ node, output: runOutputs.get(node.id) }))
+        .filter((x): x is { node: ValueNode; output: RunOutput } => Boolean(x.output));
+
+      if (fromRun.length > 0 && fromRun.length === usable.length) {
+        const first = fromRun[0].output;
+        for (const { output } of fromRun) {
+          if (output.quantity.unit !== spec.expectUnit) {
+            return fail(
+              CalculationErrors.UNIT_MISMATCH,
+              `Input "${spec.name}" expects ${spec.expectUnit} but the run produced ` +
+                `${spec.metricKey} in ${output.quantity.unit}.`,
+              { expected: spec.expectUnit, received: output.quantity.unit },
+            );
+          }
+          if (output.quantity.currency !== first.quantity.currency) {
+            return fail(
+              CalculationErrors.CURRENCY_MISMATCH,
+              `Aggregated "${spec.metricKey}" run outputs mix currencies.`,
+            );
+          }
+        }
+        const runTotal = sumAll(fromRun.map((x) => x.output.quantity.amount));
+        const runQuantity = quantity(runTotal, spec.expectUnit, first.quantity.currency);
+        if (!runQuantity.ok) return runQuantity;
+        const runConfidences = fromRun
+          .map((x) => x.output.confidence)
+          .filter((c) => c !== null);
+        return ok({
+          quantity: runQuantity.value,
+          traced: {
+            name: spec.name,
+            metricKey: spec.metricKey,
+            nodeId: fromRun.map((x) => x.node.id).join('+'),
+            observationId: fromRun.map((x) => x.output.observationId).join('+'),
+            observationType: first.observationType,
+            value: decToString(runTotal),
+            unit: spec.expectUnit,
+            currency: first.quantity.currency,
+            confidence: runConfidences.length > 0 ? Math.min(...runConfidences) : null,
+            sourceSystem: first.sourceSystem,
+            effectiveAt: first.effectiveAt,
+            boundTo: 'RUN_OUTPUT',
+            components:
+              fromRun.length > 1
+                ? fromRun.map((x) => ({
+                    nodeId: x.node.id,
+                    observationId: x.output.observationId,
+                    value: decToString(x.output.quantity.amount),
+                    observationType: x.output.observationType,
+                  }))
+                : undefined,
+          },
+        });
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // SOURCE RESOLUTION. The persistent observation world, under a declared
+    // policy and bounded by BOTH lenses.
+    // ---------------------------------------------------------------------
+    const order =
+      resolution === 'RUN_OUTPUT_IF_PLANNED'
+        ? // The upstream was not planned, so fall back to persisted model truth
+          // first — this input has explicitly asked for the model — and then to
+          // what the business says, so a gap degrades to a stated number rather
+          // than to nothing.
+          unplannedDependencyOrder
+        : policyOrder[effectivePolicy];
+
+    const picked = [];
     for (const node of usable) {
-      const obs = await selectObservation(
-        scope,
-        node.id,
-        effectivePreference,
-        asOf,
-        scenarioEntityId,
-        runOutputs,
-      );
+      const obs = await selectObservation(valueGraph, scope, node.id, order, lens, scenarioEntityId);
       if (!obs.ok) return obs;
       if (obs.value) picked.push({ node, obs: obs.value });
     }
 
     if (picked.length === 0) {
       if (!spec.required) return ok(null);
+      const describedPolicy =
+        resolution === 'RUN_OUTPUT_IF_PLANNED' ? 'execution-dependency' : effectivePolicy;
       return fail(
         CalculationErrors.MISSING_INPUT,
         `"${spec.metricKey}" has a value node but no usable observation under the ` +
-          `${effectivePreference} preference at ${asOf.toISOString()}. ` +
+          `${describedPolicy} policy, effective ${lens.effectiveAsOf.toISOString()} and ` +
+          `known through ${lens.recordedThrough.toISOString()}. ` +
           `The model needs ${spec.description.toLowerCase()}`,
-        { metricKey: spec.metricKey, preference: effectivePreference },
+        {
+          metricKey: spec.metricKey,
+          policy: effectivePolicy,
+          resolution,
+          effectiveAsOf: lens.effectiveAsOf.toISOString(),
+          recordedThrough: lens.recordedThrough.toISOString(),
+        },
       );
     }
 
@@ -435,6 +467,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
         confidence: confidences.length > 0 ? Math.min(...confidences) : null,
         sourceSystem: first.sourceSystem,
         effectiveAt: first.effectiveAt ?? first.periodStart ?? null,
+        boundTo: 'SOURCE_OBSERVATION',
         // Only when more than one claim was summed: for a single input the
         // components would restate the value and add nothing.
         components:
@@ -452,35 +485,6 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
 
   // ------------------------------------------------------------ fingerprint
 
-  /**
-   * Deterministic fingerprint of (calculation version + input observations +
-   * context). Identical fingerprints mean an identical computation, which is
-   * what makes idempotency and staleness checkable without re-running (§27).
-   *
-   * FNV-1a over a canonical string: no crypto dependency, and collisions are
-   * not a security concern here — this identifies recomputation, not identity.
-   */
-  function fingerprint(
-    calc: CalculationDefinition,
-    inputs: readonly TracedInput[],
-    ctx: { horizon: string; scenario: string },
-  ): string {
-    const canonical = [
-      calculationRef(calc),
-      ctx.horizon,
-      ctx.scenario,
-      ...[...inputs]
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((i) => `${i.name}=${i.observationId}:${i.value}${i.unit}${i.currency ?? ''}`),
-    ].join('|');
-
-    let hash = 0x811c9dc5;
-    for (let i = 0; i < canonical.length; i += 1) {
-      hash ^= canonical.charCodeAt(i);
-      hash = Math.imul(hash, 0x01000193) >>> 0;
-    }
-    return `fp_${hash.toString(16).padStart(8, '0')}_${canonical.length}`;
-  }
 
   // ------------------------------------------------------------ confidence
 
@@ -539,8 +543,8 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
     let order = 0;
 
     for (const metricKey of targetMetrics) {
-      const calc = registry.findByOutputMetric(metricKey)[0];
-      if (!calc) continue;
+      const producers = registry.findByOutputMetric(metricKey);
+      if (producers.length === 0) continue;
 
       const candidates = await valueGraph.findValueNodes(scope, {
         metricKeys: [metricKey],
@@ -558,23 +562,32 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
         }
         if (horizon && node.timeHorizon && node.timeHorizon !== horizon) continue;
 
-        // Scope compatibility (§31).
-        if (calc.scopeCompatibility && node.subjectEntityId) {
+        // Scope compatibility (§31) decides WHICH producer computes this node.
+        // The registry guarantees producers of one metric have disjoint scopes,
+        // so at most one applies; if none does, the node is declared
+        // uncomputable with every producer's reason rather than silently skipped.
+        let category: string | null = null;
+        if (node.subjectEntityId) {
           const entity = await graphStore.getEntity(scope, node.subjectEntityId);
           if (!entity.ok) return entity;
-          if (entity.value) {
-            const category = ontology.categoryOf(entity.value.entityTypeKey);
-            if (category && !calc.scopeCompatibility.includes(category)) {
-              uncomputable.push({
-                nodeId: node.id,
-                metricKey,
-                reason:
-                  `${calculationRef(calc)} does not apply to a ${category} subject ` +
-                  `(allowed: ${calc.scopeCompatibility.join(', ')})`,
-              });
-              continue;
-            }
-          }
+          if (entity.value) category = ontology.categoryOf(entity.value.entityTypeKey);
+        }
+        const applies = (d: CalculationDefinition): boolean =>
+          d.scopeCompatibility === null || category === null || d.scopeCompatibility.includes(category);
+        const calc = producers.find(applies);
+        if (!calc) {
+          uncomputable.push({
+            nodeId: node.id,
+            metricKey,
+            reason: producers
+              .map(
+                (d) =>
+                  `${calculationRef(d)} does not apply to a ${category} subject ` +
+                  `(allowed: ${(d.scopeCompatibility ?? []).join(', ')})`,
+              )
+              .join('; '),
+          });
+          continue;
         }
 
         planNodes.push({
@@ -603,9 +616,9 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
     },
 
     async execute(scope, request) {
-      const asOf = request.asOf ?? clock.now();
-      const preference: ObservationPreference =
-        request.preference ?? (request.scenarioEntityId ? 'SCENARIO' : 'BASELINE');
+      const lens = lensFor(request, clock);
+      const policy: RunObservationPolicy =
+        request.preference ?? (request.scenarioEntityId ? 'SCENARIO' : 'SOURCE_TRUTH');
       const scenarioEntityId = request.scenarioEntityId ?? null;
 
       const built = await buildPlan(scope, request);
@@ -616,9 +629,10 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
         status: 'RUNNING',
         triggerType: request.triggerType ?? 'MANUAL',
         context: {
-          asOf: asOf.toISOString(),
+          effectiveAsOf: lens.effectiveAsOf.toISOString(),
+          recordedThrough: lens.recordedThrough.toISOString(),
           horizon,
-          preference,
+          preference: policy,
           scenarioEntityId,
           rootNodeIds: request.fromNodeIds ?? [],
           engineVersion: ENGINE_VERSION,
@@ -647,7 +661,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
       const written: ValueObservation[] = [];
       const summary = emptySummary();
       // This run's answer per value node — see RunOutputs.
-      const runOutputs = new Map<string, string>();
+      const runOutputs = new Map<string, RunOutput>();
       let sequence = 0;
 
       for (const planNode of plan.nodes) {
@@ -674,8 +688,8 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
             scope,
             spec,
             node.value,
-            preference,
-            asOf,
+            policy,
+            lens,
             horizon,
             scenarioEntityId,
             runOutputs,
@@ -700,10 +714,10 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
           continue;
         }
 
-        const fp = fingerprint(calc, traced, {
+        const fp = inputFingerprint(calculationRef(calc), {
           horizon: horizon ?? '',
           scenario: scenarioEntityId ?? '',
-        });
+        }, traced);
 
         // --- idempotency: an identical computation is UNCHANGED (§26) ---
         const previous = await store.findLatestStepForNode(scope, node.value.id);
@@ -724,8 +738,26 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
             confidence: previous.value.confidence,
             inputFingerprint: fp,
           }, steps, summary);
-          if (previous.value.outputObservationId) {
-            runOutputs.set(node.value.id, previous.value.outputObservationId);
+          if (previous.value.outputObservationId && previous.value.outputValue) {
+            // An UNCHANGED step produced no new observation but its value still
+            // stands as this run's answer. The RAW value is carried where the
+            // step recorded one, so a downstream step continues from the
+            // computation rather than from its rounded representation.
+            const carried = quantity(
+              decimal(previous.value.outputValueRaw ?? previous.value.outputValue),
+              previous.value.outputUnit ?? calc.outputUnit,
+              previous.value.outputCurrency,
+            );
+            if (carried.ok) {
+              runOutputs.set(node.value.id, {
+                observationId: previous.value.outputObservationId,
+                quantity: carried.value,
+                observationType: scenarioEntityId ? 'SCENARIO' : 'DERIVED',
+                sourceSystem: 'helm',
+                confidence: previous.value.confidence,
+                effectiveAt: null,
+              });
+            }
           }
           continue;
         }
@@ -733,7 +765,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
         // --- compute ---
         const computeCtx: ComputeContext = {
           scope,
-          asOf,
+          asOf: lens.effectiveAsOf,
           horizon,
           subjectEntityId: node.value.subjectEntityId,
         };
@@ -772,7 +804,6 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
         }
 
         const confidence = combineConfidence(calc, traced);
-        const rendered = renderExpression(calc, traced, output.value);
 
         // --- write the observation ---
         const observationType: ObservationType = scenarioEntityId ? 'SCENARIO' : 'DERIVED';
@@ -791,7 +822,30 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
           }, steps, summary);
           continue;
         }
-        const period = periodFor(metric.value.timeBehavior, node.value, horizon, asOf);
+        const period = periodFor(metric.value.timeBehavior, node.value, horizon, lens.effectiveAsOf);
+
+        // ---------------------------------------------------------------
+        // BUSINESS NORMALIZATION. The arithmetic ran at full internal
+        // precision; what gets written down is the business value at the
+        // metric's storage scale. 2 687 699 999.9999999999999999999969 VND is
+        // a true statement about decimal division and a false statement about
+        // money — there is no such thing as a fraction of a dong.
+        //
+        // The raw value stays in the trace, so a reader can see that the
+        // stored number is a rounding of the computation and not an invention.
+        // ---------------------------------------------------------------
+        const policyForMetric = policyFor(
+          output.value.unit,
+          output.value.currency,
+          overrideFromMetadata(metric.value.metadata),
+        );
+        const normalized = normalize(output.value.amount, policyForMetric);
+        const businessValue = mustQuantity(
+          normalized.normalized,
+          output.value.unit,
+          output.value.currency,
+        );
+        const rendered = renderExpression(calc, traced, businessValue);
 
         // The provenance record names the RUN, not the observation. It has to
         // exist before the observation (which points at it), and helm_provenance
@@ -824,20 +878,21 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
           confidence,
           notes: rendered,
           payload: null,
-          observedAt: asValidTime(asOf.toISOString()),
+          observedAt: asValidTime(lens.effectiveAsOf.toISOString()),
         });
         if (!provenance.ok) return provenance;
 
         const obs = await valueGraph.recordObservation(scope, {
           nodeId: node.value.id,
           observationType,
-          numericValue: toNumber(output.value.amount),
+          // The NORMALIZED business value, not the raw computation.
+          numericValue: toNumber(normalized.normalized),
           unitType: output.value.unit,
           currency: output.value.currency,
           effectiveAt: period.effectiveAt,
           periodStart: period.periodStart,
           periodEnd: period.periodEnd,
-          observedAt: asValidTime(asOf.toISOString()),
+          observedAt: asValidTime(lens.effectiveAsOf.toISOString()),
           scenarioEntityId,
           confidence,
           sourceSystem: 'helm',
@@ -846,7 +901,15 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
             derivedByCalculation: calculationRef(calc),
             calculationRunId: run.id,
             inputFingerprint: fp,
-            exactValue: decToString(output.value.amount),
+            // Exact decimal string of the stored business value. This is the
+            // authoritative representation; `numericValue` is a convenience.
+            exactValue: normalized.normalizedText,
+            // What the arithmetic actually produced, when normalization moved it.
+            rawValue: normalized.adjusted ? normalized.rawText : undefined,
+            precision: {
+              storageScale: policyForMetric.storageScale,
+              roundingMode: policyForMetric.roundingMode,
+            },
           },
         });
         if (!obs.ok) {
@@ -861,11 +924,22 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
         }
 
         written.push(obs.value);
-        runOutputs.set(node.value.id, obs.value.id);
+        // EXECUTION STATE: the run binds the RAW quantity, not the normalized
+        // observation. A downstream step continues from the computation, so
+        // normalization cannot compound down the chain.
+        runOutputs.set(node.value.id, {
+          observationId: obs.value.id,
+          quantity: output.value,
+          observationType,
+          sourceSystem: 'helm',
+          confidence,
+          effectiveAt: period.effectiveAt ?? period.periodStart ?? null,
+        });
         await recordStep(scope, run.id, sequence, calc, node.value.id, {
           status: 'CALCULATED',
           inputs: traced,
-          outputValue: decToString(output.value.amount),
+          outputValue: normalized.normalizedText,
+          outputValueRaw: normalized.adjusted ? normalized.rawText : null,
           outputUnit: output.value.unit,
           outputCurrency: output.value.currency,
           outputObservationId: obs.value.id,
@@ -900,7 +974,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
     },
 
     async checkFreshness(scope, nodeIds, options = {}) {
-      const asOf = options.asOf ?? clock.now();
+      const nowLens = lensFor(options, clock);
       const out: Freshness[] = [];
 
       for (const nodeId of nodeIds) {
@@ -937,8 +1011,17 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
         if (!run.ok) return run;
         const contextHorizon = run.value ? run.value.context.horizon : node.value.timeHorizon;
         const runHorizon = contextHorizon ?? '';
-        const preference: ObservationPreference =
-          options.preference ?? run.value?.context.preference ?? 'BASELINE';
+        const preference: RunObservationPolicy =
+          options.preference ?? run.value?.context.preference ?? 'SOURCE_TRUTH';
+        // The effective lens comes from the run (what it was modelling); the
+        // knowledge lens moves to NOW, because the question freshness answers
+        // is "has anything been learned since?".
+        const freshnessLens = {
+          effectiveAsOf: run.value
+            ? new Date(run.value.context.effectiveAsOf)
+            : nowLens.effectiveAsOf,
+          recordedThrough: options.recordedThrough ?? nowLens.recordedThrough,
+        };
         const scenarioEntityId =
           options.scenarioEntityId ?? run.value?.context.scenarioEntityId ?? null;
 
@@ -966,11 +1049,11 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
             spec,
             node.value,
             preference,
-            asOf,
+            freshnessLens,
             contextHorizon,
             scenarioEntityId,
             // Freshness asks what the inputs are NOW, outside any run, so
-            // there are no same-run outputs to prefer.
+            // there is no execution frame to bind to.
             EMPTY_RUN_OUTPUTS,
           );
           if (!r.ok) {
@@ -992,10 +1075,10 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
           continue;
         }
 
-        const current = fingerprint(calc, traced, {
+        const current = inputFingerprint(calculationRef(calc), {
           horizon: runHorizon,
           scenario: scenarioEntityId ?? '',
-        });
+        }, traced);
         const recorded = step.value.inputFingerprint;
         const matches = recorded === current;
 
@@ -1019,18 +1102,33 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
       if (!original.value) {
         return fail(CalculationErrors.READ_FAILED, `Calculation run ${runId} not found.`);
       }
-      // Replay re-executes against the SAME context, so the same observations
-      // are selected and the same numbers come out (§59).
+      // Replay reconstructs what HELM COULD KNOW when the original ran, not
+      // merely the arithmetic it performed. Both lenses are restored, so an
+      // observation recorded after the original's knowledge cutoff stays
+      // invisible to the replay however long ago that was — which is what makes
+      // a replay evidence about the original decision rather than a fresh run
+      // that happens to use old numbers.
       const ctx = original.value.context;
       return engine.execute(scope, {
         fromNodeIds: ctx.rootNodeIds,
-        asOf: new Date(ctx.asOf),
+        effectiveAsOf: new Date(ctx.effectiveAsOf),
+        recordedThrough: new Date(ctx.recordedThrough),
         horizon: ctx.horizon,
         preference: ctx.preference,
         scenarioEntityId: ctx.scenarioEntityId,
         triggerType: 'REPLAY',
         notes: `replay of ${runId}`,
       });
+    },
+
+    async truthLayers(scope, nodeId, options = {}) {
+      return readTruthLayers(
+        valueGraph,
+        scope,
+        nodeId,
+        lensFor(options, clock),
+        options.sourcePolicy ?? 'SOURCE_TRUTH',
+      );
     },
 
     async getRun(scope, runId) {
@@ -1184,6 +1282,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
       outputMetricKey: calc.outputMetricKey,
       status: partial.status,
       outputValue: partial.outputValue ?? null,
+      outputValueRaw: partial.outputValueRaw ?? null,
       outputUnit: partial.outputUnit ?? null,
       outputCurrency: partial.outputCurrency ?? null,
       outputObservationId: partial.outputObservationId ?? null,

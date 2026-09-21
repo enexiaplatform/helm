@@ -96,6 +96,61 @@ if (!existsSync(MIGRATION)) {
   }
 }
 
+// ------------------ 3b: the governance sync carries the current declarations
+
+// The Phase 3 migration is applied history and frozen. What the registry now
+// declares — including how every input resolves — reaches the database through
+// the generated governance sync, and that file must match the code exactly.
+{
+  const { spawnSync } = await import('node:child_process');
+  const r = spawnSync(process.execPath, ['scripts/generate-calculation-governance.mjs', '--check'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  check(
+    'governance-sync',
+    r.status === 0,
+    'the governance sync migration is out of step with the calculation registry. ' +
+      'Run: node scripts/generate-calculation-governance.mjs',
+  );
+
+  const SYNC = join(root, 'supabase', 'migrations', '20260921090100_helm_calculation_governance_sync.sql');
+  const syncSql = existsSync(SYNC) ? readFileSync(SYNC, 'utf8') : '';
+  for (const calc of meridianValueModelV1) {
+    for (const input of calc.inputs) {
+      check(
+        'explicit-resolution',
+        input.resolution === 'SOURCE_POLICY_ONLY' || input.resolution === 'RUN_OUTPUT_IF_PLANNED',
+        `${calc.key} input "${input.name}" does not declare where it comes from. Every ` +
+          'input must say whether it reads the source world or this run\'s own output',
+      );
+    }
+    check(
+      'governance-sync',
+      syncSql.includes(`'calc_${calc.key}@${calc.version}'`),
+      `${calc.key}@${calc.version} has no governance sync statement`,
+    );
+  }
+
+  // An input on a metric the model itself produces is an execution dependency;
+  // declaring it SOURCE_POLICY_ONLY is legal but should be deliberate, so the
+  // Meridian model is held to the stricter rule that it never does so silently.
+  const produced = new Set(meridianValueModelV1.map((c) => c.outputMetricKey));
+  for (const calc of meridianValueModelV1) {
+    for (const input of calc.inputs) {
+      if (produced.has(input.metricKey)) {
+        check(
+          'explicit-resolution',
+          input.resolution === 'RUN_OUTPUT_IF_PLANNED',
+          `${calc.key} reads "${input.metricKey}", which the model computes, as a source ` +
+            'input. The run would ignore its own upstream output and read persistence ' +
+            'instead, which is how two runs end up consuming each other\'s numbers',
+        );
+      }
+    }
+  }
+}
+
 // ------------------------------- 4: no executable code in the database
 
 const migrationSql = existsSync(MIGRATION) ? readFileSync(MIGRATION, 'utf8') : '';
@@ -203,6 +258,31 @@ for (const body of computeBodies) {
       `a calculation implementation contains the constant ${n}. A business ` +
         'constant belongs in an ASSUMPTION observation where it can be owned ' +
         'and reviewed, not in code (§20)',
+    );
+  }
+}
+
+// ------------------------------------- 6b: no local rounding in a formula
+//
+// Numerical normalization is the precision policy's job, done once at the
+// storage boundary (ADR-0018). A formula that rounds locally either duplicates
+// that — and compounds it down the chain — or smuggles in a business rule, such
+// as turning 8.4 units of expected demand into a procurement order of 9. A
+// business rounding rule must be its own calculation with its own owner.
+const LOCAL_ROUNDING = [
+  { re: /\bMath\.(round|floor|ceil|trunc)\s*\(/, why: 'Math rounding' },
+  { re: /\.toFixed\s*\(|\.toPrecision\s*\(/, why: 'a float formatter' },
+  { re: /(?<![\w.])round\s*\(/, why: 'decimal round()' },
+  { re: /\bnormalize\s*\(/, why: 'business normalization' },
+];
+for (const body of computeBodies) {
+  for (const { re, why } of LOCAL_ROUNDING) {
+    check(
+      'no-local-rounding',
+      !re.test(body),
+      `a calculation implementation applies ${why}. Normalization belongs to the ` +
+        'metric precision policy at storage (ADR-0018); a business rounding rule ' +
+        'belongs in a calculation that declares itself as one',
     );
   }
 }

@@ -14,6 +14,7 @@
 
 import {
   type Decimal,
+  HUNDRED,
   ZERO,
   add,
   divide,
@@ -183,7 +184,9 @@ export function percentageOf(numerator: Quantity, denominator: Quantity): Result
   const r = ratioOf(numerator, denominator);
   if (!r.ok) return r;
   return ok({
-    amount: multiply(r.value.amount, { raw: 100n * 10n ** 12n } as Decimal),
+    // HUNDRED, not a literal scaled by a hard-coded exponent: a constant that
+    // silently encodes DECIMAL_SCALE breaks the moment the scale changes.
+    amount: multiply(r.value.amount, HUNDRED),
     unit: 'percentage',
     currency: null,
   });

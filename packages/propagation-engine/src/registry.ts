@@ -12,7 +12,8 @@ import type { ValueMetricRegistry } from '@helm/value-graph';
 import {
   CalculationErrors,
   calculationRef,
-  observationPreferences,
+  inputResolutions,
+  observationPolicies,
   type CalculationDefinition,
 } from './types.ts';
 
@@ -155,10 +156,16 @@ export function validateDefinitions(
             `"${input.metricKey}" is measured in ${inMetric.unitType}`,
         });
       }
-      if (input.preference && !observationPreferences.includes(input.preference)) {
+      if (input.preference && !observationPolicies.includes(input.preference)) {
         problems.push({
           kind: 'unknown_preference',
-          detail: `${ref} input "${input.name}" uses unknown preference "${input.preference}"`,
+          detail: `${ref} input "${input.name}" uses unknown observation policy "${input.preference}"`,
+        });
+      }
+      if (input.resolution && !inputResolutions.includes(input.resolution)) {
+        problems.push({
+          kind: 'unknown_resolution',
+          detail: `${ref} input "${input.name}" uses unknown resolution "${input.resolution}"`,
         });
       }
       if (!input.description || input.description.trim().length < 10) {
@@ -198,6 +205,66 @@ export function validateDefinitions(
         kind: 'invalid_definition_confidence',
         detail: `${ref} confidence must be 0..1, got ${d.definitionConfidence}`,
       });
+    }
+  }
+
+  // Two ACTIVE calculations producing the same metric for overlapping subjects
+  // make "which formula produced this number?" depend on registration order —
+  // the planner would silently use whichever came first, and the other would
+  // never run. Producers of one metric must partition the subjects between them.
+  // `null` scope means "any subject" and therefore overlaps everything.
+  const producersByMetric = new Map<string, CalculationDefinition[]>();
+  for (const d of definitions) {
+    if (d.status !== 'ACTIVE') continue;
+    const list = producersByMetric.get(d.outputMetricKey) ?? [];
+    list.push(d);
+    producersByMetric.set(d.outputMetricKey, list);
+  }
+  for (const [metricKey, producers] of producersByMetric) {
+    const byKey = new Map<string, CalculationDefinition>();
+    for (const d of producers) {
+      // Several ACTIVE versions of ONE key are a versioning question, handled
+      // below; here the concern is distinct calculations.
+      const current = byKey.get(d.key);
+      if (!current || compareSemver(d.version, current.version) > 0) byKey.set(d.key, d);
+    }
+    const distinct = [...byKey.values()];
+    for (let i = 0; i < distinct.length; i += 1) {
+      for (let j = i + 1; j < distinct.length; j += 1) {
+        const a = distinct[i].scopeCompatibility;
+        const b = distinct[j].scopeCompatibility;
+        const overlap =
+          a === null || b === null ? true : a.some((category) => b.includes(category));
+        if (overlap) {
+          problems.push({
+            kind: 'ambiguous_producer',
+            detail:
+              `${calculationRef(distinct[i])} and ${calculationRef(distinct[j])} both ` +
+              `produce "${metricKey}" for overlapping subjects. Which one runs would depend ` +
+              'on registration order; give them disjoint scope compatibility or retire one',
+          });
+        }
+      }
+    }
+  }
+
+  // An input declaring RUN_OUTPUT_IF_PLANNED is asserting that its metric is
+  // produced by the model. If nothing produces it, the declaration is wrong and
+  // the input would silently fall back to source resolution forever.
+  const producedMetrics = new Set(
+    definitions.filter((d) => d.status === 'ACTIVE').map((d) => d.outputMetricKey),
+  );
+  for (const d of definitions) {
+    for (const input of d.inputs) {
+      if (input.resolution !== 'RUN_OUTPUT_IF_PLANNED') continue;
+      if (!producedMetrics.has(input.metricKey)) {
+        problems.push({
+          kind: 'undeclared_dependency',
+          detail:
+            `${calculationRef(d)} input "${input.name}" declares RUN_OUTPUT_IF_PLANNED for ` +
+            `"${input.metricKey}", but no active calculation produces that metric`,
+        });
+      }
     }
   }
 

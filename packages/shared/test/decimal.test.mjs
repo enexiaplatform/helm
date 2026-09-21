@@ -61,8 +61,12 @@ describe('decimal construction', () => {
   });
 
   test('rounds half-up at the precision limit rather than truncating', () => {
-    const tooPrecise = '0.' + '0'.repeat(DECIMAL_SCALE) + '5';
-    assert.equal(s(decimal(tooPrecise)), '0.000000000001');
+    // Derived from DECIMAL_SCALE rather than written out: a test that hard-codes
+    // the scale stops testing the rule the moment the scale changes.
+    const oneUlp = `0.${'0'.repeat(DECIMAL_SCALE - 1)}1`;
+    const tooPrecise = `0.${'0'.repeat(DECIMAL_SCALE)}5`;
+    assert.equal(s(decimal(tooPrecise)), oneUlp, 'half-up at the last digit');
+    assert.equal(s(decimal(`0.${'0'.repeat(DECIMAL_SCALE)}4`)), '0', 'below half rounds away');
   });
 
   test('rejects nonsense', () => {
@@ -81,9 +85,28 @@ describe('decimal arithmetic', () => {
   });
 
   test('division rounds half-up in both signs', () => {
-    assert.equal(s(divide(decimal('1'), decimal('3'))), '0.333333333333');
-    assert.equal(s(divide(decimal('2'), decimal('3'))), '0.666666666667');
-    assert.equal(s(divide(decimal('-2'), decimal('3'))), '-0.666666666667');
+    const third = `0.${'3'.repeat(DECIMAL_SCALE)}`;
+    // Two thirds ends in a 7 because the digit past the limit is a 6.
+    const twoThirds = `0.${'6'.repeat(DECIMAL_SCALE - 1)}7`;
+    assert.equal(s(divide(decimal('1'), decimal('3'))), third);
+    assert.equal(s(divide(decimal('2'), decimal('3'))), twoThirds);
+    assert.equal(s(divide(decimal('-2'), decimal('3'))), `-${twoThirds}`);
+  });
+
+  test('the internal scale carries a non-terminating division far enough that ' +
+    'multiplying it back does not move the business answer', () => {
+    // The Phase 3 defect, as a unit test. 1.395B / 350M is 279/70, which does
+    // not terminate; multiplying the rounded quotient by a unit cost amplifies
+    // whatever residue the scale left behind.
+    const quotient = divide(decimal('1395000000'), decimal('350000000'));
+    const scaled = multiply(add(decimal('8.4'), quotient), decimal('217000000'));
+    // The exact answer is 867/70 x 217000000 = 2687700000, remainder zero.
+    const drift = Math.abs(Number(s(scaled)) - 2687700000);
+    assert.ok(
+      drift < 1e-9,
+      `residue amplified to ${drift}; at scale 12 this was 6.2e-5, which is why ` +
+        'the internal scale is not the storage scale',
+    );
   });
 
   test('division by zero throws rather than producing Infinity', () => {

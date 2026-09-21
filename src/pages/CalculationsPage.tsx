@@ -58,9 +58,9 @@ const statusTone: Record<StepStatus, string> = {
 };
 
 /**
- * Exact decimal strings, shortened for reading but never rounded silently:
- * the full value is always in the title attribute, because the residue of a
- * recurring division is a real part of the number and hiding it is a lie.
+ * Shortens a long decimal string for reading. Never used to round a business
+ * value — that is the precision policy's job, done once at storage. The full
+ * stored value and the raw computation are both in the title attribute.
  */
 function shorten(value: string | null): string {
   if (!value) return '—';
@@ -395,7 +395,8 @@ export function CalculationsPage() {
             ) : (
               <>
                 <p className="mb-3 text-2xs text-ink-500">
-                  Run {result.run.id} · as of {result.run.context.asOf} ·{' '}
+                  Run {result.run.id} · modelling {result.run.context.effectiveAsOf} ·
+                  knowledge through {result.run.context.recordedThrough} ·{' '}
                   {result.run.context.preference} · {result.run.status}
                 </p>
                 <div className="overflow-x-auto">
@@ -425,9 +426,21 @@ export function CalculationsPage() {
                           <td className="py-1.5 pr-2 text-ink-700">
                             {nodeLabels.get(step.outputNodeId)?.label ?? step.outputMetricKey}
                           </td>
-                          <td className="py-1.5 pr-2 font-mono text-ink-900" title={step.outputValue ?? undefined}>
+                          <td
+                            className="py-1.5 pr-2 font-mono text-ink-900"
+                            title={
+                              step.outputValueRaw
+                                ? `stored ${step.outputValue} · computed ${step.outputValueRaw}`
+                                : (step.outputValue ?? undefined)
+                            }
+                          >
                             {shorten(step.outputValue)}
                             {step.outputCurrency ? ` ${step.outputCurrency}` : ''}
+                            {step.outputValueRaw && (
+                              <span className="block text-2xs text-ink-400">
+                                normalized from {shorten(step.outputValueRaw)}
+                              </span>
+                            )}
                             {step.renderedExpression && (
                               <span className="block font-mono text-2xs text-ink-400">
                                 {step.renderedExpression}

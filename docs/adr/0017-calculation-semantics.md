@@ -1,7 +1,12 @@
 # ADR-0017: Calculation semantics — definitions in code, metadata in data, and how inputs are chosen
 
-**Status** accepted · **Date** 2026-09-19 · **Deciders** Architecture ·
-**Phase** 3
+**Status** accepted, §2 revised · **Date** 2026-09-19, revised 2026-09-21 ·
+**Deciders** Architecture · **Phase** 3
+
+**Revision.** §2 originally ranked `DERIVED` above `FORECAST` in the baseline
+policy. The Phase 3 hardening replaced that with three explicit truth layers, an
+explicit per-input resolution, and a two-lens source snapshot. The original
+reasoning and why it was wrong are kept in §2.
 
 Four related decisions that together define what a HELM calculation *is*. They
 are one ADR because changing any of them in isolation would break the others.
@@ -58,88 +63,102 @@ HELM owns — *not* `eval`, and not before a real requirement exists.
 
 ---
 
-## 2. Observation selection is policy, not "latest wins"
+## 2. Three truth layers, and how an input is resolved
+
+**Revised in the Phase 3 hardening (2026-09-21).** The first version of this
+section made `DERIVED` outrank `FORECAST` in the baseline policy. That was the
+wrong fix for a real problem, and the record of why is kept below rather than
+deleted.
 
 ### Problem
 
 A value node can carry an actual, a forecast, a target, an estimate, an
-assumption and several scenario values simultaneously (Phase 2's whole point).
-When a calculation asks for `OpportunityProbability`, which one does it get?
-§5 is explicit that silently taking the latest is wrong.
+assumption, several scenario values and HELM's own derived output, all at once.
+When a calculation asks for `Expected Revenue`, which one does it get? §5 is
+explicit that silently taking the latest is wrong. And there is a second, sharper
+question hiding inside the first: when HELM computes 4.70B and Finance has
+forecast 5.00B, which one is the business number?
 
-### Decision
+### What went wrong the first time
 
-**A named, declared preference policy**, resolved per input, never a single
-hard-coded global order.
+Phase 3 initially ranked `DERIVED` first in `BASELINE` so that chained
+calculations would see each other's output — with `FORECAST` first, a probability
+change recalculated revenue and then demand read the *stated* forecast, so nothing
+downstream moved. Promoting `DERIVED` fixed the chaining and broke something more
+important: every historical HELM calculation became more authoritative than the
+forecast a person had actually committed to, merely because of its observation
+type. Finance's 5.00B and HELM's 4.70B could not coexist, and the variance between
+them could not be stated. A management system that silently prefers its own
+arithmetic over what the business said is not a management system.
 
-```ts
-type ObservationPreference =
-  | 'BASELINE'       // DERIVED → FORECAST → ACTUAL → ESTIMATE → ASSUMPTION
-  | 'ACTUALS_FIRST'  // ACTUAL → DERIVED → FORECAST → ESTIMATE → ASSUMPTION
-  | 'SCENARIO'       // SCENARIO → DERIVED → FORECAST → ACTUAL → ESTIMATE → ASSUMPTION
-  | 'ASSUMPTION_ONLY';
+The chaining problem was real; ranking was the wrong tool. Chaining is an
+**execution** concern and is now solved as one.
+
+### Decision: three truth layers
+
+```
+BUSINESS / SOURCE TRUTH   ACTUAL, FORECAST, TARGET, ASSUMPTION
+                          claims made by a business system or an authorized person
+
+MODEL TRUTH               DERIVED
+                          what a HELM model computed, under a named calculation
+                          version and a recorded context — explainable output,
+                          NOT automatically the authoritative business number
+
+EXECUTION STATE           values bound to a run that is executing
+                          runtime bindings that make one execution internally
+                          consistent; never a persistent category
 ```
 
-**`DERIVED` outranks `FORECAST` in `BASELINE`, and this is the load-bearing
-choice in the whole policy.** It was originally the other way round, and the
-canonical chain proved it wrong: with `FORECAST` first, changing the opportunity
-probability recalculated expected revenue and then demand read the *stated*
-forecast instead, so nothing downstream of the change moved. The model computed
-and propagated nothing — an expensive way to be an ontology with formulas
-attached.
+### Decision: observation policies read the persistent world
 
-The principle behind the ordering: **if HELM can compute a number, the computed
-one is the baseline, because it is the only one that can be explained.** A stated
-forecast is what HELM falls back on for what it cannot compute. `ACTUALS_FIRST`
-deliberately keeps the opposite priority for measured facts — a model that
-overrode what actually happened would be worse than useless.
+```ts
+policyOrder = {
+  SOURCE_TRUTH:    ['FORECAST', 'ACTUAL', 'ESTIMATE', 'ASSUMPTION'],
+  ACTUALS_FIRST:   ['ACTUAL', 'FORECAST', 'ESTIMATE', 'ASSUMPTION'],
+  SCENARIO:        ['SCENARIO', 'FORECAST', 'ACTUAL', 'ESTIMATE', 'ASSUMPTION'],
+  ASSUMPTION_ONLY: ['ASSUMPTION'],
+  MODEL_OUTPUT:    ['DERIVED'],          // asked for by name, per input only
+};
+```
 
-- The **context** sets the default policy for a run.
-- An **input may override** it. `AverageSellingPrice` declares
-  `ASSUMPTION_ONLY`, because a management assumption is the only legitimate
-  source for it and silently falling back to a measured actual would
-  misrepresent where the number came from.
-- `TARGET` is **never** selected as an input. A target is what we want, not what
-  we believe; feeding targets into a forecast would make the model tell us what
-  we hoped for. Targets are comparison material, not inputs.
-- `DERIVED` observations are selected only when the input is explicitly a
-  derived metric in the same run — which is the normal case for chained
-  calculations.
+**No policy that answers "what does the business say?" can return `DERIVED`.**
+`SOURCE_TRUTH` replaces the old `BASELINE` name so the policy says which layer it
+reads. `MODEL_OUTPUT` exists for a caller that explicitly wants persisted model
+truth, and cannot be a run's policy. `TARGET` is never selectable anywhere: a
+target is what we want, not what we believe.
 
-### Within a tier: eligibility, then order, then ambiguity
+A run declares its policy; an input may override it (`AverageSellingPrice`
+declares `ASSUMPTION_ONLY`, because falling back to a measured actual would
+misrepresent where the number came from).
 
-The two kinds of time have to be used for two different questions, and
-collapsing them is how this goes wrong.
+### Decision: every input declares how it resolves
 
-1. **Eligibility — was the claim KNOWN at `asOf`?** Judged on *record* time
-   (`observedAt`, falling back to `recordedAt`). A Q4 forecast made on 18
-   September is eligible on 19 September. Judging eligibility on valid time
-   instead — the first implementation's mistake — excludes every forecast about
-   the future from every calculation run in the present, which makes forecasting
-   impossible. A point-in-time claim is additionally ineligible if its
-   `effectiveAt` is after `asOf`: a fact that only becomes true later cannot
-   describe now. Period claims are exempt, because being about a period is the
-   whole point of one.
-2. **Order — which claim speaks to the LATEST moment?** Valid time descending
-   (`effectiveAt`, else `periodStart`).
-3. **Tie-break — which belief is CURRENT?** Record time descending. This is not
-   cosmetic: a recalculated derived value has the same valid time as the one it
-   supersedes, and the only thing distinguishing them is that HELM learned it
-   later. That is exactly what record time is for, so choosing the later record
-   is a rule, not an arbitrary pick.
-4. **Genuine ambiguity** — identical in valid time *and* record time — is an
-   error (`AMBIGUOUS_INPUT`). Nothing distinguishes the claims, so choosing
-   would make the result unexplainable.
+```ts
+type InputResolution = 'SOURCE_POLICY_ONLY' | 'RUN_OUTPUT_IF_PLANNED';
+```
 
-*Known limitation.* Two forecasts for different future periods on one node would
-be separated by step 2 and the further-out one would win. Today the node's
-`timeHorizon` and each input's declared `horizon` keep periods apart, so the
-situation does not arise in the canonical model; genuine multi-period forecasting
-on a single node is not modelled and should not be added without revisiting this
-rule.
+- **`SOURCE_POLICY_ONLY`** — always the persistent world, under the declared
+  policy. For measurements and commitments that must remain source truth:
+  available inventory, unit cost, a finance forecast. The default, because
+  reading the world is the safe assumption and an execution dependency has to say
+  so.
+- **`RUN_OUTPUT_IF_PLANNED`** — if the current plan produces this metric for this
+  node, consume **that** output: the execution frame's value, carrying the raw
+  quantity rather than its business-rounded representation, without consulting
+  persistence at all. If the upstream was not planned, fall back to persisted
+  model truth (`DERIVED`), then to the source world, so a gap degrades to a stated
+  number rather than to nothing.
 
-The chosen observation's id is recorded in the trace, so "which number did it
-use?" is always answerable.
+This is how `Expected Revenue → Demand Quantity` works now: an execution
+dependency, not "whichever DERIVED observation is newest". The registry refuses
+an input that declares `RUN_OUTPUT_IF_PLANNED` for a metric no active calculation
+produces, and `verify:calculations` requires every Meridian input on a
+model-produced metric to declare it.
+
+Every trace input records `boundTo: 'RUN_OUTPUT' | 'SOURCE_OBSERVATION'`, so a
+reader can tell "the number my run computed one step earlier" from "what the
+business had on file".
 
 ### A run consumes its own derived output
 
@@ -150,58 +169,89 @@ source world (actual / forecast / assumption)
       -> downstream calculations
 ```
 
-When a downstream step needs a value the same run has already produced, it takes
-**that** observation — not whichever observation of the same kind happens to be
-newest on the node.
+The first implementation re-queried the node every time and appeared to work
+because a run's own write always has the latest record time. It is accidental. Two
+runs in flight — a scheduled recalculation overlapping a manual one — and a step
+consumed the other run's output. The values happened to match, which is worse
+rather than better: the trace cited an observation its run did not produce, so the
+run's internal consistency could not be demonstrated.
 
-The first implementation re-queried the node every time, and it appeared to work
-because a run's own write always has the latest record time. It is accidental.
-Two runs in flight — a scheduled recalculation overlapping a manual one — and a
-step consumes the other run's output. The numbers can even come out identical
-and the defect still matters: the trace then cites an observation its run did not
-produce, so the run's internal consistency cannot be demonstrated at all, which
-is the one thing a trace exists to do.
+Run outputs are now held in the execution frame, keyed by node. An `UNCHANGED`
+step contributes too: it wrote nothing, but confirmed the existing observation as
+this run's answer for that node. The concurrency regression test and
+`verify:lineage` both create two interleaved runs, because the single-run case is
+consistent by accident and a check against it has no teeth.
 
-The rule applies only within the tier the preference would have chosen anyway.
-An `ACTUALS_FIRST` input still prefers a measurement over the run's own model
-output; otherwise the rule would quietly convert every such input into a model
-read.
+### Decision: two lenses, not one `asOf`
 
-An `UNCHANGED` step contributes to this map too. It wrote no new observation,
-but it confirmed the existing one as this run's answer for that node, and
-downstream steps must read that rather than searching again.
+```
+effectiveAsOf     what business time is being modelled
+recordedThrough   what HELM was allowed to KNOW when the run began
+```
 
-*What this does NOT provide.* Snapshot isolation over the source world. Two runs
-declaring the same `asOf` can still read different facts if one of them is
-recorded between their reads — both answers are correct as of that `asOf`, but
-which one a given run sees depends on timing. `asOf` bounds what is eligible and
-replay re-reads at the same `asOf`, which is the mitigation; genuine snapshot
-isolation is a transactional concern and is not attempted here.
+A source observation is eligible only if **both** hold:
 
-### What `asOf` is, and what it is not
+1. **Knowledge** — `recordedAt <= recordedThrough`. Record time only. Not
+   `observedAt`: a source can assert something at 09:00 that HELM does not learn
+   until 20:16, and a run that began at 20:15 could not have known it.
+2. **Effect** — a point-in-time claim must have `effectiveAt <= effectiveAsOf`.
+   Period claims are exempt: being about a future period is what a forecast is.
 
-`asOf` is the **lens** that selects inputs. It is recorded on the run, and it is
-deliberately **not** part of a step's `inputFingerprint`, which covers the
-calculation reference, the horizon, the scenario and the exact input
-observations and values. If the same observations with the same values were used,
-the computation was the same — so a freshness check an hour later must not report
-a value as stale merely because the clock moved. Including `asOf` did exactly
-that, and made every derived value in HELM permanently stale.
+The two must not be collapsed. A Q4 forecast Finance files at 20:16 is valid for
+the December a 20:15 run is modelling, and that run still must not see it — or a
+run's inputs depend on how long the run took. A later run sees it, which is
+correct.
 
-A freshness check therefore re-resolves inputs under the **same context the
-value was calculated in** — the horizon, preference and scenario recorded on the
-original run — and only the caller's `asOf` moves. Re-resolving a baseline number
-under a scenario preference would report it stale because the question changed,
-not because a fact did.
+`recordedThrough` defaults to the clock **once, at run start**. That default is
+the whole mechanism: it pins the boundary before the first read. It gives a
+deterministic knowledge boundary **without** a long-lived transaction,
+serializable isolation or event sourcing; the record-time cutoff is sufficient
+because observations are append-only and every one carries a record time.
+
+*Limitation.* The cutoff bounds what enters a run, not what the store physically
+contains. A run reading through the cutoff sees a consistent world only because
+observations are never updated in place; an adapter that mutated observations
+would break the guarantee, which is one more reason they are append-only.
+
+### Within a tier: order, then ambiguity
+
+1. **Order — which claim speaks to the latest moment?** Valid time descending
+   (`effectiveAt`, else `periodStart`).
+2. **Tie-break — which belief is current?** Record time descending. A later
+   record of an equally-valid claim supersedes; that is what record time is for.
+3. **Genuine ambiguity** — identical in valid time *and* record time — is
+   `AMBIGUOUS_INPUT`, never an arbitrary pick.
+
+*Known limitation.* Two forecasts for different future periods on one node would
+be separated by step 1 and the further-out one would win. The node's
+`timeHorizon` and each input's declared `horizon` keep periods apart today.
+
+### What the fingerprint covers
+
+A step's `inputFingerprint` covers the calculation reference, the horizon, the
+scenario and each input's observation id and **canonical** value (`0.7`, `0.70`
+and `0.700` are one number and fingerprint identically). It deliberately excludes
+both lenses: they selected the inputs, they are not inputs, and including the old
+`asOf` made every derived value permanently stale the moment the clock moved.
+
+A freshness check re-resolves under the run's recorded **effective** lens and
+policy, with the **knowledge** lens moved to now — because the question it
+answers is "has anything been learned since?".
+
+### Replay
+
+Replay restores `effectiveAsOf`, `recordedThrough`, the policy, the scenario and
+the calculation versions, and so reconstructs the original **input set**, not
+merely the arithmetic. An observation recorded after the original's cutoff stays
+invisible to the replay however long ago that was. A replay answers "what could
+HELM know when this was executed?", which is what makes it evidence about a past
+decision rather than a fresh run wearing an old run's id.
 
 ### Which time context an output is written with
 
 The **metric**, not the node, decides. A metric's `timeBehavior` says whether it
 is a stock (`effectiveAt`) or a flow (`periodStart`/`periodEnd`); the node's
-`timeHorizon` only decides how long a flow's period is. Working capital is a
-balance even when it is the balance implied by a quarter's demand. Deriving this
-from the horizon instead writes a period onto a stock, and the value graph
-correctly refuses it.
+`timeHorizon` only decides how long a flow's period is.
 
 ---
 

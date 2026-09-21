@@ -93,9 +93,14 @@ export function runCalculationConformanceSuite(
           expectOk(await h.store.getRun(h.scopeA, result.run.id), 'getRun'),
           'the persisted run',
         );
-        assert.equal(run.context.asOf, h.asOf.toISOString(), 'the lens it looked through');
+        assert.equal(
+          run.context.effectiveAsOf,
+          h.asOf.toISOString(),
+          'the business time it modelled',
+        );
+        assert.ok(run.context.recordedThrough, 'and the knowledge cutoff it was bounded by');
         assert.equal(run.context.horizon, 'quarter');
-        assert.equal(run.context.preference, 'BASELINE');
+        assert.equal(run.context.preference, 'SOURCE_TRUTH', 'a baseline run reads what the business says');
         assert.equal(run.context.scenarioEntityId, null, 'a baseline run names no scenario');
         assert.ok(run.context.engineVersion, 'and the engine version that produced it');
         assert.equal(run.notes, 'conformance baseline');

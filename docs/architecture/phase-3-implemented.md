@@ -6,6 +6,10 @@ the debt. A record, not a plan.
 **Delivered 2026-09-20.** Branch `phase-1-enterprise-ontology`, building on
 Phase 2 (`fe1c700`).
 
+> **Superseded in part by the [Phase 3 hardening](phase-3-hardening.md)
+> (2026-09-21).** Sections 2.3, 2.4, 2.5 and 2.6 below describe decisions the
+> hardening revised; each is marked where it happens. Read the two together.
+
 ## 1. What exists now
 
 ### `@helm/propagation-engine`
@@ -25,7 +29,8 @@ Phase 2 (`fe1c700`).
 
 | Module | Contents |
 | --- | --- |
-| `decimal.ts` | BigInt fixed-point at scale 12, four rounding modes ([ADR-0016](../adr/0016-decimal-arithmetic.md)) |
+| `decimal.ts` | BigInt fixed-point at internal scale 28 (was 12 — see the hardening), four rounding modes ([ADR-0016](../adr/0016-decimal-arithmetic.md)) |
+| `precision.ts` | the metric precision policy: internal, storage and display precision per unit and currency ([ADR-0018](../adr/0018-numerical-normalization.md)) |
 | `quantity.ts` | unit-safe algebra; the wrong operation is not available |
 
 ### Database — 3 new tables, all additive
@@ -41,7 +46,9 @@ Plus a widened `helm_provenance.subject_kind` CHECK (`calculation_run`,
 (`calculation_run_id` now permitted on DERIVED and SCENARIO and nothing else),
 a foreign key for that column, and two integrity triggers that compute nothing.
 
-29 `helm_*` tables live, 109 policies.
+29 `helm_*` tables live, 101 row-level-security policies. (`verify:schema`
+reports 109: it counts `CREATE POLICY` statements across migration files,
+including policies later dropped and recreated, not policies live.)
 
 ### Application
 
@@ -81,6 +88,12 @@ executable code, because there is no evaluator and the brief forbids one.
 
 ### 2.3 DERIVED outranks FORECAST in the BASELINE preference
 
+> **Reversed by the hardening.** This fixed chaining by making every historical
+> model result more authoritative than a stated forecast, so Finance's forecast
+> and HELM's model could not coexist. Chaining is now an execution dependency
+> (`RUN_OUTPUT_IF_PLANNED`), and no source policy can return `DERIVED`. See
+> [ADR-0017 §2](../adr/0017-calculation-semantics.md).
+
 **This was originally the other way round, and the canonical chain proved it
 wrong.** With `FORECAST` first, changing the opportunity probability
 recalculated expected revenue — and then demand read the *stated* forecast
@@ -94,6 +107,10 @@ ahead of a model.
 
 ### 2.4 Eligibility is record time; ordering is valid time
 
+> **Refined by the hardening.** Eligibility now uses `recordedAt` only (not
+> `observedAt`), bounded by the run's `recordedThrough`, and valid time is bounded
+> separately by `effectiveAsOf`. The single `asOf` described here conflated them.
+
 The first implementation judged both on valid time, which excluded every Q4
 forecast from every run in September — making forecasting impossible. The two
 kinds of time answer two different questions:
@@ -106,6 +123,10 @@ kinds of time answer two different questions:
 Genuine ambiguity — identical in both — is an error, never an arbitrary pick.
 
 ### 2.5 `asOf` is not part of the input fingerprint
+
+> **Still true, restated by the hardening:** neither lens (`effectiveAsOf`,
+> `recordedThrough`) is part of the fingerprint, and input values are now
+> canonicalized so `0.7` and `0.70` fingerprint identically.
 
 `asOf` is the lens that selects inputs, not an input. Including it made every
 derived value in HELM permanently stale the moment the clock moved. The
@@ -121,9 +142,9 @@ step consumed the other run's output. The values happened to match, which is
 worse rather than better — the number was right by luck and the trace cited an
 observation its run did not produce. See [ADR-0017](../adr/0017-calculation-semantics.md).
 
-Not provided: snapshot isolation over the source world. Two runs at the same
-`asOf` can still read different facts if one is recorded between their reads.
-Both are correct as of that `asOf`; replay is the mitigation.
+Not provided at the time: snapshot isolation over the source world. **Provided
+by the hardening** through a record-time knowledge cutoff (`recordedThrough`)
+pinned once at run start and restored on replay.
 
 ### 2.7 The metric decides the time context, not the node
 
@@ -188,12 +209,12 @@ against a quarter's requirement is a quarter's number.
 
 Two opportunities sell SKU-X. Without aggregation the calculation reported
 `AMBIGUOUS_INPUT` and stopped. With it, the requirement is
-`Σ (8.4 + 3.985714285714) = 12.385714285714` against 4 units on hand — which is
+`Σ (8.4 + 3.985714) = 12.385714` units against 4 on hand — which is
 where Phase 2's structural contention becomes a quantity.
 
 ### 3.3 An aggregated input records its components
 
-`Σ 12.385714285714 = 12.385714285714` is a true and useless trace. The trace now
+`Σ 12.385714 = 12.385714` is a true and useless trace. The trace now
 carries the individual claims and renders `Σ (8.4 units + 3.985714285714 units)`.
 `verify:lineage` enforces it.
 
@@ -232,6 +253,7 @@ removal. Negative-tested.
 
 ```
 277 tests, 274 pass, 3 skipped (Postgres conformance — needs credentials)
+  (at the Phase 3 commit; see the hardening record for current counts)
 15 verify contracts, all passing, each negative-tested
 typecheck clean, lint clean
 ```
@@ -250,7 +272,7 @@ The canonical proof:
 | History | both derived values survive; the old one is never overwritten |
 | Staleness | STALE without mutating the recorded value |
 | Replay | identical fingerprints, identical numbers |
-| Exactness | `8.4`, `12.385714285714`, `2687699999.999938` — no drift |
+| Exactness | `8.4`, `12.385714285714`, `2687699999.999938` — **this row was wrong**: the last value is a scale-12 rounding error; the exact answer is `2687700000`. Corrected by the hardening ([ADR-0018](../adr/0018-numerical-normalization.md)) |
 | Contention | 12.39 units claimed against 4 available; gap 8.39 |
 
 ---
@@ -293,7 +315,7 @@ because it is outside this phase.
 | Aggregation is SUM only | the value graph models 8 aggregation behaviours; the engine implements one | Phase 4, with `MAX` for bottlenecks |
 | No consolidation model | BU and enterprise roll-ups are declared uncomputable rather than faked | Phase 7 |
 | Two forecasts for different future periods on one node would resolve by "furthest out wins" | the horizon filter keeps periods apart today; the case does not arise | before multi-period forecasting |
-| No snapshot isolation over the source world | two runs at the same `asOf` can read different facts if one lands between their reads; both are correct as of that `asOf` | when runs are scheduled rather than manual |
+| ~~No snapshot isolation over the source world~~ | closed by the hardening's `recordedThrough` knowledge cutoff | — |
 | A calculation can reference a metric pair with no value link | the semantic model can fall behind the executable one, unflagged | a future verifier |
 | `metricKeyOf` in the Postgres store is a linear scan | the registry has 32 metrics | when it matters |
 | Eight pre-kernel engines remain unintegrated | assessed individually, not wrapped — see [the assessment](engine-integration-assessment.md) | Phases 4, 5, 7, 8, 10 |

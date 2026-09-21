@@ -529,7 +529,7 @@ describe('Phase 3 — canonical propagation', () => {
     // Everything else computed anyway — that is the whole point of §48.
     assert.ok(result.summary.CALCULATED >= 11, 'the rest of the model ran');
     assert.equal(await derived(valueGraph, ids.expRevenue), '2940000000');
-    assert.equal(await derived(valueGraph, ids.cashOpp), '-1710499999.999938');
+    assert.equal(await derived(valueGraph, ids.cashOpp), '-1710500000');
     assert.equal(await derived(valueGraph, revenueNode.id), null, 'and the gap stays a gap');
 
     // A run with a blocked step is PARTIAL, not COMPLETED and not FAILED: the

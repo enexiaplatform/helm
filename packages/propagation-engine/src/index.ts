@@ -22,3 +22,11 @@ export {
   runCalculationConformanceSuite,
   type CalculationAdapterHarness,
 } from './conformance.ts';
+export {
+  canonicalNumeric,
+  inputFingerprint,
+  readTruthLayers,
+  selectObservation,
+  type Lens,
+  type TruthLayerReading,
+} from './selection.ts';

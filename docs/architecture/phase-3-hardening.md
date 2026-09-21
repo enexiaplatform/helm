@@ -139,6 +139,20 @@ fixed: the `search_path` rule could not see a function the repository never
 created, and the new local-rounding rule contained a literal backspace character
 where `\b` was intended, so it could never match.
 
+The whole suite was then run on a **fresh clone** rather than the working copy,
+which found two more:
+
+- The two calculation generators compared migrations byte-for-byte. With
+  `core.autocrlf`, a Windows checkout rewrites them to CRLF, so
+  `verify:calculations` failed for anyone who cloned the repository. They now
+  normalize line endings, as the Phase 1 and 2 generators already did.
+- The README linked `../Memoire/README.md`, outside the repository.
+  `verify:docs` passed only because Memoire sits beside HELM on the development
+  machine. The link is fixed, and `verify:docs` now fails any relative link that
+  leaves the repository, whether or not the target exists locally.
+
+`npm run check` exits 0 and the build succeeds on a fresh clone.
+
 ## 7. Remaining debt
 
 | Debt | Why | When |

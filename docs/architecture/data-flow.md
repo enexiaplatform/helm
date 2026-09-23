@@ -164,45 +164,69 @@ risk, cash, strategic alignment and confidence.
 This is why overrides live on relationships and observations rather than in a
 duplicated subgraph: adding an option is O(overrides), not O(graph).
 
-## 5. Decision and authority
+## 5. Decision — as implemented in Phase 5
 
 ```mermaid
 sequenceDiagram
     participant M as Manager
-    participant D as DecisionEngine
-    participant A as AuthorityEngine
+    participant D as DecisionRuntime
+    participant S as ScenarioRuntime
     participant E as Event log
-    participant MEM as Memoire
 
-    M->>D: transition(analyzing → pending_approval)
-    D->>A: evaluate({actionType, amount, orgUnit, country, actorRole})
-    alt actor is authorized
-        A-->>D: allowed
-        D->>E: append decision.approved (actor, payload)
-    else insufficient authority
-        A-->>D: requiredRoles + approvalChain + escalationPath
-        D->>E: append decision.escalated
-        Note over D: cannot reach approved<br/>without a qualified act
-    end
-    M->>D: transition(approved → executing)
-    D->>MEM: append commercial_events (helm://decision/<id>)
-    D->>E: append decision.executing
+    M->>D: createDecision(management question, trigger, owner, horizon)
+    M->>D: addAlternative(label) + bindScenario(scenario, revision, run)
+    D->>S: run completed? same revision? same org?
+    S-->>D: yes → MODELLED · no → refused
+    Note over D: an alternative with no model is<br/>UNMODELLED with a stated reason
+    M->>D: addCriterion / recordAssessment / addAssumption / challenge / addEvidence
+    M->>D: evaluateReadiness()
+    D-->>M: READY | READY_WITH_GAPS | NOT_READY + named gaps
+    M->>D: prepareCommitment(chosen) → the evidence manifest, previewed
+    M->>D: commit(rationale, accepted trade-offs, expected outcomes)
+    D->>D: freeze snapshot · seal revision · authorityStatus NOT_EVALUATED
+    D->>E: append REVISION_SEALED, COMMITTED, ACTION_INTENT_ADDED
 ```
 
-Every transition writes to `helm_decision_events`, which has INSERT and SELECT
+Every step writes to `helm_decision_events`, which has INSERT and SELECT
 policies and deliberately **no UPDATE or DELETE** — history cannot be rewritten
 from a client, by anyone, including an admin.
 
+HELM writes nothing into another system. A commitment produces **action
+intents** naming the system that should act; delivering them over an explicit
+contract is a later phase.
+
+### What is still Phase 6
+
+Authority is **not** in this flow. There is no `AuthorityEngine` call, no
+approval state and no escalation: every decision and commitment carries
+`authorityStatus: NOT_EVALUATED`, pinned by a database constraint. Whether the
+person who committed was permitted to is the question Phase 6 answers, and the
+field exists now so that answering it later does not require rewriting
+commitments made before it did.
+
 ## 6. Learning — the loop closes on the model
 
-At outcome review, expected is compared with actual and three writes follow:
+**Implemented in Phase 5.** At outcome review, each expected outcome is compared
+with the actual and the variance is stated, and each assumption is marked
+`CONFIRMED`, `PARTIALLY_CONFIRMED`, `DISPROVED` or `UNKNOWN`. Both are written
+against the sealed revision, which accepts these two things and nothing else.
+The review passes no judgement: [decision quality is not outcome
+quality](decision-quality-vs-outcome.md).
 
-1. **Outcome ledger** — expected, actual, score, lesson.
-2. **Assumption validation** — each assumption marked `held` or `failed`. A
-   failed assumption is evidence against any causal hypothesis it rested on, and
-   `reassess()` lowers that hypothesis's confidence.
-3. **Graph recalibration** — systematic error in a calculation's output adjusts
-   the confidence (and, with enough evidence, the weight) of the links involved.
+**Not implemented, and deliberately.** Everything below this line is design for
+later phases. Nothing in HELM today lowers a hypothesis's confidence, adjusts a
+link weight, or detects a pattern across decisions.
+
+1. **Assumption validation → causal evidence.** A disproved assumption is
+   evidence against any causal hypothesis it rested on. There are no causal
+   hypotheses yet (Phase 8).
+2. **Graph recalibration.** Systematic error in a calculation's output would
+   adjust the confidence, and with enough evidence the weight, of the links
+   involved (Phase 8+).
+3. **Pattern detection.** Phase 5 preserves the substrate a Management Genome
+   needs — the question, the alternatives, the criteria, the assumptions with
+   their outcomes, expected against actual — and learns nothing from it
+   (Phase 9).
 
 ```mermaid
 flowchart LR
@@ -217,10 +241,13 @@ flowchart LR
     LINK --> NEXT
 ```
 
-The threshold matters: `decisionMemory.ts` already requires **at least three
-closed decisions with two-thirds agreement** before asserting a pattern. Learning
-that fires on a single outcome is superstition, and the engine is built to refuse
-it.
+The threshold will matter. The pre-kernel `decisionMemory.ts` required at least
+three closed decisions with two-thirds agreement before asserting a pattern, on
+the principle that learning which fires on a single outcome is superstition.
+That engine was **retired in Phase 5**
+([assessment](decision-engine-assessment.md)) — not because the threshold was
+wrong, but because it learned from `outcomeScore`, a grade of the decision by
+its outcome, and that grade is the one thing HELM must not keep.
 
 ## 7. What the manager sees at the end of the chain
 

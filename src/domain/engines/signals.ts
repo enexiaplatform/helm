@@ -1,6 +1,5 @@
 import type {
   CostObject,
-  Decision,
   EconomicsRow,
   InventoryItem,
   Process,
@@ -19,21 +18,19 @@ import { formatMoney, formatNumber, formatPercent } from '../format.ts';
  * Contract (inherited from Memoire's policy engine): every signal carries the
  * rule that fired, the threshold it was judged against, what was measured,
  * plain-language reasoning, and evidence a manager can verify. Rules never
- * write; converting a signal into a decision is a human act.
+ * write; framing a signal as a management decision is a human act.
  */
 
 export type SignalThresholds = {
   capacityWarnUtilization: number; // e.g. 0.85
   budgetVarianceWarnPct: number; // e.g. 0.10 (absolute)
   expiryExposureWarnValue: number; // currency units
-  reviewOverdueGraceDays: number;
 };
 
 export const defaultThresholds: SignalThresholds = {
   capacityWarnUtilization: 0.85,
   budgetVarianceWarnPct: 0.1,
   expiryExposureWarnValue: 0,
-  reviewOverdueGraceDays: 0,
 };
 
 export type SignalCandidate = Omit<
@@ -55,7 +52,6 @@ export function detectSignals(input: {
   inventory: InventoryItem[];
   processes: Process[];
   processActivities: ProcessActivity[];
-  decisions: Decision[];
   defaultServiceLevel?: number;
   thresholds?: Partial<SignalThresholds>;
   today?: Date;
@@ -224,31 +220,6 @@ export function detectSignals(input: {
           suggestedDecisionType: 'hire_or_outsource',
         },
       ),
-    );
-  }
-
-  // ---- DEC-REVIEW: decisions past their review date ----
-  for (const d of input.decisions) {
-    if (d.status !== 'monitoring' && d.status !== 'executing') continue;
-    if (!d.reviewAfter) continue;
-    const reviewDate = new Date(d.reviewAfter);
-    const graceMs = t.reviewOverdueGraceDays * 24 * 3600 * 1000;
-    if (today.getTime() - reviewDate.getTime() <= graceMs) continue;
-    out.push(
-      candidate('DEC-REVIEW', `dec-review:${d.id}`, 'watch', {
-        title: `Decision "${d.title}" is due for outcome review`,
-        reason:
-          `The decision has been in ${d.status} since its review date (${d.reviewAfter}). ` +
-          `Compare expected vs actual and close it with a lesson.`,
-        thresholdLabel: `Review date passed`,
-        measuredLabel: d.reviewAfter,
-        evidence: [
-          { label: 'Status', value: d.status },
-          { label: 'Expected outcome', value: d.expectedOutcome || '—' },
-        ],
-        entityKind: 'decision',
-        entityId: d.id,
-      }),
     );
   }
 

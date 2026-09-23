@@ -1,7 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectSignals } from '../../src/domain/engines/signals.ts';
-import { detectPatterns } from '../../src/domain/engines/decisionMemory.ts';
 
 const co = (id, name, kind = 'product') => ({
   id,
@@ -34,7 +33,6 @@ const emptyInput = {
   inventory: [],
   processes: [],
   processActivities: [],
-  decisions: [],
 };
 
 describe('signal rule engine', () => {
@@ -131,40 +129,3 @@ describe('signal rule engine', () => {
   });
 });
 
-describe('decision memory patterns', () => {
-  const closedDecision = (id, decisionType, outcomeScore, lesson = '') => ({
-    id, orgId: 'o1', orgUnitId: null, decisionType, title: id, context: '', problem: '',
-    objective: '', status: 'closed', ownerId: null, dueDate: null, reviewAfter: null,
-    currency: null, amountAtStake: null, recommendation: '', decidedAlternativeId: null,
-    decisionRationale: '', expectedOutcome: '', expectedMetrics: [], actualOutcome: '',
-    outcomeScore, lesson, signalId: null, memoireAccountId: null, memoireOpportunityId: null,
-    contextSnapshot: null, approvedBy: null, approvedAt: null, rejectedReason: '',
-    closedAt: '2026-08-01T00:00:00Z', createdBy: 'u1', createdAt: '', updatedAt: '',
-  });
-
-  test('systematic under-delivery needs ≥3 closed decisions with ≥2/3 worse', () => {
-    const patterns = detectPatterns([
-      closedDecision('d1', 'inventory_commitment', 'worse'),
-      closedDecision('d2', 'inventory_commitment', 'worse'),
-      closedDecision('d3', 'inventory_commitment', 'as_expected'),
-    ]);
-    assert.ok(patterns.some((p) => p.code === 'MEM-OPTIMISM'));
-  });
-
-  test('small samples produce no pattern', () => {
-    const patterns = detectPatterns([
-      closedDecision('d1', 'pricing', 'worse'),
-      closedDecision('d2', 'pricing', 'worse'),
-    ]);
-    assert.equal(patterns.length, 0);
-  });
-
-  test('recurring forecast lessons are surfaced', () => {
-    const patterns = detectPatterns([
-      closedDecision('d1', 'pricing', 'worse', 'Demand forecast was optimistic'),
-      closedDecision('d2', 'investment', 'mixed', 'Forecast overshot again'),
-      closedDecision('d3', 'keep_or_drop', 'as_expected', 'forecast assumptions too rosy'),
-    ]);
-    assert.ok(patterns.some((p) => p.code === 'MEM-FORECAST'));
-  });
-});

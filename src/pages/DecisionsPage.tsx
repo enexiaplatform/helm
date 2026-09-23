@@ -1,214 +1,124 @@
-import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Plus } from 'lucide-react';
-import { useHelmStore } from '../services/helmStore.ts';
-import { PanelCard, StatusChip, EmptyState, Modal, Field } from '../components/ui.tsx';
-import { formatDate, formatMoney } from '../domain/format.ts';
-import {
-  decisionTypeLabels,
-  decisionTypes,
-  type DecisionType,
-} from '../domain/types.ts';
+/**
+ * Decisions — the list of management questions this organization is deciding
+ * or has decided.
+ *
+ * It shows the question, not a title; the state of the preparation, not an
+ * approval status; and whether a commitment exists, not whether HELM likes it.
+ * Opening one leads to the Decision Workspace.
+ *
+ * Replaces the pre-kernel decision list (retired in Phase 5 — see
+ * docs/architecture/decision-engine-assessment.md).
+ */
 
-const templateHints: Record<DecisionType, string> = {
-  pricing: 'Discounts, list changes, deal pricing. Watch the price ladder, not just this deal.',
-  special_order: 'Below-list one-off volume. Relevant when capacity is idle; opportunity cost when it is not.',
-  make_or_buy: 'Insource vs outsource a component or service. Avoided cost vs purchase cost plus freed capacity.',
-  keep_or_drop: 'Segment, product, or customer exit. Segment margin decides — never allocated overhead.',
-  hire_or_outsource: 'Permanent vs flexible capacity for a demand step.',
-  replace_or_retain: 'Equipment or supplier replacement. Old book value is sunk.',
-  investment: 'Capital commitment against a hurdle rate.',
-  inventory_commitment: 'Stock builds and service-level changes. Stock-out cost vs carrying and expiry cost.',
-  resource_allocation: 'People, budget, or capacity across competing uses.',
-  market_entry_exit: 'Entering or leaving a market or channel.',
-  custom: 'Any structured decision that deserves alternatives, assumptions, and a recorded outcome.',
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Scale } from 'lucide-react';
+import { useHelmStore } from '../services/helmStore.ts';
+import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
+import { PanelCard, EmptyState } from '../components/ui.tsx';
+import { displayDate, readable, resolveDecisionContext } from '../services/decisionRuntime.ts';
+import { loadDecisions, type DecisionListItem } from '../services/decisionWorkspace.ts';
+
+const stateTone: Record<string, string> = {
+  DRAFT: 'bg-ink-100 text-ink-600',
+  INVESTIGATING: 'bg-accent-100 text-accent-800',
+  MODELLING: 'bg-violet-100 text-violet-800',
+  READY_FOR_DECISION: 'bg-amber-100 text-amber-800',
+  COMMITTED: 'bg-emerald-100 text-emerald-800',
+  EXECUTING: 'bg-accent-100 text-accent-800',
+  COMPLETED: 'bg-ink-100 text-ink-600',
+  REVIEWED: 'bg-ink-100 text-ink-500',
+  CANCELLED: 'bg-ink-100 text-ink-400',
 };
 
 export function DecisionsPage() {
-  const navigate = useNavigate();
-  const decisions = useHelmStore((s) => s.decisions);
-  const memoireOpportunities = useHelmStore((s) => s.memoireOpportunities);
-  const createDecision = useHelmStore((s) => s.createDecision);
-  const [creating, setCreating] = useState(false);
-  const [filter, setFilter] = useState<'active' | 'all' | 'closed'>('active');
-  const [template, setTemplate] = useState<DecisionType>('pricing');
-  const [title, setTitle] = useState('');
-  const [fromOpportunity, setFromOpportunity] = useState<string>('');
+  const mode = useHelmStore((s) => s.mode);
+  const activeOrgId = useHelmStore((s) => s.activeOrgId);
+  const userId = useHelmStore((s) => s.userId);
+  const myRole = useHelmStore((s) => s.myRole);
+  const [items, setItems] = useState<DecisionListItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const visible = useMemo(() => {
-    const sorted = [...decisions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    if (filter === 'all') return sorted;
-    if (filter === 'closed') return sorted.filter((d) => d.status === 'closed' || d.status === 'rejected');
-    return sorted.filter((d) => d.status !== 'closed' && d.status !== 'rejected');
-  }, [decisions, filter]);
+  const scope = useMemo(
+    () => (mode === 'demo' ? demoScope() : activeOrgId ? cloudScope(activeOrgId, userId ?? '', myRole()) : null),
+    [mode, activeOrgId, userId, myRole],
+  );
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const opp = memoireOpportunities.find((o) => o.id === fromOpportunity);
-    const id = await createDecision({
-      decisionType: template,
-      title: title || (opp ? `${opp.accountName}: ${opp.title}` : decisionTypeLabels[template]),
-      amountAtStake: opp?.value ?? null,
-      memoireOpportunityId: opp?.id ?? null,
-      memoireAccountId: opp?.accountId ?? null,
-      contextSnapshot: opp
-        ? {
-            source: 'memoire',
-            account: opp.accountName,
-            opportunity: opp.title,
-            value: opp.value,
-            currency: opp.currency,
-            stage: opp.stage,
-            capturedAt: new Date().toISOString(),
-          }
-        : null,
-      context: opp
-        ? `From Memoire: ${opp.accountName} — ${opp.title} (${opp.stage}), value ${
-            opp.value !== null ? formatMoney(opp.value, opp.currency) : 'unknown'
-          }. Snapshot captured at analysis time; the live record stays in Memoire.`
-        : undefined,
-    });
-    setCreating(false);
-    if (id) navigate(`/decisions/${id}`);
-  };
+  useEffect(() => {
+    let live = true;
+    if (!scope) return;
+    void (async () => {
+      try {
+        const ctx = await resolveDecisionContext(mode ?? 'demo', scope);
+        if (!live) return;
+        if (!ctx) {
+          setError('The decision runtime is unavailable in this mode.');
+          return;
+        }
+        setItems(await loadDecisions(ctx));
+      } catch (e) {
+        if (live) setError(e instanceof Error ? e.message : String(e));
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [mode, scope]);
+
+  if (error) return <EmptyState title="Decisions could not be opened" detail={error} />;
+  if (!items) return <p className="p-6 text-sm text-ink-500">Opening decisions…</p>;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5">
-      <header className="flex items-end justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Decisions</h1>
-          <p className="text-sm text-ink-500">Durable decision records — context, alternatives, assumptions, outcome.</p>
-        </div>
-        <button className="btn-primary" onClick={() => setCreating(true)}>
-          <Plus size={15} />
-          New decision
-        </button>
+    <div className="mx-auto max-w-5xl space-y-4">
+      <header>
+        <h1 className="flex items-center gap-2 text-xl font-semibold">
+          <Scale className="h-5 w-5" /> Decisions
+        </h1>
+        <p className="mt-1 max-w-3xl text-sm text-ink-600">
+          One management question each, with the alternatives that were considered, the futures the model computed for
+          them, what mattered, who disagreed, and what was committed. HELM preserves the reasoning; it does not do the
+          deciding.
+        </p>
       </header>
 
-      <div className="flex gap-1">
-        {(['active', 'closed', 'all'] as const).map((f) => (
-          <button
-            key={f}
-            className={`rounded-md px-3 py-1 text-xs font-medium ${
-              filter === f ? 'bg-ink-950 text-white' : 'text-ink-500 hover:bg-ink-100'
-            }`}
-            onClick={() => setFilter(f)}
-          >
-            {f === 'active' ? 'Active' : f === 'closed' ? 'Closed & rejected' : 'All'}
-          </button>
-        ))}
-      </div>
-
-      <PanelCard>
-        {visible.length === 0 ? (
-          <EmptyState
-            title="No decisions here yet"
-            detail="Open one from a signal on the Attention page, or start from a template."
-            action={
-              <button className="btn-primary" onClick={() => setCreating(true)}>
-                <Plus size={15} /> New decision
-              </button>
-            }
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-ink-100">
-                  <th className="table-th">Decision</th>
-                  <th className="table-th">Type</th>
-                  <th className="table-th">At stake</th>
-                  <th className="table-th">Owner</th>
-                  <th className="table-th">Due</th>
-                  <th className="table-th">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((d) => (
-                  <tr key={d.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/60">
-                    <td className="table-td">
-                      <Link to={`/decisions/${d.id}`} className="font-medium text-ink-950 hover:text-accent-700">
-                        {d.title}
-                      </Link>
-                      {d.memoireOpportunityId !== null || d.contextSnapshot?.source === 'memoire-demo' ? (
-                        <span className="ml-2 rounded bg-ink-100 px-1.5 py-0.5 text-2xs font-medium text-ink-500">
-                          Memoire
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="table-td text-ink-600">{decisionTypeLabels[d.decisionType]}</td>
-                    <td className="table-td tabular-nums">
-                      {d.amountAtStake !== null ? formatMoney(d.amountAtStake, d.currency ?? '') : '—'}
-                    </td>
-                    <td className="table-td text-ink-600">{d.ownerLabel ?? '—'}</td>
-                    <td className="table-td text-ink-600">{formatDate(d.dueDate)}</td>
-                    <td className="table-td">
-                      <StatusChip status={d.status} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </PanelCard>
-
-      {creating && (
-        <Modal title="New decision" onClose={() => setCreating(false)} wide>
-          <form onSubmit={submit} className="space-y-4">
-            <div>
-              <span className="field-label">Template</span>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {decisionTypes.map((t) => (
-                  <button
-                    type="button"
-                    key={t}
-                    onClick={() => setTemplate(t)}
-                    className={`rounded-md border px-3 py-2 text-left text-xs transition-colors ${
-                      template === t
-                        ? 'border-accent-500 bg-accent-50 text-ink-950'
-                        : 'border-ink-200 text-ink-600 hover:border-ink-300'
-                    }`}
-                  >
-                    <span className="block font-semibold">{decisionTypeLabels[t]}</span>
-                  </button>
-                ))}
-              </div>
-              <p className="mt-2 text-xs text-ink-500">{templateHints[template]}</p>
-            </div>
-            <Field label="Title">
-              <input
-                className="field-input"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder={decisionTypeLabels[template]}
-                maxLength={300}
-              />
-            </Field>
-            {memoireOpportunities.length > 0 && (
-              <Field
-                label="Pull context from Memoire (optional)"
-                hint="Stores a reference plus an immutable snapshot of what you saw — the live record stays in Memoire."
-              >
-                <select className="field-input" value={fromOpportunity} onChange={(e) => setFromOpportunity(e.target.value)}>
-                  <option value="">No linked opportunity</option>
-                  {memoireOpportunities.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.accountName} — {o.title}
-                      {o.value !== null ? ` (${formatMoney(o.value, o.currency)})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
-            <div className="flex justify-end gap-2">
-              <button type="button" className="btn-secondary" onClick={() => setCreating(false)}>
-                Cancel
-              </button>
-              <button className="btn-primary">Create draft</button>
-            </div>
-          </form>
-        </Modal>
+      {items.length === 0 ? (
+        <EmptyState
+          title="No decisions yet"
+          detail="A decision starts with a question — not a topic. Open a scenario branch first, then frame what is being decided between those futures."
+          action={
+            <Link to="/scenarios" className="btn-secondary">
+              Go to scenarios
+            </Link>
+          }
+        />
+      ) : (
+        <PanelCard title={`${items.length} decision${items.length === 1 ? '' : 's'}`}>
+          <ul className="divide-y divide-ink-100">
+            {items.map(({ decision, latestRevision, committed }) => (
+              <li key={decision.id} className="py-3 first:pt-0 last:pb-0">
+                <Link to={`/decisions/${decision.id}`} className="group block">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="min-w-0 text-sm font-medium text-ink-900 group-hover:underline">
+                      {decision.managementQuestion}
+                    </p>
+                    <span
+                      className={`shrink-0 rounded px-1.5 py-0.5 text-2xs font-medium ${
+                        stateTone[decision.state] ?? 'bg-ink-100 text-ink-600'
+                      }`}>
+                      {readable(decision.state)}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-2xs text-ink-500">
+                    {decision.scope || decision.title} · {readable(decision.triggerType)} ·{' '}
+                    {decision.owner?.label ?? 'no owner'} · decide by {displayDate(decision.horizon.decisionDeadline)}
+                    {latestRevision && ` · r${latestRevision.revisionNumber}`}
+                    {committed && ' · committed'}
+                  </p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </PanelCard>
       )}
     </div>
   );

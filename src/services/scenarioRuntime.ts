@@ -49,6 +49,8 @@ export type ScenarioWorkspace = {
   periodChoices: readonly Period[];
   /** The baseline simulation opened with the explorer, if one exists. */
   baselineRunId: string | null;
+  /** Canonical scenario ids by key, so a decision can bind its alternatives. */
+  scenarioIdsByKey: Readonly<Record<string, string>>;
 };
 
 /**
@@ -87,9 +89,11 @@ function getDemoWorkspace(scope: Scope): Promise<ScenarioWorkspace> {
     if (!built.ok) throw new Error(`canonical scenarios failed: ${built.error.message}`);
     const baseline = await runtime.executeBaseline(scope, { fork, periods: [Q4_2026], notes: 'demo baseline' });
     if (!baseline.ok) throw new Error(`baseline failed: ${baseline.error.message}`);
-    for (const { scenario } of Object.values(built.value)) {
+    const scenarioIdsByKey: Record<string, string> = {};
+    for (const [key, { scenario }] of Object.entries(built.value)) {
       const run = await runtime.execute(scope, scenario.id);
       if (!run.ok) throw new Error(`scenario ${scenario.key} failed: ${run.error.message}`);
+      scenarioIdsByKey[key] = scenario.id;
     }
     return {
       runtime,
@@ -99,6 +103,7 @@ function getDemoWorkspace(scope: Scope): Promise<ScenarioWorkspace> {
       defaultFork: fork,
       periodChoices: [Q4_2026, Q1_2027],
       baselineRunId: baseline.value.run.id,
+      scenarioIdsByKey,
     };
   })();
   return demoWorkspace;
@@ -120,6 +125,7 @@ function getCloudWorkspace(scope: Scope): ScenarioWorkspace | null {
     defaultFork: { effectiveAsOf: now.toISOString(), recordedThrough: now.toISOString(), policy: 'SOURCE_TRUTH' },
     periodChoices: [current, next],
     baselineRunId: null,
+    scenarioIdsByKey: {},
   };
 }
 

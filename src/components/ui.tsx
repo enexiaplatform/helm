@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
-import type { DecisionStatus, SignalSeverity } from '../domain/types.ts';
-import { decisionStatusLabels } from '../domain/types.ts';
+import type { SignalSeverity } from '../domain/types.ts';
 
 export function PanelCard({
   title,
@@ -23,25 +22,6 @@ export function PanelCard({
       )}
       <div className="p-4">{children}</div>
     </section>
-  );
-}
-
-const statusStyles: Record<DecisionStatus, string> = {
-  draft: 'bg-ink-100 text-ink-600',
-  analyzing: 'bg-accent-100 text-accent-800',
-  pending_approval: 'bg-amber-100 text-amber-800',
-  approved: 'bg-emerald-100 text-emerald-800',
-  rejected: 'bg-red-100 text-red-700',
-  executing: 'bg-accent-100 text-accent-800',
-  monitoring: 'bg-violet-100 text-violet-800',
-  closed: 'bg-ink-100 text-ink-500',
-};
-
-export function StatusChip({ status }: { status: DecisionStatus }) {
-  return (
-    <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-2xs font-semibold ${statusStyles[status]}`}>
-      {decisionStatusLabels[status]}
-    </span>
   );
 }
 

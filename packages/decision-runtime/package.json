@@ -1,0 +1,25 @@
+{
+  "name": "@helm/decision-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "HELM Decision Runtime: decision context, alternatives bound to scenario futures, criteria, evidence, assumptions, challenges, readiness, commitment and its frozen evidence snapshot.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./postgres": "./src/postgres.ts",
+    "./conformance": "./src/conformance.ts"
+  },
+  "helm": {
+    "layer": "kernel",
+    "pure": false,
+    "ioBoundary": "src/postgres.ts"
+  },
+  "dependencies": {
+    "@helm/shared": "0.1.0",
+    "@helm/ontology": "0.1.0",
+    "@helm/graph-store": "0.1.0",
+    "@helm/value-graph": "0.1.0",
+    "@helm/propagation-engine": "0.1.0",
+    "@helm/scenario-runtime": "0.1.0"
+  }
+}

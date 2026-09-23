@@ -38,13 +38,13 @@ flowchart LR
 | 0 | Architecture Foundation | **✅ done** | — | docs + 11 ADRs + backlog |
 | 1 | Enterprise Ontology | **✅ done** | 3 packages, 8 tables, 43+34 seeded types | [phase-1-implemented.md](phase-1-implemented.md) |
 | 2 | Value Graph | **✅ done** | metrics, nodes, links, typed observations | [phase-2-implemented.md](phase-2-implemented.md) |
-| 3 | Propagation Engine | **▶ next** | value graph + 8 pure engines to wrap | `explain()` reaches source facts for every number |
-| 4 | Scenario Engine | ♻ reconnect | `engines/scenario.ts`, `helm_scenarios`, tornado | scenarios become graph overrides |
-| 5 | Decision Engine | ♻ reconnect | full lifecycle, alternatives, assumptions, audit | options carry scenario ids; lines become overrides |
-| 6 | Authority Graph | 🔒 redesign | amount-threshold rules only | multi-dimensional rules + chain + escalation + unit RLS |
+| 3 | Propagation Engine | **✅ done** | 13 governed calculations, exact decimals, lineage | [phase-3-implemented.md](phase-3-implemented.md) |
+| 4 | Scenario Runtime | **✅ done** | 7 canonical futures over one pinned baseline | [phase-4-implemented.md](phase-4-implemented.md) |
+| 5 | Decision Intelligence | **✅ done** | question, alternatives bound to runs, criteria, commitment | [phase-5-implemented.md](phase-5-implemented.md) |
+| 6 | Authority Graph | **▶ next** | `helm_approval_rules` (unused), `authorityStatus: NOT_EVALUATED` | multi-dimensional rules + chain + escalation + unit RLS |
 | 7 | Digital Twin | planned | nothing | versioned snapshots; current / scenario / expected-future |
 | 8 | Causal Graph | planned | nothing | hypotheses with evidence both ways; correlation kept distinct |
-| 9 | Management Genome | ♻ extend | `engines/decisionMemory.ts` patterns | structured `find_similar_*`, not embeddings-only |
+| 9 | Management Genome | planned | commitments + outcome reviews as substrate; no learner | structured `find_similar_*`, not embeddings-only |
 | 10 | Counterfactual | planned | nothing | actual vs expected vs alternative with confidence |
 | 11 | AI Intelligence Runtime | planned | none by design | provider port; citation validation rejects ungrounded ids |
 | 12 | Multi-Agent | planned | nothing | 6 function agents + debate → synthesis |
@@ -125,11 +125,33 @@ Record: [phase-4-implemented.md](phase-4-implemented.md) ·
 [terminology](scenario-terminology.md) ·
 [legacy engine assessment](scenario-engine-assessment.md).
 
-## 5. Phases 5–6 — reconnect governance
+**Phase 5** made the reasoning durable. A decision stopped being a status on a
+row and became a management *question* with the alternatives considered, the
+criteria management stated, the assumptions somebody owns, the disagreement
+somebody voiced, the evidence it rested on, and a commitment that freezes all of
+it. An alternative carries no economics of its own: it references the scenario
+revision and the run that computed its future, so a decision can never disagree
+with the model.
 
-Phase 5 is decision intelligence: decision alternatives stop being free-typed
-financial lines and become scenario revisions whose consequences are computed,
-so an approval records which future it approved and at what boundary.
+One expectation stated here did not survive the work, and is worth naming: this
+roadmap said an *approval* would record which future it approved. It does not.
+Phase 5 records a **commitment**, and commitment is not approval — a person
+decided, on stated grounds; whether they were permitted to is a different
+question. Every commitment carries `authorityStatus: NOT_EVALUATED`, pinned in
+the type and by a database constraint, so Phase 6 can answer it without
+rewriting anything decided before it existed.
+
+The gate was decision lineage: **why did management choose this?** resolves
+through the rationale, the criteria, the chosen future state, the scenario
+assumptions and the calculation traces to a source fact — with the rejected
+futures, the open challenge and the accepted trade-offs still attached.
+Record: [phase-5-implemented.md](phase-5-implemented.md) ·
+[ADR-0021](../adr/0021-decision-runtime.md) ·
+[terminology](decision-terminology.md) ·
+[legacy engine assessment](decision-engine-assessment.md) ·
+[decision quality ≠ outcome quality](decision-quality-vs-outcome.md).
+
+## 5. Phase 6 — reconnect governance
 
 **Phase 6 is a security phase.** Authority gains scope, geography, BU, risk,
 action type, approval chain and escalation; unit-level and functional RLS land

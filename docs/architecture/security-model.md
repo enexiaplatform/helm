@@ -62,7 +62,7 @@ Stated plainly, because an undocumented gap is the dangerous kind.
 | **No unit-level RLS.** `org_unit_memberships` exists but no policy consults it. Any org member can read all org data. | A country manager can read another country's margins | Phase 6 |
 | **No functional visibility.** No concept of "Supply Chain may not see customer-level margin". | Over-broad access inside an org | Phase 6 |
 | **No sensitivity classes.** Compensation-grade and margin-grade data would sit in one tier. | Blocks HR data entirely | Phase 7 |
-| **Authority is amount-only.** `helm_approval_rules` has no scope, geography, BU, risk, action type, chain or escalation. | Approval routing is coarse | Phase 6 |
+| **There is no authority model.** Phase 5 retired the amount-threshold rules rather than carrying them forward; `helm_approval_rules` still exists, holds no kernel rows and is read by nothing. Every decision and commitment carries `authorityStatus: NOT_EVALUATED`, pinned by a database constraint. | HELM records *that* a named person committed and on what grounds. It asserts nothing about whether they were permitted to, and cannot be mistaken for doing so. | Phase 6 |
 | **No field-level redaction.** Access is row-shaped. | Cannot share a decision while hiding its amount | Phase 6 |
 | **No AI access controls.** Nothing to control — there is no AI. Must exist before Phase 11. | none yet | Phase 11 |
 
@@ -130,15 +130,19 @@ against the authority that existed then.
 
 ### 4.4 Defence in depth for approvals
 
-The authority check runs in **two independent layers**:
+The authority check will run in **two independent layers**:
 
-1. `AuthorityEngine` in the decision-engine state machine (rich rationale,
-   chain, escalation).
-2. An RLS policy on `helm_decisions` UPDATE restricting transitions to `approved`
-   to actors satisfying the matched rule.
+1. An `AuthorityEngine` consulted by the Decision Runtime before a commitment is
+   recorded, producing a rationale, a chain and an escalation path.
+2. An RLS policy on `helm_decision_commitments` restricting the INSERT to actors
+   satisfying the matched rule.
 
 Duplication is deliberate. Layer 1 can be bypassed by a direct API call; layer 2
 cannot be bypassed at all.
+
+Neither exists today. Phase 5 deliberately left `authorityStatus` pinned to
+`NOT_EVALUATED` in the type *and* in the schema so that this can be added
+without rewriting a single commitment made before it.
 
 ## 5. AI access controls (must precede Phase 11)
 

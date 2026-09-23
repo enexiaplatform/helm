@@ -57,3 +57,4 @@ a new one, so the reasoning history stays readable.
 | [0018](0018-numerical-normalization.md) | Numerical normalization — internal, storage and display precision | accepted | 3 |
 | [0019](0019-scenario-runtime.md) | The Scenario Runtime — branches of the model, not copies of the data | accepted | 4 |
 | [0020](0020-period-identity.md) | Period identity — a period is a value, not "the furthest-out forecast" | accepted | 4 |
+| [0021](0021-decision-runtime.md) | The Decision Runtime — what management decided, and what it decided against | accepted | 5 |

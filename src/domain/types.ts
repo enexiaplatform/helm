@@ -5,10 +5,11 @@
  *
  *   Organization / OrgUnit / Membership — who the tenant is and who may see what.
  *   Signal        — an explainable attention item produced by a deterministic rule.
- *   Decision      — the durable management object: context, alternatives,
- *                   assumptions, governance, expected vs actual outcome, lesson.
- *   Alternative   — an option under a decision, with structured financial lines.
- *   Assumption    — an explicit, reviewable belief the analysis depends on.
+ *   Decision      — now a kernel object (@helm/decision-runtime): one management
+ *                   question, its alternatives bound to scenario futures, the
+ *                   criteria, evidence and assumptions behind them, and the
+ *                   commitment management made. The pre-kernel Decision record
+ *                   was retired in Phase 5.
  *   CostObject    — a profitability lens (company, unit, brand, product, customer…).
  *   EconomicsRow  — one period of economics for a cost object.
  *   InventoryItem — inventory viewed as capital, risk, and service level.
@@ -122,152 +123,6 @@ export const decisionTypes = [
 ] as const;
 export type DecisionType = (typeof decisionTypes)[number];
 
-export const decisionStatuses = [
-  'draft',
-  'analyzing',
-  'pending_approval',
-  'approved',
-  'rejected',
-  'executing',
-  'monitoring',
-  'closed',
-] as const;
-export type DecisionStatus = (typeof decisionStatuses)[number];
-
-export const outcomeScores = ['better', 'as_expected', 'worse', 'mixed'] as const;
-export type OutcomeScore = (typeof outcomeScores)[number];
-
-export type ExpectedMetric = {
-  metric: string;
-  expected: string;
-  actual?: string;
-};
-
-export type Decision = {
-  id: string;
-  orgId: string;
-  orgUnitId: string | null;
-  decisionType: DecisionType;
-  title: string;
-  context: string;
-  problem: string;
-  objective: string;
-  status: DecisionStatus;
-  ownerId: string | null;
-  ownerLabel?: string;
-  dueDate: string | null;
-  reviewAfter: string | null;
-  currency: string | null;
-  amountAtStake: number | null;
-  recommendation: string;
-  decidedAlternativeId: string | null;
-  decisionRationale: string;
-  expectedOutcome: string;
-  expectedMetrics: ExpectedMetric[];
-  actualOutcome: string;
-  outcomeScore: OutcomeScore | null;
-  lesson: string;
-  signalId: string | null;
-  memoireAccountId: string | null;
-  memoireOpportunityId: string | null;
-  /** What the manager saw when deciding — immutable once captured. */
-  contextSnapshot: Record<string, unknown> | null;
-  approvedBy: string | null;
-  approvedAt: string | null;
-  rejectedReason: string;
-  closedAt: string | null;
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-/**
- * A structured financial line under an alternative. `kind` is what makes the
- * relevant-cost engine explainable: sunk and allocated lines are *shown* but
- * excluded from the incremental result, so the manager sees exactly which
- * numbers were ignored and why.
- */
-export const financialLineKinds = [
-  'incremental_revenue',
-  'relevant_cost',
-  'opportunity_cost',
-  'sunk_ignored',
-  'allocated_ignored',
-] as const;
-export type FinancialLineKind = (typeof financialLineKinds)[number];
-
-export type FinancialLine = {
-  label: string;
-  kind: FinancialLineKind;
-  amount: number;
-  note?: string;
-};
-
-export type DecisionAlternative = {
-  id: string;
-  orgId: string;
-  decisionId: string;
-  name: string;
-  description: string;
-  financialLines: FinancialLine[];
-  qualitative: string;
-  strategic: string;
-  risks: string;
-  isRecommended: boolean;
-  sort: number;
-};
-
-export const assumptionSensitivities = ['low', 'medium', 'high'] as const;
-export type AssumptionSensitivity = (typeof assumptionSensitivities)[number];
-
-export const assumptionValidations = ['pending', 'held', 'failed'] as const;
-export type AssumptionValidation = (typeof assumptionValidations)[number];
-
-export type DecisionAssumption = {
-  id: string;
-  orgId: string;
-  decisionId: string;
-  statement: string;
-  basis: string;
-  sensitivity: AssumptionSensitivity;
-  validated: AssumptionValidation;
-};
-
-export type DecisionEvent = {
-  id: string;
-  orgId: string;
-  decisionId: string;
-  eventType: string;
-  actorId: string;
-  actorLabel?: string;
-  payload: Record<string, unknown>;
-  createdAt: string;
-};
-
-export const actionStatuses = ['open', 'done', 'cancelled'] as const;
-export type ActionStatus = (typeof actionStatuses)[number];
-
-export type DecisionAction = {
-  id: string;
-  orgId: string;
-  decisionId: string;
-  title: string;
-  ownerLabel: string;
-  ownerId: string | null;
-  dueDate: string | null;
-  status: ActionStatus;
-  writeback: Record<string, unknown> | null;
-};
-
-export type ApprovalRule = {
-  id: string;
-  orgId: string;
-  decisionType: DecisionType | null;
-  thresholdAmount: number;
-  requiredRole: 'manager' | 'admin';
-  active: boolean;
-};
-
 // ---------------------------------------------------------------- economics
 
 export const costObjectKinds = [
@@ -368,17 +223,6 @@ export const decisionTypeLabels: Record<DecisionType, string> = {
   resource_allocation: 'Resource allocation',
   market_entry_exit: 'Market entry / exit',
   custom: 'Custom decision',
-};
-
-export const decisionStatusLabels: Record<DecisionStatus, string> = {
-  draft: 'Draft',
-  analyzing: 'Analyzing',
-  pending_approval: 'Pending approval',
-  approved: 'Approved',
-  rejected: 'Rejected',
-  executing: 'Executing',
-  monitoring: 'Monitoring',
-  closed: 'Closed',
 };
 
 export const costObjectKindLabels: Record<CostObjectKind, string> = {

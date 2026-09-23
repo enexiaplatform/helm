@@ -1,98 +1,18 @@
-import type { DecisionAlternative, FinancialLine } from '../types.ts';
-
 /**
- * Relevant-cost engine: the incremental analysis behind every decision
- * template (special order, make-vs-buy, keep-vs-drop, …).
+ * The allocation trap — the one piece of the pre-kernel relevant-cost engine
+ * that survives Phase 5.
  *
- * The managerial-accounting rules enforced here:
- *   - Only future amounts that differ between alternatives are relevant.
- *   - Sunk costs are never relevant. They are shown, labelled, and excluded.
- *   - Allocated fixed costs that do not change with the choice are excluded.
- *   - Opportunity cost of the displaced alternative is included.
+ * Its incremental-analysis half (evaluateAlternative / compareAlternatives)
+ * was the pre-kernel decision model: hand-typed financial lines compared to
+ * pick a "best" alternative. A kernel decision alternative carries no
+ * economics of its own — it references the scenario future state that computed
+ * them — and HELM does not pick. Both were retired
+ * (docs/architecture/decision-engine-assessment.md).
  *
- * The engine never hides an exclusion: `excludedLines` is part of the result
- * so the UI can show the manager exactly which numbers were ignored and why.
+ * What remains is a genuine managerial-accounting check the Economics surface
+ * uses, and it decides nothing: it states when a reported net loss hides a
+ * positive segment margin.
  */
-
-export type AlternativeEvaluation = {
-  alternativeId: string;
-  name: string;
-  incrementalRevenue: number;
-  relevantCosts: number;
-  opportunityCost: number;
-  /** incrementalRevenue − relevantCosts − opportunityCost */
-  netRelevantBenefit: number;
-  excludedLines: FinancialLine[];
-  includedLines: FinancialLine[];
-};
-
-export type RelevantCostComparison = {
-  evaluations: AlternativeEvaluation[];
-  /** Alternative with the highest net relevant benefit, null on a tie. */
-  bestAlternativeId: string | null;
-  /** Benefit gap between best and runner-up — the cost of choosing wrong. */
-  advantageOverNext: number | null;
-};
-
-export function evaluateAlternative(
-  alt: Pick<DecisionAlternative, 'id' | 'name' | 'financialLines'>,
-): AlternativeEvaluation {
-  let incrementalRevenue = 0;
-  let relevantCosts = 0;
-  let opportunityCost = 0;
-  const excludedLines: FinancialLine[] = [];
-  const includedLines: FinancialLine[] = [];
-
-  for (const line of alt.financialLines) {
-    switch (line.kind) {
-      case 'incremental_revenue':
-        incrementalRevenue += line.amount;
-        includedLines.push(line);
-        break;
-      case 'relevant_cost':
-        relevantCosts += line.amount;
-        includedLines.push(line);
-        break;
-      case 'opportunity_cost':
-        opportunityCost += line.amount;
-        includedLines.push(line);
-        break;
-      case 'sunk_ignored':
-      case 'allocated_ignored':
-        excludedLines.push(line);
-        break;
-    }
-  }
-
-  return {
-    alternativeId: alt.id,
-    name: alt.name,
-    incrementalRevenue,
-    relevantCosts,
-    opportunityCost,
-    netRelevantBenefit: incrementalRevenue - relevantCosts - opportunityCost,
-    excludedLines,
-    includedLines,
-  };
-}
-
-export function compareAlternatives(
-  alternatives: Pick<DecisionAlternative, 'id' | 'name' | 'financialLines'>[],
-): RelevantCostComparison {
-  const evaluations = alternatives.map(evaluateAlternative);
-  if (evaluations.length === 0) {
-    return { evaluations, bestAlternativeId: null, advantageOverNext: null };
-  }
-  const sorted = [...evaluations].sort((a, b) => b.netRelevantBenefit - a.netRelevantBenefit);
-  const best = sorted[0];
-  const next = sorted[1];
-  const tie = next !== undefined && next.netRelevantBenefit === best.netRelevantBenefit;
-  return {
-    evaluations,
-    bestAlternativeId: tie ? null : best.alternativeId,
-    advantageOverNext: next === undefined ? null : best.netRelevantBenefit - next.netRelevantBenefit,
-  };
-}
 
 /**
  * The classic allocation trap check for keep-vs-drop framing: a segment with

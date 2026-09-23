@@ -39,8 +39,12 @@ managerial attention, analysis, decisions, and learning.
 | [Phase 3 implemented](docs/architecture/phase-3-implemented.md) | the propagation engine as built, with its debt |
 | [Phase 3 hardening](docs/architecture/phase-3-hardening.md) | truth layers, run-bound lineage, the knowledge boundary, precision |
 | [Phase 4 implemented](docs/architecture/phase-4-implemented.md) | the scenario runtime as built, with its debt |
+| [Phase 5 implemented](docs/architecture/phase-5-implemented.md) | the decision runtime as built, with its debt |
 | [Scenario terminology](docs/architecture/scenario-terminology.md) | what scenario, revision, override, simulation, future state and comparison mean here |
 | [Scenario engine assessment](docs/architecture/scenario-engine-assessment.md) | KEEP / ADAPT / MIGRATE / RETIRE for the pre-kernel CVP what-if |
+| [Decision terminology](docs/architecture/decision-terminology.md) | what decision, revision, alternative, criterion, assumption, challenge, evidence, readiness and commitment mean here |
+| [Decision engine assessment](docs/architecture/decision-engine-assessment.md) | KEEP / ADAPT / MIGRATE / RETIRE for the pre-kernel approval workflow |
+| [Decision quality ≠ outcome quality](docs/architecture/decision-quality-vs-outcome.md) | why HELM records both and grades neither |
 | [Meridian Value Model v1](docs/domain/meridian-value-model-v1.md) | the nine calculations, worked, with what each assumes |
 | [Meridian Value Model v1.1](docs/domain/meridian-value-model-v1-1.md) | the four scenario calculations: order quantity, coverage, unserved demand, revenue at risk |
 | [Value links vs calculation dependencies](docs/architecture/value-links-vs-calculation-dependencies.md) | why HELM keeps two graphs |
@@ -53,7 +57,8 @@ managerial attention, analysis, decisions, and learning.
 ## Current state
 
 Phases 0 (architecture foundation), 1 (enterprise ontology), 2 (enterprise
-value graph) and 3 (value propagation) are complete.
+value graph), 3 (value propagation), 4 (scenario runtime) and 5 (decision
+intelligence) are complete.
 
 HELM has a semantic kernel — entities and relationships that are org-scoped,
 bitemporal, provenance-bearing and extensible without a migration — and a value
@@ -74,8 +79,8 @@ variance between them, and neither silently becomes "the" number. Each run reads
 one reproducible information boundary — nothing recorded after it began can
 enter it — and replay reconstructs that boundary exactly.
 
-Three engineering surfaces expose the kernel: `/ontology`, `/value-graph` and
-`/calculations`.
+Four engineering surfaces expose the kernel: `/ontology`, `/value-graph`,
+`/calculations` and `/scenarios`.
 
 HELM now *branches*. A scenario is a branch of the model — a pinned fork point
 plus a sealed set of explicit overrides — and simulating it re-runs the same
@@ -84,16 +89,27 @@ consistent futures exist side by side without touching the baseline. The
 `/scenarios` explorer shows the assumptions, the outcomes they produce, the
 feasibility of each, and the lineage of every number.
 
-What HELM still cannot do is *choose*. It compares futures; ranking them,
-recommending between them and governing the decision that follows are Phase 5.
+HELM now also *remembers deciding*. A decision is a management question with
+the alternatives that were considered, the criteria management stated, the
+assumptions somebody owns, the disagreement somebody voiced, and a commitment
+that freezes all of it and fingerprints it. An alternative holds no numbers of
+its own — it references the scenario run that computed its future — so "why did
+we choose this?" resolves through the rationale and the criteria and the chosen
+future state all the way to a source fact.
+
+What HELM still does not do is *choose*, *rank* or *permit*. It states how each
+alternative stands against management's own criteria, names what each one gives
+up, and records the choice a person made. Nothing is scored, nothing is
+recommended, and every commitment carries `authorityStatus: NOT_EVALUATED` —
+whether the decider was authorized is Phase 6's question.
 `verify:phase-boundary` fails the build if any of that appears early. See
-[phase-4-implemented.md](docs/architecture/phase-4-implemented.md) and the
+[phase-5-implemented.md](docs/architecture/phase-5-implemented.md) and the
 [roadmap](docs/architecture/roadmap.md).
 
 ```bash
 npm install
 npm run dev      # app + Ontology, Value Graph, Calculation and Scenario explorers
-npm run check    # typecheck, lint, tests, and the 20 architecture contracts
+npm run check    # typecheck, lint, tests, and the 25 architecture contracts
 ```
 
 ## The operating loop (as implemented today)
@@ -102,30 +118,31 @@ npm run check    # typecheck, lint, tests, and the 20 architecture contracts
 SENSE → DIAGNOSE → SIMULATE → DECIDE → EXECUTE → CONTROL → LEARN
 ```
 
-- **Attention** — the decision inbox. Deterministic signal rules (allocation
-  traps, negative segment margins, budget variances, stock-out and expiry
-  risk, capacity bottlenecks, overdue outcome reviews) ranked by severity.
-  Every signal carries its rule code, threshold, measured value, and evidence.
-- **Decisions** — durable decision records built from templates (pricing,
-  special order, make-vs-buy, keep-vs-drop, inventory commitment, …).
-  Alternatives carry structured financial lines; the relevant-cost engine
-  computes the incremental comparison and shows exactly which sunk and
-  allocated numbers were excluded and why. Explicit assumptions, a state
-  machine with configurable approval thresholds, and an append-only audit
-  trail.
-- **Scenarios** — a what-if lab over a P&L baseline: variants, break-even,
-  profit deltas, and a ±10% tornado showing which assumption deserves the
-  argument.
+- **Attention** — the signal inbox. Deterministic rules (allocation traps,
+  negative segment margins, budget variances, stock-out and expiry risk,
+  capacity bottlenecks) ranked by severity. Every signal carries its rule code,
+  threshold, measured value and evidence. "Frame a decision" carries a signal
+  across as a decision *trigger* and asks a person for the management question;
+  HELM does not write it.
+- **Decisions** — one management question each, with the alternatives
+  considered, the futures the model computed for them, the criteria management
+  stated and how each alternative stands against each one, the trade-offs, the
+  assumptions and their owners, the recorded disagreement, and the commitment
+  with its frozen evidence manifest. Nothing is ranked or recommended.
+- **Scenarios** — the scenario explorer: fork point, sealed overrides with their
+  authors and rationales, simulated future states, feasibility, comparison and
+  the lineage of every number.
 - **Economics** — the margin ladder per cost object (company, business unit,
   brand, product, customer): contribution margin → segment margin → reported
   net, with the allocation trap flagged in both directions.
 - **Operations** — capacity/bottleneck diagnosis (utilization, flow rate,
   Little's Law) and inventory as capital (safety stock, reorder point, EOQ,
   stock-out and expiry exposure, DOI/DSO/DPO/CCC).
-- **Memory** — the outcome ledger (expected vs actual vs lesson) and
-  deterministic patterns across closed decisions ("inventory commitments
-  systematically under-deliver", "forecast quality keeps appearing in
-  lessons").
+- **Memory** — every commitment with what it rested on, what was accepted by
+  choosing it, what was expected, and — once somebody reviews it — expected
+  against actual with the variance stated. It detects no patterns and grades
+  nothing: [decision quality is not outcome
+  quality](docs/architecture/decision-quality-vs-outcome.md).
 
 ## Multi-tenancy
 
@@ -134,8 +151,9 @@ HELM introduced the shared organization layer (`organizations`,
 tables Memoire can adopt later. Every HELM table carries `org_id`; Postgres
 RLS policies call `SECURITY DEFINER` membership helpers, so tenant isolation
 is enforced in the data layer, not the frontend. Roles are ranked
-(`admin > manager > member > viewer`); approvals and governance writes are
-role-gated in both the database and the state machine.
+(`admin > manager > member > viewer`); governance writes are role-gated in the
+database. Decision *rights* — who may decide what — are not modelled yet, and
+nothing in HELM claims they are.
 
 `helm_decision_events` is append-only by construction — it has INSERT and
 SELECT policies and deliberately no UPDATE or DELETE, so decision history
@@ -146,22 +164,28 @@ cannot be rewritten from a client.
 - **Read**: the signed-in user's Memoire opportunities are offered as decision
   context. HELM stores a *reference plus an immutable snapshot* of what the
   manager saw — never a copy.
-- **Write**: when an approved decision starts executing, HELM appends a
-  `commercial_events` row to the user's Memoire timeline with
-  `source_url: helm://decision/<id>` provenance.
+- **Write**: nothing. The Phase 1 write-back was retired in Phase 5. A
+  commitment instead produces **action intents** naming the system that should
+  act, and `DecisionCommittedEvent` defines the payload a connector would carry.
+  Building that connector is a later phase; the boundary is the deliverable
+  here.
 
 ## Deterministic by design
 
 All management math lives in pure, unit-tested code: the kernel packages
-(`packages/`) hold the propagation engine and the scenario runtime, and the
-pre-kernel engines (`src/domain/engines/`) still serve the workspace surfaces —
-CVP, relevant cost, inventory, capacity, cost-object economics, signal rules and
-decision-memory patterns. The CVP what-if that used to be called the scenario
-engine was retired in Phase 4
-([assessment](docs/architecture/scenario-engine-assessment.md)).
-No LLM sits between data and a number; every recommendation is explainable
-back to a rule, a threshold, and evidence. An AI interpretation layer can be
-added later behind the same contracts.
+(`packages/`) hold the propagation engine, the scenario runtime and the decision
+runtime, and the pre-kernel engines (`src/domain/engines/`) still serve the
+workspace surfaces — CVP, the allocation trap, inventory, capacity, cost-object
+economics and the signal rules. The CVP what-if that used to be called the
+scenario engine was retired in Phase 4
+([assessment](docs/architecture/scenario-engine-assessment.md)); the approval
+workflow that used to be called the decision engine was retired in Phase 5
+([assessment](docs/architecture/decision-engine-assessment.md)).
+
+No LLM sits between data and a number, and HELM produces no recommendation at
+all: every signal traces to a rule, a threshold and evidence, and every decision
+traces to the criteria management stated and the futures the model computed. An
+AI interpretation layer can be added later behind the same contracts.
 
 ## Tech stack
 

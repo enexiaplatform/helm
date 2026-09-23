@@ -50,6 +50,13 @@ const APPEND_ONLY = [
   'helm_scenario_revisions',
   'helm_scenario_runs',
   'helm_scenario_constraint_results',
+  // What management decided, on what grounds, and how it turned out. A sealed
+  // revision, a commitment, its frozen snapshot and a review of it are the
+  // record — superseded by a later revision or review, never removed.
+  'helm_decision_revisions',
+  'helm_decision_commitments',
+  'helm_decision_commitment_snapshots',
+  'helm_decision_outcome_reviews',
 ];
 
 /**

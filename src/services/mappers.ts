@@ -1,11 +1,5 @@
 import type {
-  ApprovalRule,
   CostObject,
-  Decision,
-  DecisionAction,
-  DecisionAlternative,
-  DecisionAssumption,
-  DecisionEvent,
   EconomicsRow,
   InventoryItem,
   OrgUnit,
@@ -23,98 +17,6 @@ const sn = (v: unknown) => (typeof v === 'string' ? v : null);
 const n = (v: unknown) => (typeof v === 'number' ? v : v === null || v === undefined ? 0 : Number(v));
 const nn = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 const b = (v: unknown) => Boolean(v);
-
-export function mapDecision(r: Row): Decision {
-  return {
-    id: s(r.id),
-    orgId: s(r.org_id),
-    orgUnitId: sn(r.org_unit_id),
-    decisionType: s(r.decision_type) as Decision['decisionType'],
-    title: s(r.title),
-    context: s(r.context),
-    problem: s(r.problem),
-    objective: s(r.objective),
-    status: s(r.status) as Decision['status'],
-    ownerId: sn(r.owner_id),
-    dueDate: sn(r.due_date),
-    reviewAfter: sn(r.review_after),
-    currency: sn(r.currency),
-    amountAtStake: nn(r.amount_at_stake),
-    recommendation: s(r.recommendation),
-    decidedAlternativeId: sn(r.decided_alternative_id),
-    decisionRationale: s(r.decision_rationale),
-    expectedOutcome: s(r.expected_outcome),
-    expectedMetrics: Array.isArray(r.expected_metrics) ? (r.expected_metrics as Decision['expectedMetrics']) : [],
-    actualOutcome: s(r.actual_outcome),
-    outcomeScore: sn(r.outcome_score) as Decision['outcomeScore'],
-    lesson: s(r.lesson),
-    signalId: sn(r.signal_id),
-    memoireAccountId: sn(r.memoire_account_id),
-    memoireOpportunityId: sn(r.memoire_opportunity_id),
-    contextSnapshot: (r.context_snapshot as Record<string, unknown> | null) ?? null,
-    approvedBy: sn(r.approved_by),
-    approvedAt: sn(r.approved_at),
-    rejectedReason: s(r.rejected_reason),
-    closedAt: sn(r.closed_at),
-    createdBy: s(r.created_by),
-    createdAt: s(r.created_at),
-    updatedAt: s(r.updated_at),
-  };
-}
-
-export function mapAlternative(r: Row): DecisionAlternative {
-  return {
-    id: s(r.id),
-    orgId: s(r.org_id),
-    decisionId: s(r.decision_id),
-    name: s(r.name),
-    description: s(r.description),
-    financialLines: Array.isArray(r.financial_lines) ? (r.financial_lines as DecisionAlternative['financialLines']) : [],
-    qualitative: s(r.qualitative),
-    strategic: s(r.strategic),
-    risks: s(r.risks),
-    isRecommended: b(r.is_recommended),
-    sort: n(r.sort),
-  };
-}
-
-export function mapAssumption(r: Row): DecisionAssumption {
-  return {
-    id: s(r.id),
-    orgId: s(r.org_id),
-    decisionId: s(r.decision_id),
-    statement: s(r.statement),
-    basis: s(r.basis),
-    sensitivity: s(r.sensitivity) as DecisionAssumption['sensitivity'],
-    validated: s(r.validated) as DecisionAssumption['validated'],
-  };
-}
-
-export function mapEvent(r: Row): DecisionEvent {
-  return {
-    id: s(r.id),
-    orgId: s(r.org_id),
-    decisionId: s(r.decision_id),
-    eventType: s(r.event_type),
-    actorId: s(r.actor_id),
-    payload: (r.payload as Record<string, unknown>) ?? {},
-    createdAt: s(r.created_at),
-  };
-}
-
-export function mapAction(r: Row): DecisionAction {
-  return {
-    id: s(r.id),
-    orgId: s(r.org_id),
-    decisionId: s(r.decision_id),
-    title: s(r.title),
-    ownerLabel: s(r.owner_label),
-    ownerId: sn(r.owner_id),
-    dueDate: sn(r.due_date),
-    status: s(r.status) as DecisionAction['status'],
-    writeback: (r.writeback as Record<string, unknown> | null) ?? null,
-  };
-}
 
 export function mapSignal(r: Row): Signal {
   return {
@@ -208,17 +110,6 @@ export function mapProcessActivity(r: Row): ProcessActivity {
     availableMinutesPerWeek: n(r.available_minutes_per_week),
     waitMinutes: n(r.wait_minutes),
     sort: n(r.sort),
-  };
-}
-
-export function mapApprovalRule(r: Row): ApprovalRule {
-  return {
-    id: s(r.id),
-    orgId: s(r.org_id),
-    decisionType: sn(r.decision_type) as ApprovalRule['decisionType'],
-    thresholdAmount: n(r.threshold_amount),
-    requiredRole: s(r.required_role) as ApprovalRule['requiredRole'],
-    active: b(r.active),
   };
 }
 

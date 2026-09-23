@@ -1,24 +1,29 @@
 /**
- * verify:phase-boundary — Phase 4 does what Phase 4 does, and no more.
+ * verify:phase-boundary — Phase 5 does what Phase 5 does, and no more.
  *
  * Every phase ships a verifier that asserts the ABSENCE of the next phase's
  * work, because the most expensive mistake in a layered build is a layer that
  * quietly starts doing the next one's job. Phase 3's verifier forbade scenario
- * comparison; Phase 4 now owns comparison, so that rule is retired and replaced
- * by what Phase 4 must not do. Scanned across the propagation engine, the
- * scenario runtime and the scenario explorer:
+ * comparison; Phase 4 took comparison and forbade decisions; Phase 5 now owns
+ * decisions and commitment, so that rule retires in turn and is replaced by
+ * what Phase 5 must not do. Scanned across the propagation engine, the
+ * scenario runtime, the decision runtime and the two explorers:
  *
- *   1. No automatic recommendation, ranking or scoring of scenarios. HELM
- *      shows the trade-off space; choosing within it is management's (Phase 5).
- *   2. No decisions: recording, approving or governing one is Phase 5.
- *   3. No decision authority or visibility rules. That is Phase 6.
- *   4. No counterfactual or causal inference. A value link is not a causal
+ *   1. No automatic recommendation, ranking or scoring — of a scenario OR of a
+ *      decision alternative. HELM shows the trade-off space and evaluates
+ *      management's own criteria; choosing is management's.
+ *   2. No decision AUTHORITY: no approval thresholds, no escalation routing,
+ *      no automatic authorization. That is Phase 6, and `authority_status`
+ *      stays NOT_EVALUATED until it arrives.
+ *   3. No counterfactual or causal inference. A value link is not a causal
  *      claim; the causal graph is a later phase.
- *   5. No optimization solver. A constraint is checked, never solved for.
- *   6. No agent debate or multi-agent deliberation.
- *   7. No management surfaces beyond the technical explorer.
- *   8. No eval, no executable code in the database, no formula in a trigger —
- *      Phase 3's migration and Phase 4's.
+ *   4. No optimization solver. A constraint is checked, never solved for.
+ *   5. No agent debate or multi-agent deliberation, and no AI recommendation:
+ *      the Intelligence Runtime is Phase 11.
+ *   6. No Management Genome: outcome review records variance and assumption
+ *      outcomes; it does not learn patterns or score decision quality.
+ *   7. No management surfaces beyond the technical explorers.
+ *   8. No eval, no executable code in the database, no formula in a trigger.
  *   9. The additive discipline: nothing outside helm_*.
  *
  * As learned in Phase 2, text in comments and documentation must not trip this.
@@ -36,13 +41,18 @@ const check = (rule, cond, detail) => {
 
 const root = process.cwd();
 const ENGINE_SRC = join(root, 'packages', 'propagation-engine', 'src');
-const RUNTIME_SRC = join(root, 'packages', 'scenario-runtime', 'src');
+const SCENARIO_SRC = join(root, 'packages', 'scenario-runtime', 'src');
+const DECISION_SRC = join(root, 'packages', 'decision-runtime', 'src');
 const MIGRATION = join(root, 'supabase', 'migrations', '20260920090000_helm_propagation.sql');
 const PHASE4_MIGRATION = join(root, 'supabase', 'migrations', '20260922090100_helm_scenario_runtime.sql');
-/** The Phase 4 surface: the technical explorer and the service behind it. */
-const PHASE4_APP = [
+const PHASE5_MIGRATION = join(root, 'supabase', 'migrations', '20260923100000_helm_decision_runtime.sql');
+/** The Phase 4 and Phase 5 surfaces: the technical explorers and their services. */
+const KERNEL_APP = [
   join(root, 'src', 'pages', 'ScenariosPage.tsx'),
   join(root, 'src', 'services', 'scenarioRuntime.ts'),
+  join(root, 'src', 'pages', 'DecisionDetailPage.tsx'),
+  join(root, 'src', 'services', 'decisionRuntime.ts'),
+  join(root, 'src', 'services', 'decisionWorkspace.ts'),
 ];
 
 /**
@@ -58,19 +68,24 @@ const stripNonCode = (src) =>
     .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
     .replace(/`(?:[^`\\]|\\.)*`/g, '``');
 
-const engineFiles = readdirSync(ENGINE_SRC).filter((f) => f.endsWith('.ts'));
-const engineCode = new Map(
-  engineFiles.map((f) => [f, stripNonCode(readFileSync(join(ENGINE_SRC, f), 'utf8'))]),
-);
-const runtimeFiles = existsSync(RUNTIME_SRC) ? readdirSync(RUNTIME_SRC).filter((f) => f.endsWith('.ts')) : [];
-/** Every file the Phase 4 boundary is checked against, by readable path. */
+const tsFiles = (dir) => (existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.ts')) : []);
+const engineFiles = tsFiles(ENGINE_SRC);
+const scenarioFiles = tsFiles(SCENARIO_SRC);
+const decisionFiles = tsFiles(DECISION_SRC);
+const engineCode = new Map(engineFiles.map((f) => [f, stripNonCode(readFileSync(join(ENGINE_SRC, f), 'utf8'))]));
+
+/** Every file the phase boundary is checked against, by readable path. */
 const scanned = new Map([
   ...[...engineCode].map(([f, code]) => [`packages/propagation-engine/src/${f}`, code]),
-  ...runtimeFiles.map((f) => [
+  ...scenarioFiles.map((f) => [
     `packages/scenario-runtime/src/${f}`,
-    stripNonCode(readFileSync(join(RUNTIME_SRC, f), 'utf8')),
+    stripNonCode(readFileSync(join(SCENARIO_SRC, f), 'utf8')),
   ]),
-  ...PHASE4_APP.filter(existsSync).map((p) => [
+  ...decisionFiles.map((f) => [
+    `packages/decision-runtime/src/${f}`,
+    stripNonCode(readFileSync(join(DECISION_SRC, f), 'utf8')),
+  ]),
+  ...KERNEL_APP.filter(existsSync).map((p) => [
     p.slice(root.length + 1).replaceAll('\\', '/'),
     stripNonCode(readFileSync(p, 'utf8')),
   ]),
@@ -81,44 +96,37 @@ const scanned = new Map([
 const NOT_YET = [
   {
     rule: 'no-recommendation',
-    // Comparing futures is Phase 4. Choosing between them — or ordering them so
-    // one reads as the answer — is a management decision (Phase 5).
+    // Comparing futures is Phase 4; evaluating management's criteria is
+    // Phase 5. Concluding which one to take is neither.
     patterns: [
       /\brecommend\w*/i,
-      /\bbestScenario\b/i,
+      /\bbestScenario\b|\bbestAlternative\b|\bbestOption\b/i,
       /\bwinningScenario\b|\bwinner\b/i,
-      /\brankScenarios?\b|\bscenarioRank\w*|\branking\b/i,
-      /\bscenarioScore\b|\bcompositeScore\b|\boverallScore\b|\benterpriseScore\b/i,
+      /\brankScenarios?\b|\brankAlternatives?\b|\bscenarioRank\w*|\branking\b/i,
+      /\bscenarioScore\b|\bdecisionScore\b|\bcompositeScore\b|\boverallScore\b|\benterpriseScore\b/i,
+      /\bqualityScore\b|\breadinessScore\b/i,
       /\bpreferredScenario\b|\bchosenScenario\b/i,
+      /\boptimizeAlternatives?\b/i,
     ],
-    why: 'automatic scenario recommendation, ranking or scoring',
-    phase: 'Phase 5 — management chooses; HELM shows the trade-off space',
-  },
-  {
-    rule: 'no-decisions',
-    patterns: [
-      /\bcreateDecision\b/,
-      /\bapproveDecision\b/,
-      /\bapprove(?:Scenario)?\s*\(/,
-      /\bDecisionState\b/,
-      /\brecordDecision\b/,
-      /\bdecisionWorkflow\b/,
-      /\bcommitScenario\b/,
-    ],
-    why: 'decision recording, approval or commitment',
-    phase: 'Phase 5 — Decision Intelligence',
+    why: 'automatic recommendation, ranking or scoring',
+    phase: 'never — HELM shows the trade-off space and evaluates stated criteria; management chooses',
   },
   {
     rule: 'no-authority',
+    // Phase 5 records that management committed. Whether the actor was allowed
+    // to is a different question with a different answer.
     patterns: [
       /\bcanApprove\b/,
-      /\bauthorityLimit\b/,
+      /\bautoApprove\w*/i,
+      /\bauthorityLimit\b|\bauthorityThreshold\b/i,
       /\brequiresApproval\b/,
+      /\bapprovalThreshold\b|\bapprovalChain\b/i,
+      /\bescalationRule\w*|\bescalateTo\b/i,
       /\bvisibilityRule\b/,
-      /\bapprovalThreshold\b/,
       /\bdecisionRights?\b/,
+      /\b(?:AUTHORIZED|REQUIRES_APPROVAL|ESCALATED)\b/,
     ],
-    why: 'decision authority or visibility rules',
+    why: 'decision authority, approval or escalation',
     phase: 'Phase 6 — Authority and Visibility',
   },
   {
@@ -144,9 +152,22 @@ const NOT_YET = [
   },
   {
     rule: 'no-agent-debate',
-    patterns: [/\bagentDebate\b/i, /\bdebate\w*\s*\(/i, /\bmultiAgent\w*/i, /\bdeliberat\w*\s*\(/i],
-    why: 'agent debate',
-    phase: 'a later phase — Phase 4 is deterministic',
+    patterns: [/\bagentDebate\b/i, /\bdebate\w*\s*\(/i, /\bmultiAgent\w*/i, /\bdeliberat\w*\s*\(/i, /\bllm\w*\s*\(/i],
+    why: 'agent debate or an AI call',
+    phase: 'Phase 11 — the Intelligence Runtime. Phase 5 is deterministic',
+  },
+  {
+    rule: 'no-genome',
+    // Preserving what is needed to learn later is Phase 5. Learning from it is not.
+    patterns: [
+      /\bmanagementGenome\b/i,
+      /\blearnPattern\w*|\bpatternLearning\b/i,
+      /\bdecisionQuality\w*/i,
+      /\bsimilarDecisions?\b/i,
+      /\bpredictOutcome\w*/i,
+    ],
+    why: 'decision-pattern learning or a decision-quality judgement',
+    phase: 'Phase 9 — Management Genome. Phase 5 preserves the evidence it will need',
   },
   {
     rule: 'no-management-surface',
@@ -166,32 +187,51 @@ for (const [file, code] of scanned) {
   }
 }
 
-// The engine must not import from a later phase's package either.
-for (const [file, code] of engineCode) {
-  for (const m of code.matchAll(/from\s+''/g)) void m;
-  const raw = readFileSync(join(ENGINE_SRC, file), 'utf8');
-  for (const m of raw.matchAll(/from\s+'(@helm\/[a-z-]+)'/g)) {
-    const allowed = ['@helm/shared', '@helm/ontology', '@helm/graph-store', '@helm/value-graph'];
-    check(
-      'layering',
-      allowed.includes(m[1]) || m[1].startsWith('@helm/propagation-engine'),
-      `packages/propagation-engine/src/${file} imports ${m[1]} — the engine sits below the scenario runtime`,
-    );
-  }
-}
-for (const file of runtimeFiles) {
-  const raw = readFileSync(join(RUNTIME_SRC, file), 'utf8');
-  for (const m of raw.matchAll(/from\s+'(@helm\/[a-z-]+)'/g)) {
-    const allowed = ['@helm/shared', '@helm/ontology', '@helm/graph-store', '@helm/value-graph', '@helm/propagation-engine'];
-    check(
-      'layering',
-      allowed.includes(m[1]),
-      `packages/scenario-runtime/src/${file} imports ${m[1]}, which is not a Phase 0-4 kernel package`,
-    );
+// ------------------------------------------------------- layering downward
+
+const LAYERS = [
+  {
+    dir: ENGINE_SRC,
+    files: engineFiles,
+    label: 'packages/propagation-engine/src',
+    allowed: ['@helm/shared', '@helm/ontology', '@helm/graph-store', '@helm/value-graph'],
+    self: '@helm/propagation-engine',
+    note: 'the engine sits below the scenario runtime',
+  },
+  {
+    dir: SCENARIO_SRC,
+    files: scenarioFiles,
+    label: 'packages/scenario-runtime/src',
+    allowed: ['@helm/shared', '@helm/ontology', '@helm/graph-store', '@helm/value-graph', '@helm/propagation-engine'],
+    self: '@helm/scenario-runtime',
+    note: 'the scenario runtime sits below the decision runtime',
+  },
+  {
+    dir: DECISION_SRC,
+    files: decisionFiles,
+    label: 'packages/decision-runtime/src',
+    allowed: [
+      '@helm/shared',
+      '@helm/ontology',
+      '@helm/graph-store',
+      '@helm/value-graph',
+      '@helm/propagation-engine',
+      '@helm/scenario-runtime',
+    ],
+    self: '@helm/decision-runtime',
+    note: 'the decision runtime is the top of the kernel',
+  },
+];
+for (const { dir, files, label, allowed, self, note } of LAYERS) {
+  for (const file of files) {
+    const raw = readFileSync(join(dir, file), 'utf8');
+    for (const m of raw.matchAll(/from\s+'(@helm\/[a-z-]+)'/g)) {
+      check('layering', allowed.includes(m[1]) || m[1].startsWith(self), `${label}/${file} imports ${m[1]} — ${note}`);
+    }
   }
 }
 
-// ----------------- 6: no eval, no code in the database, no formula in a trigger
+// ----------------- 8: no eval, no code in the database, no formula in a trigger
 
 const NO_EVAL = [
   { re: /\beval\s*\(/, why: 'eval()' },
@@ -211,92 +251,68 @@ for (const [file, code] of scanned) {
   }
 }
 
-if (!existsSync(MIGRATION)) {
-  fail('phase-artifacts', 'the Phase 3 migration is missing');
-} else {
-  const sql = readFileSync(MIGRATION, 'utf8');
-  const sqlNoComments = sql.replace(/--[^\n]*/g, ' ');
+const MIGRATIONS = [
+  { path: MIGRATION, phase: 'Phase 3' },
+  { path: PHASE4_MIGRATION, phase: 'Phase 4' },
+  { path: PHASE5_MIGRATION, phase: 'Phase 5' },
+];
+for (const { path, phase } of MIGRATIONS) {
+  if (!existsSync(path)) {
+    fail('phase-artifacts', `the ${phase} migration is missing`);
+    continue;
+  }
+  const sql = readFileSync(path, 'utf8').replace(/--[^\n]*/g, ' ');
 
-  // No column may hold executable code.
-  for (const re of [/\bformula_js\b/i, /\bexpression_js\b/i, /\bcode\s+text\b/i, /\bscript\b/i]) {
+  for (const re of [/\bformula_js\b/i, /\bexpression_js\b/i, /\bcode\s+text\b/i, /\bjavascript\b/i, /\bscript\b/i]) {
     check(
       'no-code-in-db',
-      !re.test(sqlNoComments),
-      `the Phase 3 migration defines something matching ${re}. helm_calculations ` +
-        'stores metadata; implementations are typed functions in code (ADR-0017 §1)',
+      !re.test(sql),
+      `the ${phase} migration defines something matching ${re}. HELM stores metadata; ` +
+        'implementations are typed functions in code (ADR-0017 §1)',
     );
   }
 
-  // A trigger may enforce integrity. It must not compute a business value.
-  const triggerBodies = [...sqlNoComments.matchAll(/AS\s+\$fn\$([\s\S]*?)\$fn\$/g)].map((m) => m[1]);
-  check(
-    'no-formula-in-trigger',
-    triggerBodies.length > 0,
-    'no trigger bodies were found, so this check proved nothing',
-  );
-  for (const body of triggerBodies) {
-    check(
-      'no-formula-in-trigger',
-      !/\bNEW\.[a-z_]+\s*:=/i.test(body),
-      'a Phase 3 trigger assigns to a NEW column. Business formulas in triggers are ' +
-        'invisible to tests, impossible to version and impossible to explain (§28)',
-    );
-    check(
-      'no-formula-in-trigger',
-      !/\b(SUM|AVG|MIN|MAX)\s*\(/i.test(body),
-      'a Phase 3 trigger aggregates values. Aggregation is a calculation, and ' +
-        'calculations live in the engine where they can be traced (§28)',
-    );
+  const bodies = [...sql.matchAll(/AS\s+\$fn\$([\s\S]*?)\$fn\$/g)].map((m) => m[1]);
+  check('no-formula-in-trigger', bodies.length > 0, `no ${phase} trigger bodies were found, so this check proved nothing`);
+  for (const body of bodies) {
+    check('no-formula-in-trigger', !/\bNEW\.[a-z_]+\s*:=/i.test(body),
+      `a ${phase} trigger assigns to a NEW column. Business formulas in triggers are invisible to tests, ` +
+        'impossible to version and impossible to explain (§28)');
+    check('no-formula-in-trigger', !/\b(SUM|AVG|MIN|MAX)\s*\(/i.test(body),
+      `a ${phase} trigger aggregates values. Aggregation is a calculation, and calculations live in the engine (§28)`);
   }
 
-  // 7: additive discipline — the Phase 3 migration touches only helm_* objects.
-  for (const m of sqlNoComments.matchAll(
-    /(?:CREATE|ALTER|DROP)\s+TABLE(?:\s+IF\s+(?:NOT\s+)?EXISTS)?\s+public\.([a-z_]+)/gi,
-  )) {
-    check(
-      'additive-only',
-      m[1].toLowerCase().startsWith('helm_'),
-      `the Phase 3 migration touches "${m[1]}", which is not a HELM-owned table`,
-    );
+  for (const m of sql.matchAll(/(?:CREATE|ALTER|DROP)\s+TABLE(?:\s+IF\s+(?:NOT\s+)?EXISTS)?\s+public\.([a-z_]+)/gi)) {
+    check('additive-only', m[1].toLowerCase().startsWith('helm_'),
+      `the ${phase} migration touches "${m[1]}", which is not a HELM-owned table`);
   }
-  for (const m of sqlNoComments.matchAll(/\b(DROP\s+TABLE|TRUNCATE|DROP\s+COLUMN)\b/gi)) {
-    fail('additive-only', `the Phase 3 migration contains ${m[1]}`);
+  for (const m of sql.matchAll(/\b(DROP\s+TABLE|TRUNCATE|DROP\s+COLUMN)\b/gi)) {
+    fail('additive-only', `the ${phase} migration contains ${m[1]}`);
   }
 }
 
-if (!existsSync(PHASE4_MIGRATION)) {
-  fail('phase-artifacts', 'the Phase 4 migration is missing');
-} else {
-  const sql4 = readFileSync(PHASE4_MIGRATION, 'utf8').replace(/--[^\n]*/g, ' ');
-  const bodies4 = [...sql4.matchAll(/AS\s+\$fn\$([\s\S]*?)\$fn\$/g)].map((m) => m[1]);
-  check('no-formula-in-trigger', bodies4.length > 0, 'no Phase 4 trigger bodies were found, so this check proved nothing');
-  for (const body of bodies4) {
-    check('no-formula-in-trigger', !/\bNEW\.[a-z_]+\s*:=/i.test(body), 'a Phase 4 trigger assigns to a NEW column');
-    check('no-formula-in-trigger', !/\b(SUM|AVG|MIN|MAX)\s*\(/i.test(body), 'a Phase 4 trigger aggregates values');
-  }
-  for (const m of sql4.matchAll(/(?:CREATE|ALTER|DROP)\s+TABLE(?:\s+IF\s+(?:NOT\s+)?EXISTS)?\s+public\.([a-z_]+)/gi)) {
-    check('additive-only', m[1].toLowerCase().startsWith('helm_'), `the Phase 4 migration touches "${m[1]}"`);
-  }
-  for (const m of sql4.matchAll(/\b(DROP\s+TABLE|TRUNCATE|DROP\s+COLUMN)\b/gi)) {
-    fail('additive-only', `the Phase 4 migration contains ${m[1]}`);
-  }
-  for (const re of [/\bformula_js\b/i, /\bexpression_js\b/i, /\bcode\s+text\b/i, /\bjavascript\b/i]) {
-    check('no-code-in-db', !re.test(sql4), `the Phase 4 migration defines something matching ${re}`);
+// Phase 5's database must not be able to express an authority verdict at all.
+if (existsSync(PHASE5_MIGRATION)) {
+  const sql5 = readFileSync(PHASE5_MIGRATION, 'utf8');
+  check('no-authority', /authority_status\s*=\s*'NOT_EVALUATED'/.test(sql5),
+    'the Phase 5 schema does not pin authority_status to NOT_EVALUATED');
+  for (const word of ['AUTHORIZED', 'REQUIRES_APPROVAL', 'ESCALATED']) {
+    check('no-authority', !new RegExp(`'${word}'`).test(sql5),
+      `the Phase 5 schema can store the authority verdict ${word}, which is Phase 6's to produce`);
   }
 }
 
-// ------------------- what Phase 4 MUST have: the absence checks cut both ways
+// ------------------- what Phase 5 MUST have: the absence checks cut both ways
 
 // A boundary verifier that only proved absence could pass on an empty phase.
-const REQUIRED = [
+for (const { file, why } of [
   { file: 'engine.ts', why: 'the propagation engine' },
   { file: 'registry.ts', why: 'the calculation registry' },
   { file: 'dependencyGraph.ts', why: 'the executable dependency graph' },
   { file: 'conformance.ts', why: 'the shared adapter contract' },
   { file: 'postgres.ts', why: 'the production adapter' },
   { file: 'meridianValueModelV1.ts', why: 'the first executable management model' },
-];
-for (const { file, why } of REQUIRED) {
+]) {
   check('phase-artifacts', engineCode.has(file), `${why} (${file}) is missing`);
 }
 for (const { file, why } of [
@@ -308,32 +324,45 @@ for (const { file, why } of [
   { file: 'postgres.ts', why: 'the production scenario store' },
   { file: 'conformance.ts', why: 'the scenario store contract' },
 ]) {
-  check('phase-artifacts', runtimeFiles.includes(file), `${why} (packages/scenario-runtime/src/${file}) is missing`);
+  check('phase-artifacts', scenarioFiles.includes(file), `${why} (packages/scenario-runtime/src/${file}) is missing`);
 }
-// And comparison — forbidden in Phase 3 — now exists, and still chooses nothing.
-const runtimeCode = scanned.get('packages/scenario-runtime/src/runtime.ts') ?? '';
-check('phase-artifacts', /\bcompare\s*\(|async\s+compare\b/.test(runtimeCode), 'the runtime cannot compare states');
-check('phase-artifacts', /engine\.execute\s*\(/.test(runtimeCode), 'the runtime does not simulate through the engine');
+for (const { file, why } of [
+  { file: 'runtime.ts', why: 'the decision runtime' },
+  { file: 'criteria.ts', why: 'criterion evaluation' },
+  { file: 'tradeoff.ts', why: 'the decision trade-off space' },
+  { file: 'readiness.ts', why: 'decision readiness' },
+  { file: 'fingerprint.ts', why: 'the commitment fingerprint' },
+  { file: 'postgres.ts', why: 'the production decision store' },
+  { file: 'conformance.ts', why: 'the decision store contract' },
+  { file: 'meridianDecision.ts', why: 'the canonical Rohto decision' },
+]) {
+  check('phase-artifacts', decisionFiles.includes(file), `${why} (packages/decision-runtime/src/${file}) is missing`);
+}
+
+// Comparison — forbidden in Phase 3 — exists and still chooses nothing.
+const scenarioRuntimeCode = scanned.get('packages/scenario-runtime/src/runtime.ts') ?? '';
+check('phase-artifacts', /\bcompare\s*\(|async\s+compare\b/.test(scenarioRuntimeCode), 'the scenario runtime cannot compare states');
+check('phase-artifacts', /engine\.execute\s*\(/.test(scenarioRuntimeCode), 'the scenario runtime does not simulate through the engine');
+
+// Commitment — forbidden in Phase 4 — exists, and rests on scenario futures.
+const decisionRuntimeCode = scanned.get('packages/decision-runtime/src/runtime.ts') ?? '';
+check('phase-artifacts', /async\s+commit\b/.test(decisionRuntimeCode), 'the decision runtime cannot record a commitment');
+check('phase-artifacts', /scenarios\.getFutureState\s*\(/.test(decisionRuntimeCode),
+  'the decision runtime does not read its numbers from scenario future states');
+check('phase-artifacts', /snapshotFingerprint\s*\(|commitmentFingerprint\s*\(/.test(decisionRuntimeCode),
+  'a commitment is not fingerprinted, so nobody can tell when its basis moved');
 
 // And the engine really does write derived observations — the thing Phase 2 could not do.
 const engineSrc = engineCode.get('engine.ts') ?? '';
-check(
-  'phase-artifacts',
-  /recordObservation/.test(engineSrc),
-  'the engine never records an observation, so nothing propagates',
-);
-check(
-  'phase-artifacts',
-  /appendStep/.test(engineSrc),
-  'the engine never appends a trace step, so nothing is auditable',
-);
+check('phase-artifacts', /recordObservation/.test(engineSrc), 'the engine never records an observation, so nothing propagates');
+check('phase-artifacts', /appendStep/.test(engineSrc), 'the engine never appends a trace step, so nothing is auditable');
 
 // ------------------------------------------------------------------ report
 
 if (failures.length === 0) {
   console.log(
-    `verify:phase-boundary — ok (${scanned.size} files: scenario runtime and comparison present; no ` +
-      'recommendation, decisions, authority, causal inference, optimization or agent debate)',
+    `verify:phase-boundary — ok (${scanned.size} files: decision runtime, criteria and commitment present; no ` +
+      'recommendation, authority, causal inference, optimization, agent debate or pattern learning)',
   );
   process.exit(0);
 }

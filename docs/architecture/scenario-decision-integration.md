@@ -83,6 +83,25 @@ adapter twice is worse than building it once, later.
 
 ## 4. Decision Engine → Value Graph (Phase 5)
 
+> **What was actually built.** This section is the design as it stood before
+> Phases 4 and 5. Two of its predictions did not survive the work, and are left
+> here rather than quietly edited, because the reasoning is still useful:
+>
+> 1. **An alternative's consequences are not `SCENARIO` observations.** Phase 4
+>    chose an input **overlay** resolved inside the propagation engine instead,
+>    precisely so that no observation nobody made is ever written into the source
+>    world ([ADR-0019](../adr/0019-scenario-runtime.md) §1). The observation type
+>    `SCENARIO` still exists and is still the right place for a *stated*
+>    scenario fact; a simulated one is not that.
+> 2. **An alternative is not its own Scenario entity.** It **references** a
+>    scenario, its revision and the run that computed its future
+>    ([ADR-0021](../adr/0021-decision-runtime.md) §2). One scenario can therefore
+>    be an alternative in more than one decision, and the decision layer stores
+>    no economics at all.
+>
+> What did survive, and matters most: §4.2's point that a comparison must stop
+> being an assertion and become a model, and every rule in §4.4.
+
 ### 4.1 A decision affects value nodes
 
 Two links, both additive:

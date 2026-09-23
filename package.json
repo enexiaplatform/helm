@@ -10,13 +10,14 @@
     "lint": "eslint .",
     "typecheck": "tsc -b",
     "test": "node --test \"test/unit/*.test.mjs\" \"packages/*/test/*.test.mjs\"",
+    "test:mutations": "node scripts/lib/mutate.mjs",
     "test:coverage": "node --test --experimental-test-coverage \"test/unit/*.test.mjs\" \"packages/*/test/*.test.mjs\"",
     "verify:architecture": "node scripts/verify-architecture.mjs",
     "verify:schema": "node scripts/verify-schema.mjs",
     "verify:ontology": "node scripts/verify-ontology.mjs",
     "verify:graph": "node scripts/verify-graph.mjs",
     "verify:memoire-boundary": "node scripts/verify-memoire-boundary.mjs",
-    "verify": "npm run verify:architecture && npm run verify:schema && npm run verify:ontology && npm run verify:graph && npm run verify:memoire-boundary && npm run verify:value-schema && npm run verify:value-metrics && npm run verify:value-graph && npm run verify:value-observations && npm run verify:calculations && npm run verify:calculation-graph && npm run verify:propagation && npm run verify:lineage && npm run verify:scenario-schema && npm run verify:scenario-runtime && npm run verify:scenario-isolation && npm run verify:scenario-time && npm run verify:scenario-lineage && npm run verify:phase-boundary && npm run verify:docs",
+    "verify": "npm run verify:architecture && npm run verify:schema && npm run verify:ontology && npm run verify:graph && npm run verify:memoire-boundary && npm run verify:value-schema && npm run verify:value-metrics && npm run verify:value-graph && npm run verify:value-observations && npm run verify:calculations && npm run verify:calculation-graph && npm run verify:propagation && npm run verify:lineage && npm run verify:scenario-schema && npm run verify:scenario-runtime && npm run verify:scenario-isolation && npm run verify:scenario-time && npm run verify:scenario-lineage && npm run verify:decision-schema && npm run verify:decision-runtime && npm run verify:decision-lineage && npm run verify:decision-immutability && npm run verify:decision-scenario-binding && npm run verify:phase-boundary && npm run verify:docs",
     "check": "npm run typecheck && npm run lint && npm run test && npm run verify",
     "verify:value-schema": "node scripts/verify-value-schema.mjs",
     "verify:value-metrics": "node scripts/verify-value-metrics.mjs",
@@ -34,6 +35,11 @@
     "verify:scenario-isolation": "node scripts/verify-scenario-isolation.mjs",
     "verify:scenario-time": "node scripts/verify-scenario-time.mjs",
     "verify:scenario-lineage": "node scripts/verify-scenario-lineage.mjs",
+    "verify:decision-schema": "node scripts/verify-decision-schema.mjs",
+    "verify:decision-runtime": "node scripts/verify-decision-runtime.mjs",
+    "verify:decision-lineage": "node scripts/verify-decision-lineage.mjs",
+    "verify:decision-immutability": "node scripts/verify-decision-immutability.mjs",
+    "verify:decision-scenario-binding": "node scripts/verify-decision-scenario-binding.mjs",
     "generate:value-metric-sync": "node scripts/generate-value-metric-sync.mjs"
   },
   "dependencies": {
@@ -49,7 +55,8 @@
     "@helm/graph-store": "0.1.0",
     "@helm/value-graph": "0.1.0",
     "@helm/propagation-engine": "0.1.0",
-    "@helm/scenario-runtime": "0.1.0"
+    "@helm/scenario-runtime": "0.1.0",
+    "@helm/decision-runtime": "0.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

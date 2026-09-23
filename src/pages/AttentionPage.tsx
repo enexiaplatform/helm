@@ -1,42 +1,45 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { ArrowRight, CheckCheck, EyeOff } from 'lucide-react';
 import { useHelmStore } from '../services/helmStore.ts';
-import { PanelCard, SeverityBadge, StatusChip, EmptyState, Stat } from '../components/ui.tsx';
+import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
+import { PanelCard, SeverityBadge, EmptyState, Stat, Modal, Field } from '../components/ui.tsx';
 import { buildMarginLadder } from '../domain/engines/economics.ts';
-import { formatMoney, formatDate, formatPercent } from '../domain/format.ts';
+import { formatMoney, formatPercent } from '../domain/format.ts';
 import type { Signal } from '../domain/types.ts';
-import { decisionTypeLabels } from '../domain/types.ts';
+import { resolveDecisionContext } from '../services/decisionRuntime.ts';
 
 /**
  * Attention: the answer to "what requires me in the next ten minutes".
- * Open signals ranked by severity, decisions waiting on the user, and a thin
- * health strip — deliberately not a dashboard.
+ *
+ * Open signals by severity and a thin health strip. A signal is not a
+ * decision: framing one as a management question is a human act, so the only
+ * thing HELM does here is carry the signal across as the TRIGGER of a decision
+ * somebody then has to frame.
  */
 export function AttentionPage() {
   const navigate = useNavigate();
   const signals = useHelmStore((s) => s.signals);
-  const decisions = useHelmStore((s) => s.decisions);
+  const mode = useHelmStore((s) => s.mode);
+  const activeOrgId = useHelmStore((s) => s.activeOrgId);
+  const userId = useHelmStore((s) => s.userId);
+  const myRole = useHelmStore((s) => s.myRole);
   const costObjects = useHelmStore((s) => s.costObjects);
   const economics = useHelmStore((s) => s.economics);
   const currency = useHelmStore((s) => s.currency)();
   const setSignalStatus = useHelmStore((s) => s.setSignalStatus);
-  const createDecision = useHelmStore((s) => s.createDecision);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [framing, setFraming] = useState<Signal | null>(null);
+  const [question, setQuestion] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [frameError, setFrameError] = useState<string | null>(null);
 
   const openSignals = signals.filter((x) => x.status === 'open' || x.status === 'acknowledged');
 
-  const needsMe = useMemo(() => {
-    const waiting = decisions.filter((d) => d.status === 'pending_approval');
-    const inFlight = decisions.filter((d) => d.status === 'analyzing' || d.status === 'draft');
-    const reviewDue = decisions.filter(
-      (d) =>
-        (d.status === 'monitoring' || d.status === 'executing') &&
-        d.reviewAfter !== null &&
-        new Date(d.reviewAfter) <= new Date(),
-    );
-    return { waiting, inFlight, reviewDue };
-  }, [decisions]);
+  const scope = useMemo(
+    () => (mode === 'demo' ? demoScope() : activeOrgId ? cloudScope(activeOrgId, userId ?? '', myRole()) : null),
+    [mode, activeOrgId, userId, myRole],
+  );
 
   const health = useMemo(() => {
     const company = costObjects.find((c) => c.kind === 'company');
@@ -49,15 +52,32 @@ export function AttentionPage() {
     return { revenue, cm, cmRatio: revenue > 0 ? cm / revenue : null, segment };
   }, [costObjects, economics]);
 
-  const convertSignal = async (sg: Signal) => {
-    const id = await createDecision({
-      decisionType: sg.suggestedDecisionType ?? 'custom',
-      title: sg.title,
-      context: `${sg.reason}\n\nEvidence at detection:\n${sg.evidence.map((e) => `• ${e.label}: ${e.value}`).join('\n')}`,
-      problem: sg.reason,
-      signalId: sg.id,
-    });
-    if (id) navigate(`/decisions/${id}`);
+  /** Carries the signal across as a decision TRIGGER. It frames nothing itself. */
+  const frameDecision = async () => {
+    if (!framing || !scope) return;
+    setBusy(true);
+    setFrameError(null);
+    try {
+      const ctx = await resolveDecisionContext(mode ?? 'demo', scope);
+      if (!ctx) throw new Error('The decision runtime is unavailable in this mode.');
+      const created = await ctx.runtime.createDecision(scope, {
+        title: framing.title,
+        managementQuestion: question.trim(),
+        context: `What ${framing.ruleCode} saw when it fired:\n${framing.evidence
+          .map((e) => `• ${e.label}: ${e.value}`)
+          .join('\n')}`,
+        problem: framing.reason,
+        triggerType: 'SIGNAL',
+        triggerRefs: [{ kind: 'SIGNAL', ref: framing.id, label: `${framing.ruleCode} — ${framing.title}` }],
+      });
+      if (!created.ok) throw new Error(created.error.message);
+      setFraming(null);
+      navigate(`/decisions/${created.value.decision.id}`);
+    } catch (e) {
+      setFrameError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -68,9 +88,7 @@ export function AttentionPage() {
           <p className="text-sm text-ink-500">
             {openSignals.length === 0
               ? 'Nothing is on fire.'
-              : `${openSignals.length} signal${openSignals.length === 1 ? '' : 's'} and ${
-                  needsMe.waiting.length + needsMe.reviewDue.length
-                } decision item${needsMe.waiting.length + needsMe.reviewDue.length === 1 ? '' : 's'} need a manager.`}
+              : `${openSignals.length} signal${openSignals.length === 1 ? '' : 's'} need a manager.`}
           </p>
         </div>
       </header>
@@ -84,7 +102,7 @@ export function AttentionPage() {
             sub={health.cmRatio !== null ? `${formatPercent(health.cmRatio)} of revenue` : undefined}
           />
           <Stat label="Segment margin" value={formatMoney(health.segment, currency)} tone={health.segment >= 0 ? 'good' : 'bad'} />
-          <Stat label="Open decisions" value={decisions.filter((d) => !['closed', 'rejected'].includes(d.status)).length} />
+          <Stat label="Open signals" value={openSignals.length} />
         </div>
       )}
 
@@ -92,7 +110,7 @@ export function AttentionPage() {
         {openSignals.length === 0 ? (
           <EmptyState
             title="No open signals"
-            detail="The rule engine found nothing above threshold. Signals appear when economics, inventory, capacity, or decision reviews cross their limits."
+            detail="The rule engine found nothing above threshold. Signals appear when economics, inventory or capacity cross their limits."
           />
         ) : (
           <ul className="divide-y divide-ink-100">
@@ -126,8 +144,14 @@ export function AttentionPage() {
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <button className="btn-primary px-2.5 py-1 text-xs" onClick={() => void convertSignal(sg)}>
-                      Open decision
+                    <button
+                      className="btn-primary px-2.5 py-1 text-xs"
+                      onClick={() => {
+                        setFraming(sg);
+                        setQuestion('');
+                        setFrameError(null);
+                      }}>
+                      Frame a decision
                       <ArrowRight size={13} />
                     </button>
                     {sg.status === 'open' && (
@@ -154,61 +178,39 @@ export function AttentionPage() {
         )}
       </PanelCard>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <PanelCard title="Waiting for approval">
-          {needsMe.waiting.length === 0 ? (
-            <p className="text-xs text-ink-400">Nothing pending.</p>
-          ) : (
-            <ul className="space-y-2">
-              {needsMe.waiting.map((d) => (
-                <li key={d.id}>
-                  <Link
-                    to={`/decisions/${d.id}`}
-                    className="flex items-center justify-between gap-3 rounded-md border border-ink-100 px-3 py-2 hover:border-accent-300 hover:bg-accent-50/40"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{d.title}</p>
-                      <p className="text-2xs text-ink-500">
-                        {decisionTypeLabels[d.decisionType]}
-                        {d.amountAtStake !== null && <> · {formatMoney(d.amountAtStake, d.currency ?? '')} at stake</>}
-                        {d.dueDate && <> · due {formatDate(d.dueDate)}</>}
-                      </p>
-                    </div>
-                    <StatusChip status={d.status} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </PanelCard>
-
-        <PanelCard title="Reviews due & analysis in flight">
-          {needsMe.reviewDue.length === 0 && needsMe.inFlight.length === 0 ? (
-            <p className="text-xs text-ink-400">Nothing in flight.</p>
-          ) : (
-            <ul className="space-y-2">
-              {[...needsMe.reviewDue, ...needsMe.inFlight].map((d) => (
-                <li key={d.id}>
-                  <Link
-                    to={`/decisions/${d.id}`}
-                    className="flex items-center justify-between gap-3 rounded-md border border-ink-100 px-3 py-2 hover:border-accent-300 hover:bg-accent-50/40"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{d.title}</p>
-                      <p className="text-2xs text-ink-500">
-                        {needsMe.reviewDue.includes(d)
-                          ? `Outcome review due since ${formatDate(d.reviewAfter)}`
-                          : decisionTypeLabels[d.decisionType]}
-                      </p>
-                    </div>
-                    <StatusChip status={d.status} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </PanelCard>
-      </div>
+      {framing && (
+        <Modal title="Frame a decision" onClose={() => setFraming(null)}>
+          <p className="text-xs text-ink-600">
+            The signal becomes the trigger. What management is actually deciding is a question only a person can write,
+            so HELM asks for it rather than inventing one.
+          </p>
+          <p className="mt-2 rounded-md border border-ink-200 bg-ink-50 px-2 py-1.5 text-2xs text-ink-600">
+            {framing.ruleCode} · {framing.title}
+          </p>
+          <Field label="Management question">
+            <input
+              className="field-input"
+              autoFocus
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="How should we …?"
+            />
+          </Field>
+          {frameError && <p className="mt-1 text-xs text-red-700">{frameError}</p>}
+          <div className="mt-3 flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={() => setFraming(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={busy || question.trim().length < 12}
+              onClick={() => void frameDecision()}>
+              Open the decision
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

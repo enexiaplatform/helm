@@ -16,7 +16,7 @@
     "verify:ontology": "node scripts/verify-ontology.mjs",
     "verify:graph": "node scripts/verify-graph.mjs",
     "verify:memoire-boundary": "node scripts/verify-memoire-boundary.mjs",
-    "verify": "npm run verify:architecture && npm run verify:schema && npm run verify:ontology && npm run verify:graph && npm run verify:memoire-boundary && npm run verify:value-schema && npm run verify:value-metrics && npm run verify:value-graph && npm run verify:value-observations && npm run verify:calculations && npm run verify:calculation-graph && npm run verify:propagation && npm run verify:lineage && npm run verify:phase-boundary && npm run verify:docs",
+    "verify": "npm run verify:architecture && npm run verify:schema && npm run verify:ontology && npm run verify:graph && npm run verify:memoire-boundary && npm run verify:value-schema && npm run verify:value-metrics && npm run verify:value-graph && npm run verify:value-observations && npm run verify:calculations && npm run verify:calculation-graph && npm run verify:propagation && npm run verify:lineage && npm run verify:scenario-schema && npm run verify:scenario-runtime && npm run verify:scenario-isolation && npm run verify:scenario-time && npm run verify:scenario-lineage && npm run verify:phase-boundary && npm run verify:docs",
     "check": "npm run typecheck && npm run lint && npm run test && npm run verify",
     "verify:value-schema": "node scripts/verify-value-schema.mjs",
     "verify:value-metrics": "node scripts/verify-value-metrics.mjs",
@@ -28,7 +28,13 @@
     "verify:lineage": "node scripts/verify-lineage.mjs",
     "verify:phase-boundary": "node scripts/verify-phase-boundary.mjs",
     "verify:docs": "node scripts/verify-docs.mjs",
-    "generate:calculation-governance": "node scripts/generate-calculation-governance.mjs"
+    "generate:calculation-governance": "node scripts/generate-calculation-governance.mjs",
+    "verify:scenario-schema": "node scripts/verify-scenario-schema.mjs",
+    "verify:scenario-runtime": "node scripts/verify-scenario-runtime.mjs",
+    "verify:scenario-isolation": "node scripts/verify-scenario-isolation.mjs",
+    "verify:scenario-time": "node scripts/verify-scenario-time.mjs",
+    "verify:scenario-lineage": "node scripts/verify-scenario-lineage.mjs",
+    "generate:value-metric-sync": "node scripts/generate-value-metric-sync.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.3",
@@ -42,7 +48,8 @@
     "@helm/ontology": "0.1.0",
     "@helm/graph-store": "0.1.0",
     "@helm/value-graph": "0.1.0",
-    "@helm/propagation-engine": "0.1.0"
+    "@helm/propagation-engine": "0.1.0",
+    "@helm/scenario-runtime": "0.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

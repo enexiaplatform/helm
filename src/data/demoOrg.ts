@@ -13,7 +13,6 @@ import type {
   Organization,
   Process,
   ProcessActivity,
-  Scenario,
 } from '../domain/types.ts';
 
 /**
@@ -766,53 +765,6 @@ export const demoEvents: DecisionEvent[] = [
   { id: 'ev-5', orgId: DEMO_ORG_ID, decisionId: 'dec-vitaplex-stock', eventType: 'approved', actorId: DEMO_USER_ID, actorLabel: 'You', payload: { alternative: 'Raise to 60 DOI' }, createdAt: '2026-06-12T04:00:00.000Z' },
   { id: 'ev-6', orgId: DEMO_ORG_ID, decisionId: 'dec-acecook', eventType: 'approved', actorId: DEMO_USER_ID, actorLabel: 'You', payload: { alternative: 'Accept at 168K/unit' }, createdAt: '2026-07-28T04:00:00.000Z' },
   { id: 'ev-7', orgId: DEMO_ORG_ID, decisionId: 'dec-acecook', eventType: 'status_changed', actorId: 'demo-lan', actorLabel: 'Lan Pham', payload: { from: 'approved', to: 'executing' }, createdAt: '2026-08-02T02:00:00.000Z' },
-];
-
-export const demoScenarios: Scenario[] = [
-  {
-    id: 'scn-vitaplex-price',
-    orgId: DEMO_ORG_ID,
-    decisionId: null,
-    name: 'VitaPlex price increase 2027',
-    description: 'Can a price increase fund the quality upgrade without losing the volume base?',
-    baseline: {
-      label: 'Current run-rate',
-      currency: 'VND',
-      unitPrice: 208_000,
-      unitsPerPeriod: 13_000,
-      variableCostPerUnit: 140_000,
-      fixedCostsPerPeriod: 200 * M,
-    },
-    variants: [
-      { id: 'v1', name: '+8% price, −5% volume', deltas: { unitPricePct: 8, unitsPct: -5 } },
-      { id: 'v2', name: '+8% price, −12% volume', deltas: { unitPricePct: 8, unitsPct: -12 }, note: 'Bear case from the Acecook buyer conversation.' },
-      { id: 'v3', name: '+4% price, quality upgrade (+6K VC)', deltas: { unitPricePct: 4, variableCostPerUnitAbs: 6_000 } },
-    ],
-    createdAt: '2026-08-03T02:00:00.000Z',
-    updatedAt: '2026-08-06T02:00:00.000Z',
-  },
-  {
-    id: 'scn-bidiphar',
-    orgId: DEMO_ORG_ID,
-    decisionId: 'dec-bidiphar',
-    name: 'Bidiphar discount scenarios',
-    description: 'Discount depth vs annual account economics.',
-    baseline: {
-      label: 'Bidiphar annual book at list',
-      currency: 'VND',
-      unitPrice: 4_100_000,
-      unitsPerPeriod: 105,
-      variableCostPerUnit: 2_750_000,
-      fixedCostsPerPeriod: 45 * M,
-    },
-    variants: [
-      { id: 'b1', name: '−12% across the book', deltas: { unitPricePct: -12 } },
-      { id: 'b2', name: '−6% across the book', deltas: { unitPricePct: -6 } },
-      { id: 'b3', name: '−6% with +10% volume pull', deltas: { unitPricePct: -6, unitsPct: 10 }, note: 'If the new plant ramps on our reagents.' },
-    ],
-    createdAt: '2026-08-05T05:00:00.000Z',
-    updatedAt: '2026-08-05T05:00:00.000Z',
-  },
 ];
 
 /** Demo stand-ins for the Memoire "Analyze in HELM" flow. */

@@ -21,9 +21,6 @@ import type {
   OutcomeScore,
   Process,
   ProcessActivity,
-  Scenario,
-  ScenarioBaseline,
-  ScenarioVariant,
   Signal,
   SignalStatus,
 } from '../domain/types.ts';
@@ -45,7 +42,6 @@ import {
   demoOrganization,
   demoProcessActivities,
   demoProcesses,
-  demoScenarios,
   demoUnits,
   DEMO_USER_ID,
 } from '../data/demoOrg.ts';
@@ -92,7 +88,6 @@ type HelmState = {
   assumptions: DecisionAssumption[];
   events: DecisionEvent[];
   actions: DecisionAction[];
-  scenarios: Scenario[];
   approvalRules: ApprovalRule[];
   memoireOpportunities: MemoireOpportunity[];
 
@@ -186,14 +181,6 @@ type HelmState = {
   addAction: (decisionId: string, title: string, ownerLabel: string, dueDate: string | null) => Promise<void>;
   setActionStatus: (id: string, status: DecisionAction['status']) => Promise<void>;
 
-  // ---- scenarios ----
-  createScenario: (input: { name: string; decisionId?: string | null; baseline: ScenarioBaseline }) => Promise<string | null>;
-  updateScenario: (
-    id: string,
-    fields: Partial<Pick<Scenario, 'name' | 'description' | 'baseline' | 'variants' | 'decisionId'>>,
-  ) => Promise<void>;
-  removeScenario: (id: string) => Promise<void>;
-
   // ---- approval rules ----
   saveApprovalRule: (rule: Omit<ApprovalRule, 'orgId' | 'id'> & { id?: string }) => Promise<void>;
   removeApprovalRule: (id: string) => Promise<void>;
@@ -216,7 +203,6 @@ const emptyData = {
   assumptions: [] as DecisionAssumption[],
   events: [] as DecisionEvent[],
   actions: [] as DecisionAction[],
-  scenarios: [] as Scenario[],
   approvalRules: [] as ApprovalRule[],
   memoireOpportunities: [] as MemoireOpportunity[],
 };
@@ -354,7 +340,6 @@ export const useHelmStore = create<HelmState>((set, get) => {
         assumptions: demoAssumptions,
         events: demoEvents,
         actions: demoActions,
-        scenarios: demoScenarios,
         approvalRules: demoApprovalRules,
         memoireOpportunities: demoMemoireOpportunities.map((o) => ({
           id: o.id,
@@ -429,7 +414,7 @@ export const useHelmStore = create<HelmState>((set, get) => {
       const sb = supabaseClient;
       const q = (table: string) => sb.from(table).select('*').eq('org_id', orgId);
       try {
-        const [units, costObjects, economics, inventory, processes, activities, signals, decisions, alternatives, assumptions, events, actions, scenarios, rules, memberRows] =
+        const [units, costObjects, economics, inventory, processes, activities, signals, decisions, alternatives, assumptions, events, actions, rules, memberRows] =
           await Promise.all([
             q('org_units'),
             q('helm_cost_objects'),
@@ -443,14 +428,13 @@ export const useHelmStore = create<HelmState>((set, get) => {
             q('helm_decision_assumptions'),
             q('helm_decision_events'),
             q('helm_actions'),
-            q('helm_scenarios'),
             q('helm_approval_rules'),
             sb
               .from('organization_memberships')
               .select('user_id, role, user_profiles:user_profiles!inner(id, email, display_name)')
               .eq('org_id', orgId),
           ]);
-        const first = [units, costObjects, economics, inventory, processes, activities, signals, decisions, alternatives, assumptions, events, actions, scenarios, rules].find((r) => r.error);
+        const first = [units, costObjects, economics, inventory, processes, activities, signals, decisions, alternatives, assumptions, events, actions, rules].find((r) => r.error);
         if (first?.error) throw new Error(first.error.message);
 
         const members: OrgMember[] = (memberRows.data ?? []).map((m) => {
@@ -476,7 +460,6 @@ export const useHelmStore = create<HelmState>((set, get) => {
           assumptions: (assumptions.data ?? []).map(map.mapAssumption),
           events: (events.data ?? []).map(map.mapEvent),
           actions: (actions.data ?? []).map(map.mapAction),
-          scenarios: (scenarios.data ?? []).map(map.mapScenario),
           approvalRules: (rules.data ?? []).map(map.mapApprovalRule),
           members,
           loadingData: false,
@@ -987,76 +970,6 @@ export const useHelmStore = create<HelmState>((set, get) => {
           set((st) => ({
             actions: st.actions.map((a) => (a.id === id ? { ...a, status } : a)),
           })),
-      );
-    },
-
-    // ------------------------------------------------------------- scenarios
-
-    createScenario: async (input) => {
-      const { activeOrgId } = get();
-      if (!activeOrgId) return null;
-      const scenario: Scenario = {
-        id: uid(),
-        orgId: activeOrgId,
-        decisionId: input.decisionId ?? null,
-        name: input.name,
-        description: '',
-        baseline: input.baseline,
-        variants: [],
-        createdAt: nowIso(),
-        updatedAt: nowIso(),
-      };
-      const err = await write(
-        async () => {
-          if (!supabaseClient) throw new Error('Cloud not configured');
-          const { error } = await supabaseClient.from('helm_scenarios').insert({
-            id: scenario.id,
-            org_id: activeOrgId,
-            decision_id: scenario.decisionId,
-            name: scenario.name,
-            baseline: scenario.baseline,
-            variants: scenario.variants as ScenarioVariant[],
-          });
-          if (error) throw new Error(error.message);
-        },
-        () => set((st) => ({ scenarios: [...st.scenarios, scenario] })),
-      );
-      return err ? null : scenario.id;
-    },
-
-    updateScenario: async (id, fields) => {
-      await write(
-        async () => {
-          if (!supabaseClient) throw new Error('Cloud not configured');
-          const { error } = await supabaseClient
-            .from('helm_scenarios')
-            .update({
-              name: fields.name,
-              description: fields.description,
-              baseline: fields.baseline,
-              variants: fields.variants,
-              decision_id: fields.decisionId,
-            })
-            .eq('id', id);
-          if (error) throw new Error(error.message);
-        },
-        () =>
-          set((st) => ({
-            scenarios: st.scenarios.map((sc) =>
-              sc.id === id ? { ...sc, ...fields, updatedAt: nowIso() } : sc,
-            ),
-          })),
-      );
-    },
-
-    removeScenario: async (id) => {
-      await write(
-        async () => {
-          if (!supabaseClient) throw new Error('Cloud not configured');
-          const { error } = await supabaseClient.from('helm_scenarios').delete().eq('id', id);
-          if (error) throw new Error(error.message);
-        },
-        () => set((st) => ({ scenarios: st.scenarios.filter((sc) => sc.id !== id) })),
       );
     },
 

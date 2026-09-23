@@ -1,5 +1,10 @@
 # Meridian Pharma Value Model v1
 
+> **Superseded in part.** Phase 4 extends this model to v1.1 with four
+> scenario calculations — order quantity, demand coverage, unserved demand and
+> revenue at risk. The nine below are unchanged. See
+> [Meridian Value Model v1.1](meridian-value-model-v1-1.md).
+
 HELM's first executable management model. Nine calculations that turn the
 Phase 2 value graph from a description of how value connects into something that
 computes.

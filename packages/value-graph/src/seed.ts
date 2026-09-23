@@ -37,6 +37,8 @@ export type SeedValueMetric = {
   timeBehavior: TimeBehavior;
   scopeCategories?: readonly string[] | null;
   metadata?: Record<string, unknown>;
+  /** Registry version of the definition. 1 unless its meaning has been revised. */
+  version?: number;
 };
 
 const COMMERCIAL_SCOPES = ['commercial', 'market'] as const;
@@ -286,9 +288,16 @@ export const seedValueMetrics: readonly SeedValueMetric[] = [
     dimension: 'CAPITAL',
     unitType: 'currency',
     aggregation: 'SUM',
-    directionality: 'LOWER_IS_BETTER',
+    // Revised in Phase 4 (v2): was LOWER_IS_BETTER. The description above
+    // already said why that was wrong — lower frees cash but too low starves
+    // service — and a comparison that labelled every increase "unfavourable"
+    // would take a side the business has not taken. Without an objective or a
+    // constraint, a change in working capital is shown, not judged.
+    directionality: 'CONTEXT_DEPENDENT',
     timeBehavior: 'POINT_IN_TIME',
     scopeCategories: ANY,
+    version: 2,
+    metadata: { revised: { phase: 4, field: 'directionality', from: 'LOWER_IS_BETTER' } },
   },
   {
     key: 'InventoryValue',
@@ -435,6 +444,80 @@ export const seedValueMetrics: readonly SeedValueMetric[] = [
     directionality: 'HIGHER_IS_BETTER',
     timeBehavior: 'POINT_IN_TIME',
     scopeCategories: ANY,
+  },
+
+  // ============================================== PHASE 4 — scenario model
+  //
+  // The metrics Meridian model v1.1 needs so that scenarios differ in what they
+  // BUY, not only in what they cost: whether demand can be served, how much of
+  // an order must ship, and what an explicit allocation of stock leaves exposed.
+  {
+    key: 'OrderQuantity',
+    name: 'Order Quantity',
+    description:
+      'Units the business must deliver if an opportunity is won. Not probability-weighted: ' +
+      'feasibility is about what must ship, not what is expected.',
+    dimension: 'OPERATIONAL',
+    unitType: 'units',
+    aggregation: 'SUM',
+    directionality: 'NEUTRAL',
+    timeBehavior: 'PERIOD',
+    scopeCategories: COMMERCIAL_SCOPES,
+    metadata: { introducedIn: 'phase-4' },
+  },
+  {
+    key: 'DemandCoverage',
+    name: 'Demand Coverage',
+    description:
+      "Share of a period's inventory requirement that own stock covers. HELM's proxy for the " +
+      'ability to serve — not a measured service level.',
+    dimension: 'CUSTOMER',
+    unitType: 'percentage',
+    aggregation: 'WEIGHTED_AVERAGE',
+    directionality: 'HIGHER_IS_BETTER',
+    timeBehavior: 'PERIOD',
+    scopeCategories: OPS_SCOPES,
+    metadata: { introducedIn: 'phase-4', weightBy: 'InventoryRequirement' },
+  },
+  {
+    key: 'AllocatedInventory',
+    name: 'Allocated Inventory',
+    description:
+      'Units of own stock a management choice commits to one opportunity for a period. ' +
+      'Stated, never derived: HELM does not allocate.',
+    dimension: 'OPERATIONAL',
+    unitType: 'units',
+    aggregation: 'SUM',
+    directionality: 'CONTEXT_DEPENDENT',
+    timeBehavior: 'PERIOD',
+    scopeCategories: COMMERCIAL_SCOPES,
+    metadata: { introducedIn: 'phase-4' },
+  },
+  {
+    key: 'UnservedDemand',
+    name: 'Unserved Order Quantity',
+    description: 'Units of a won order that the stock allocated to it would not cover.',
+    dimension: 'OPERATIONAL',
+    unitType: 'units',
+    aggregation: 'SUM',
+    directionality: 'LOWER_IS_BETTER',
+    timeBehavior: 'PERIOD',
+    scopeCategories: COMMERCIAL_SCOPES,
+    metadata: { introducedIn: 'phase-4' },
+  },
+  {
+    key: 'RevenueAtRisk',
+    name: 'Revenue at Risk',
+    description:
+      'Expected revenue attached to the part of an order that cannot be served under a ' +
+      'stated allocation.',
+    dimension: 'RISK',
+    unitType: 'currency',
+    aggregation: 'SUM',
+    directionality: 'LOWER_IS_BETTER',
+    timeBehavior: 'PERIOD',
+    scopeCategories: COMMERCIAL_SCOPES,
+    metadata: { introducedIn: 'phase-4' },
   },
 ];
 

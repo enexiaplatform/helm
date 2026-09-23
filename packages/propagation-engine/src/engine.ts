@@ -31,9 +31,11 @@ import {
   sumAll,
   toNumber,
   toString as decToString,
+  periodKey,
   type Clock,
   type Confidence,
   type EntityId,
+  type Period,
   type Quantity,
   type Result,
   type Scope,
@@ -62,8 +64,12 @@ import {
   type ComputeContext,
   type Explanation,
   type Freshness,
+  type InputOverlay,
   type InputResolution,
+  type InputSource,
   type ObservationPolicy,
+  type OverlayEntry,
+  type OverrideTrace,
   type RunObservationPolicy,
   type PropagationPlan,
   type PropagationPlanNode,
@@ -73,6 +79,7 @@ import {
 } from './types.ts';
 import type { CalculationRegistry } from './registry.ts';
 import {
+  canonicalNumeric,
   inputFingerprint,
   readTruthLayers,
   selectObservation,
@@ -81,7 +88,7 @@ import {
 import { buildDependencyGraph, downstreamOf, type MetricDependencyGraph } from './dependencyGraph.ts';
 import type { CalculationStore, PropagationEngine, PropagationRequest } from './port.ts';
 
-export const ENGINE_VERSION = '3.1.0';
+export const ENGINE_VERSION = '4.0.0';
 
 /** No run in progress: freshness and ad-hoc resolution read the stored world. */
 const EMPTY_RUN_OUTPUTS: RunOutputs = new Map();
@@ -124,6 +131,21 @@ export type PropagationEngineOptions = {
 };
 
 type ResolvedInput = { quantity: Quantity; traced: TracedInput };
+
+/** One value node's answer to an input, before an aggregate is summed. */
+type NodeResolution = {
+  readonly node: ValueNode;
+  /** Set for run outputs and overrides; null when built from `observation`. */
+  readonly quantity: Quantity | null;
+  readonly observation?: ValueObservation;
+  readonly observationId: string;
+  readonly observationType: ObservationType;
+  readonly confidence: Confidence | null;
+  readonly sourceSystem: string;
+  readonly effectiveAt: ValidTime | null;
+  readonly boundTo: Exclude<InputSource, 'MIXED'>;
+  readonly override?: OverrideTrace;
+};
 
 /**
  * What THIS run has produced so far, keyed by the value node it produced it for.
@@ -263,7 +285,32 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
     }
   }
 
-  /** Resolves one declared input to a unit-checked quantity plus its trace row. */
+  /**
+   * Resolves one declared input to a unit-checked quantity plus its trace row.
+   *
+   * THE RESOLUTION STACK (ADR-0019 §4). Each value node the binding reaches is
+   * resolved on its own, in this order, and the first layer that answers wins:
+   *
+   *   1. this run's own output for that node   — RUN_OUTPUT_IF_PLANNED inputs only
+   *   2. the scenario override for that node    — the revision's own, else an
+   *                                               ancestor's (already merged, child
+   *                                               wins, shadowed ones recorded)
+   *   3. the source world                        — the input's policy, both lenses,
+   *                                               the run's period
+   *   4. nothing                                 — MISSING_INPUT, or
+   *                                               TIME_CONTEXT_MISMATCH when the
+   *                                               world only speaks to other periods
+   *
+   * Layers 1 and 2 can never compete for one node: an override may only name a
+   * node the run does not compute, which `execute` enforces before anything runs.
+   * And an override does not change an input's binding semantics — a
+   * SOURCE_POLICY_ONLY input still never reads a run output, and an overridden
+   * source value is bound as an override, not promoted into model state.
+   *
+   * Resolving per node (rather than all-or-nothing) is also what keeps an
+   * aggregate honest when only some of its parts were planned: the planned parts
+   * still bind to this run's outputs instead of falling back to persisted values.
+   */
   async function resolveInput(
     scope: Scope,
     spec: CalculationInputSpec,
@@ -271,8 +318,10 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
     policy: RunObservationPolicy,
     lens: Lens,
     horizon: TimeHorizon | null,
+    period: Period | null,
     scenarioEntityId: EntityId | null,
     runOutputs: RunOutputs,
+    overlay: InputOverlay | null,
   ): Promise<Result<ResolvedInput | null>> {
     const bound = await resolveInputNodes(scope, spec, outputNode, horizon);
     if (!bound.ok) return bound;
@@ -319,95 +368,68 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
 
     const resolution: InputResolution = spec.resolution ?? 'SOURCE_POLICY_ONLY';
     const effectivePolicy: ObservationPolicy = spec.preference ?? policy;
+    const order =
+      resolution === 'RUN_OUTPUT_IF_PLANNED'
+        ? // Not planned upstream: persisted model truth first — this input has
+          // explicitly asked for the model — then what the business says, so a
+          // gap degrades to a stated number rather than to nothing.
+          unplannedDependencyOrder
+        : policyOrder[effectivePolicy];
+    // A point-in-time input (declared `current`) reads "as of" the effective
+    // lens whatever period the run models; that carry-forward is what the
+    // declaration means. Every other input is held to the run's period.
+    const inputPeriod = spec.horizon === 'current' ? null : period;
 
-    // ---------------------------------------------------------------------
-    // EXECUTION DEPENDENCY. If this run's plan produced the upstream value,
-    // that output IS the input — bound to the execution frame, carrying the
-    // raw quantity rather than its business-rounded representation, and
-    // without consulting the persistent world at all.
-    //
-    // This is what makes "Expected Revenue -> Demand Quantity" an execution
-    // dependency rather than "read whichever DERIVED observation is newest".
-    // ---------------------------------------------------------------------
-    if (resolution === 'RUN_OUTPUT_IF_PLANNED') {
-      const fromRun = usable
-        .map((node) => ({ node, output: runOutputs.get(node.id) }))
-        .filter((x): x is { node: ValueNode; output: RunOutput } => Boolean(x.output));
-
-      if (fromRun.length > 0 && fromRun.length === usable.length) {
-        const first = fromRun[0].output;
-        for (const { output } of fromRun) {
-          if (output.quantity.unit !== spec.expectUnit) {
-            return fail(
-              CalculationErrors.UNIT_MISMATCH,
-              `Input "${spec.name}" expects ${spec.expectUnit} but the run produced ` +
-                `${spec.metricKey} in ${output.quantity.unit}.`,
-              { expected: spec.expectUnit, received: output.quantity.unit },
-            );
-          }
-          if (output.quantity.currency !== first.quantity.currency) {
-            return fail(
-              CalculationErrors.CURRENCY_MISMATCH,
-              `Aggregated "${spec.metricKey}" run outputs mix currencies.`,
-            );
-          }
-        }
-        const runTotal = sumAll(fromRun.map((x) => x.output.quantity.amount));
-        const runQuantity = quantity(runTotal, spec.expectUnit, first.quantity.currency);
-        if (!runQuantity.ok) return runQuantity;
-        const runConfidences = fromRun
-          .map((x) => x.output.confidence)
-          .filter((c) => c !== null);
-        return ok({
-          quantity: runQuantity.value,
-          traced: {
-            name: spec.name,
-            metricKey: spec.metricKey,
-            nodeId: fromRun.map((x) => x.node.id).join('+'),
-            observationId: fromRun.map((x) => x.output.observationId).join('+'),
-            observationType: first.observationType,
-            value: decToString(runTotal),
-            unit: spec.expectUnit,
-            currency: first.quantity.currency,
-            confidence: runConfidences.length > 0 ? Math.min(...runConfidences) : null,
-            sourceSystem: first.sourceSystem,
-            effectiveAt: first.effectiveAt,
+    // --- per node, the resolution stack ---
+    const parts: NodeResolution[] = [];
+    for (const node of usable) {
+      // 1. EXECUTION DEPENDENCY: this run's own output.
+      if (resolution === 'RUN_OUTPUT_IF_PLANNED') {
+        const out = runOutputs.get(node.id);
+        if (out) {
+          parts.push({
+            node,
+            quantity: out.quantity,
+            observationId: out.observationId,
+            observationType: out.observationType,
+            confidence: out.confidence,
+            sourceSystem: out.sourceSystem,
+            effectiveAt: out.effectiveAt,
             boundTo: 'RUN_OUTPUT',
-            components:
-              fromRun.length > 1
-                ? fromRun.map((x) => ({
-                    nodeId: x.node.id,
-                    observationId: x.output.observationId,
-                    value: decToString(x.output.quantity.amount),
-                    observationType: x.output.observationType,
-                  }))
-                : undefined,
-          },
+          });
+          continue;
+        }
+      }
+
+      // 2. SCENARIO OVERRIDE.
+      const entry = overlay?.entries.get(node.id);
+      if (entry) {
+        const applied = await applyOverride(scope, spec, node, entry, order, lens, inputPeriod, scenarioEntityId);
+        if (!applied.ok) return applied;
+        parts.push(applied.value);
+        continue;
+      }
+
+      // 3. SOURCE WORLD.
+      const obs = await selectObservation(valueGraph, scope, node.id, order, lens, scenarioEntityId, inputPeriod);
+      if (!obs.ok) return obs;
+      if (obs.value) {
+        parts.push({
+          node,
+          quantity: null,
+          observation: obs.value,
+          observationId: obs.value.id,
+          observationType: obs.value.observationType,
+          confidence: obs.value.confidence,
+          sourceSystem: obs.value.sourceSystem,
+          effectiveAt: obs.value.effectiveAt ?? obs.value.periodStart ?? null,
+          boundTo: 'SOURCE_OBSERVATION',
         });
       }
     }
 
-    // ---------------------------------------------------------------------
-    // SOURCE RESOLUTION. The persistent observation world, under a declared
-    // policy and bounded by BOTH lenses.
-    // ---------------------------------------------------------------------
-    const order =
-      resolution === 'RUN_OUTPUT_IF_PLANNED'
-        ? // The upstream was not planned, so fall back to persisted model truth
-          // first — this input has explicitly asked for the model — and then to
-          // what the business says, so a gap degrades to a stated number rather
-          // than to nothing.
-          unplannedDependencyOrder
-        : policyOrder[effectivePolicy];
-
-    const picked = [];
-    for (const node of usable) {
-      const obs = await selectObservation(valueGraph, scope, node.id, order, lens, scenarioEntityId);
-      if (!obs.ok) return obs;
-      if (obs.value) picked.push({ node, obs: obs.value });
-    }
-
-    if (picked.length === 0) {
+    // 4. NOTHING.
+    if (parts.length === 0) {
       if (!spec.required) return ok(null);
       const describedPolicy =
         resolution === 'RUN_OUTPUT_IF_PLANNED' ? 'execution-dependency' : effectivePolicy;
@@ -415,70 +437,191 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
         CalculationErrors.MISSING_INPUT,
         `"${spec.metricKey}" has a value node but no usable observation under the ` +
           `${describedPolicy} policy, effective ${lens.effectiveAsOf.toISOString()} and ` +
-          `known through ${lens.recordedThrough.toISOString()}. ` +
-          `The model needs ${spec.description.toLowerCase()}`,
+          `known through ${lens.recordedThrough.toISOString()}` +
+          (inputPeriod ? ` for ${periodKey(inputPeriod)}` : '') +
+          `. The model needs ${spec.description.toLowerCase()}`,
         {
           metricKey: spec.metricKey,
           policy: effectivePolicy,
           resolution,
           effectiveAsOf: lens.effectiveAsOf.toISOString(),
           recordedThrough: lens.recordedThrough.toISOString(),
+          period: inputPeriod ? periodKey(inputPeriod) : null,
         },
       );
     }
 
-    const first = picked[0].obs;
-
-    // Unit validation before compute() ever sees the value.
-    if (first.unitType !== spec.expectUnit) {
-      return fail(
-        CalculationErrors.UNIT_MISMATCH,
-        `Input "${spec.name}" expects ${spec.expectUnit} but "${spec.metricKey}" observations ` +
-          `are in ${first.unitType}.`,
-        { expected: spec.expectUnit, received: first.unitType },
-      );
-    }
-    for (const p of picked) {
-      if (p.obs.unitType !== first.unitType || p.obs.currency !== first.currency) {
+    // --- units, before compute() ever sees a value ---
+    const quantities: Quantity[] = [];
+    for (const part of parts) {
+      let q: Quantity;
+      if (part.quantity) {
+        q = part.quantity;
+      } else {
+        const o = part.observation!;
+        if (o.unitType !== spec.expectUnit) {
+          return fail(
+            CalculationErrors.UNIT_MISMATCH,
+            `Input "${spec.name}" expects ${spec.expectUnit} but "${spec.metricKey}" observations ` +
+              `are in ${o.unitType}.`,
+            { expected: spec.expectUnit, received: o.unitType },
+          );
+        }
+        const made = quantity(decimal(o.numericValue ?? 0), o.unitType, o.currency);
+        if (!made.ok) return made;
+        q = made.value;
+      }
+      if (q.unit !== spec.expectUnit) {
         return fail(
-          CalculationErrors.CURRENCY_MISMATCH,
-          `Aggregated "${spec.metricKey}" observations mix units or currencies.`,
+          CalculationErrors.UNIT_MISMATCH,
+          `Input "${spec.name}" expects ${spec.expectUnit} but received ` +
+            `${spec.metricKey} in ${q.unit}.`,
+          { expected: spec.expectUnit, received: q.unit },
         );
       }
+      quantities.push(q);
+    }
+    const currency = quantities[0].currency;
+    if (quantities.some((q) => q.currency !== currency)) {
+      return fail(
+        CalculationErrors.CURRENCY_MISMATCH,
+        `Aggregated "${spec.metricKey}" values mix units or currencies.`,
+      );
     }
 
-    const total = sumAll(picked.map((p) => decimal(p.obs.numericValue ?? 0)));
-    const q = quantity(total, spec.expectUnit, first.currency);
-    if (!q.ok) return q;
+    const total = sumAll(quantities.map((q) => q.amount));
+    const totalQuantity = quantity(total, spec.expectUnit, currency);
+    if (!totalQuantity.ok) return totalQuantity;
 
-    const confidences = picked.map((p) => p.obs.confidence).filter((c): c is number => c !== null);
+    const bindings = [...new Set(parts.map((p) => p.boundTo))];
+    const confidences = parts.map((p) => p.confidence).filter((c): c is number => c !== null);
+    const first = parts[0];
 
     return ok({
-      quantity: q.value,
+      quantity: totalQuantity.value,
       traced: {
         name: spec.name,
         metricKey: spec.metricKey,
-        nodeId: picked.map((p) => p.node.id).join('+'),
-        observationId: picked.map((p) => p.obs.id).join('+'),
+        nodeId: parts.map((p) => p.node.id).join('+'),
+        observationId: parts.map((p) => p.observationId).join('+'),
         observationType: first.observationType,
         value: decToString(total),
         unit: spec.expectUnit,
-        currency: first.currency,
+        currency,
         confidence: confidences.length > 0 ? Math.min(...confidences) : null,
         sourceSystem: first.sourceSystem,
-        effectiveAt: first.effectiveAt ?? first.periodStart ?? null,
-        boundTo: 'SOURCE_OBSERVATION',
+        effectiveAt: first.effectiveAt,
+        boundTo: bindings.length === 1 ? bindings[0] : 'MIXED',
+        override: parts.length === 1 ? first.override : undefined,
         // Only when more than one claim was summed: for a single input the
         // components would restate the value and add nothing.
         components:
-          picked.length > 1
-            ? picked.map((p) => ({
+          parts.length > 1
+            ? parts.map((p, i) => ({
                 nodeId: p.node.id,
-                observationId: p.obs.id,
-                value: decToString(decimal(p.obs.numericValue ?? 0)),
-                observationType: p.obs.observationType,
+                observationId: p.observationId,
+                value: decToString(quantities[i].amount),
+                observationType: p.observationType,
+                boundTo: p.boundTo,
+                override: p.override,
               }))
             : undefined,
+      },
+    });
+  }
+
+  /**
+   * Layer 2 of the stack. SET binds the override's value; ADD reads the value
+   * the run would otherwise have used — same order, same lenses, same period —
+   * and adds the delta. An ADD with nothing to add to is a missing input, not a
+   * zero: "freight +80M" says nothing about what freight is.
+   */
+  async function applyOverride(
+    scope: Scope,
+    spec: CalculationInputSpec,
+    node: ValueNode,
+    entry: OverlayEntry,
+    order: readonly ObservationType[],
+    lens: Lens,
+    period: Period | null,
+    scenarioEntityId: EntityId | null,
+  ): Promise<Result<NodeResolution>> {
+    if (entry.unit !== spec.expectUnit) {
+      return fail(
+        CalculationErrors.UNIT_MISMATCH,
+        `Scenario override ${entry.overrideId} states "${spec.metricKey}" in ${entry.unit}, ` +
+          `but input "${spec.name}" expects ${spec.expectUnit}.`,
+        { expected: spec.expectUnit, received: entry.unit, overrideId: entry.overrideId },
+      );
+    }
+    const trace: OverrideTrace = {
+      overrideId: entry.overrideId,
+      scenarioId: entry.scenarioId,
+      revisionId: entry.revisionId,
+      operation: entry.operation,
+      value: canonicalNumeric(entry.value),
+      inheritedFromScenarioId: entry.inheritedFromScenarioId,
+      shadowedOverrideIds: entry.shadowedOverrideIds,
+      provenanceKind: entry.provenanceKind,
+      baseline: null,
+    };
+
+    if (entry.operation === 'SET') {
+      const q = quantity(decimal(entry.value), entry.unit, entry.currency);
+      if (!q.ok) return q;
+      return ok({
+        node,
+        quantity: q.value,
+        observationId: `override:${entry.overrideId}`,
+        observationType: 'SCENARIO',
+        confidence: entry.confidence,
+        sourceSystem: 'scenario',
+        effectiveAt: null,
+        boundTo: 'SCENARIO_OVERRIDE',
+        override: trace,
+      });
+    }
+
+    // ADD: against the baseline this run would have read.
+    const base = await selectObservation(valueGraph, scope, node.id, order, lens, scenarioEntityId, period);
+    if (!base.ok) return base;
+    if (!base.value) {
+      return fail(
+        CalculationErrors.MISSING_INPUT,
+        `Scenario override ${entry.overrideId} adjusts "${spec.metricKey}" by ${entry.value}, ` +
+          'but the baseline has no value to adjust under this run\'s lenses and period. ' +
+          'State the value with SET instead.',
+        { overrideId: entry.overrideId, metricKey: spec.metricKey },
+      );
+    }
+    const b = base.value;
+    if (b.unitType !== entry.unit || b.currency !== entry.currency) {
+      return fail(
+        CalculationErrors.UNIT_MISMATCH,
+        `Scenario override ${entry.overrideId} is in ${entry.unit} ${entry.currency ?? ''} ` +
+          `but the baseline "${spec.metricKey}" is in ${b.unitType} ${b.currency ?? ''}.`,
+      );
+    }
+    const baseAmount = decimal(b.numericValue ?? 0);
+    const q = quantity(sumAll([baseAmount, decimal(entry.value)]), entry.unit, entry.currency);
+    if (!q.ok) return q;
+    const confs = [entry.confidence, b.confidence].filter((c): c is number => c !== null);
+    return ok({
+      node,
+      quantity: q.value,
+      observationId: `override:${entry.overrideId}`,
+      observationType: 'SCENARIO',
+      confidence: confs.length > 0 ? Math.min(...confs) : null,
+      sourceSystem: 'scenario',
+      effectiveAt: b.effectiveAt ?? b.periodStart ?? null,
+      boundTo: 'SCENARIO_OVERRIDE',
+      override: {
+        ...trace,
+        baseline: {
+          observationId: b.id,
+          value: canonicalNumeric(decToString(baseAmount)),
+          observationType: b.observationType,
+        },
       },
     });
   }
@@ -535,7 +678,25 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
     const affected = downstreamOf(depGraph, changedMetrics);
     const targetMetrics = affected.filter((_m, i) => i < 10_000).slice(0, maxDepth * 50);
 
-    const horizon = request.horizon === undefined ? 'quarter' : request.horizon;
+    // A stated period implies its horizon; a caller who states both must mean
+    // the same thing by them.
+    const grainHorizon: TimeHorizon | null = request.period
+      ? request.period.grain === 'QUARTER'
+        ? 'quarter'
+        : request.period.grain === 'MONTH'
+          ? 'month'
+          : request.period.grain === 'YEAR'
+            ? 'year'
+            : null
+      : null;
+    if (request.period && request.horizon && grainHorizon && request.horizon !== grainHorizon) {
+      return fail(
+        CalculationErrors.TIME_CONTEXT_MISMATCH,
+        `The run states period ${periodKey(request.period)} but horizon "${request.horizon}".`,
+      );
+    }
+    const horizon =
+      request.horizon !== undefined ? request.horizon : (grainHorizon ?? 'quarter');
 
     // For each affected metric, find the value nodes that should carry it.
     const planNodes: PropagationPlanNode[] = [];
@@ -617,13 +778,62 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
 
     async execute(scope, request) {
       const lens = lensFor(request, clock);
+      const overlay = request.overlay ?? null;
+      // A scenario RUNTIME run reads reality through the baseline's policy and
+      // layers its overrides on top. Only the legacy form — a scenario entity
+      // with no overlay — reads stated SCENARIO observations (ADR-0019 §5).
       const policy: RunObservationPolicy =
-        request.preference ?? (request.scenarioEntityId ? 'SCENARIO' : 'SOURCE_TRUTH');
+        request.preference ??
+        (request.scenarioEntityId && !overlay ? 'SCENARIO' : 'SOURCE_TRUTH');
       const scenarioEntityId = request.scenarioEntityId ?? null;
+      const period = request.period ?? null;
+
+      if (overlay) {
+        if (!scenarioEntityId || !request.scenarioRevisionId) {
+          return fail(
+            CalculationErrors.INVALID_OVERLAY,
+            'An overlay run must name the scenario entity its outputs belong to and the ' +
+              'scenario revision it executes.',
+          );
+        }
+        if (policy === 'SCENARIO') {
+          return fail(
+            CalculationErrors.INVALID_OVERLAY,
+            'An overlay run reads the baseline world and applies explicit overrides. Combined ' +
+              'with the SCENARIO policy it would also read persisted scenario outputs as inputs, ' +
+              'so an earlier run of a scenario could feed a later one.',
+          );
+        }
+        if (overlay.revisionId !== request.scenarioRevisionId) {
+          return fail(
+            CalculationErrors.INVALID_OVERLAY,
+            `The overlay belongs to revision ${overlay.revisionId}, not ${request.scenarioRevisionId}.`,
+          );
+        }
+      }
 
       const built = await buildPlan(scope, request);
       if (!built.ok) return built;
       const { plan, horizon } = built.value;
+
+      // An override changes an input, never an outcome. A scenario that states
+      // the value of something the model computes would be asserting its own
+      // conclusion, and the trace would show a derivation that never ran.
+      if (overlay) {
+        const computed = plan.nodes.filter((n) => overlay.entries.has(n.outputNodeId));
+        if (computed.length > 0) {
+          return fail(
+            CalculationErrors.OVERRIDE_TARGETS_COMPUTED_NODE,
+            `${computed.length} override(s) name value nodes this model computes ` +
+              `(${computed.map((n) => `${n.calculation.outputMetricKey} via ${calculationRef(n.calculation)}`).join('; ')}). ` +
+              'Override the inputs; the outcome is derived.',
+            {
+              nodeIds: computed.map((n) => n.outputNodeId),
+              overrideIds: computed.map((n) => overlay.entries.get(n.outputNodeId)!.overrideId),
+            },
+          );
+        }
+      }
 
       const runInput: Omit<CalculationRun, 'id' | 'orgId' | 'startedAt'> = {
         status: 'RUNNING',
@@ -635,7 +845,11 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
           preference: policy,
           scenarioEntityId,
           rootNodeIds: request.fromNodeIds ?? [],
+          rootMetricKeys: request.fromMetricKeys ?? [],
+          subjectEntityIds: request.subjectEntityIds ?? [],
           engineVersion: ENGINE_VERSION,
+          period,
+          scenarioRevisionId: overlay ? request.scenarioRevisionId ?? null : null,
         },
         completedAt: null,
         replayOfRunId: null,
@@ -691,8 +905,10 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
             policy,
             lens,
             horizon,
+            period,
             scenarioEntityId,
             runOutputs,
+            overlay,
           );
           if (!r.ok) {
             blocked = { code: r.error.code, message: r.error.message };
@@ -717,6 +933,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
         const fp = inputFingerprint(calculationRef(calc), {
           horizon: horizon ?? '',
           scenario: scenarioEntityId ?? '',
+          period,
         }, traced);
 
         // --- idempotency: an identical computation is UNCHANGED (§26) ---
@@ -822,7 +1039,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
           }, steps, summary);
           continue;
         }
-        const period = periodFor(metric.value.timeBehavior, node.value, horizon, lens.effectiveAsOf);
+        const outPeriod = periodFor(metric.value.timeBehavior, node.value, horizon, lens.effectiveAsOf, period);
 
         // ---------------------------------------------------------------
         // BUSINESS NORMALIZATION. The arithmetic ran at full internal
@@ -889,9 +1106,9 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
           numericValue: toNumber(normalized.normalized),
           unitType: output.value.unit,
           currency: output.value.currency,
-          effectiveAt: period.effectiveAt,
-          periodStart: period.periodStart,
-          periodEnd: period.periodEnd,
+          effectiveAt: outPeriod.effectiveAt,
+          periodStart: outPeriod.periodStart,
+          periodEnd: outPeriod.periodEnd,
           observedAt: asValidTime(lens.effectiveAsOf.toISOString()),
           scenarioEntityId,
           confidence,
@@ -910,6 +1127,10 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
               storageScale: policyForMetric.storageScale,
               roundingMode: policyForMetric.roundingMode,
             },
+            // The modelled period, for every output — including point-in-time
+            // ones, whose value columns cannot carry an interval.
+            period: period ? periodKey(period) : undefined,
+            scenarioRevisionId: overlay ? overlay.revisionId : undefined,
           },
         });
         if (!obs.ok) {
@@ -933,7 +1154,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
           observationType,
           sourceSystem: 'helm',
           confidence,
-          effectiveAt: period.effectiveAt ?? period.periodStart ?? null,
+          effectiveAt: outPeriod.effectiveAt ?? outPeriod.periodStart ?? null,
         });
         await recordStep(scope, run.id, sequence, calc, node.value.id, {
           status: 'CALCULATED',
@@ -1051,10 +1272,14 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
             preference,
             freshnessLens,
             contextHorizon,
+            run.value?.context.period ?? null,
             scenarioEntityId,
             // Freshness asks what the inputs are NOW, outside any run, so
             // there is no execution frame to bind to.
             EMPTY_RUN_OUTPUTS,
+            // Nor an overlay: a scenario value's freshness is a question for
+            // the scenario runtime, which holds the revision.
+            null,
           );
           if (!r.ok) {
             resolvable = false;
@@ -1078,6 +1303,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
         const current = inputFingerprint(calculationRef(calc), {
           horizon: runHorizon,
           scenario: scenarioEntityId ?? '',
+          period: run.value?.context.period ?? null,
         }, traced);
         const recorded = step.value.inputFingerprint;
         const matches = recorded === current;
@@ -1109,13 +1335,25 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
       // a replay evidence about the original decision rather than a fresh run
       // that happens to use old numbers.
       const ctx = original.value.context;
+      if (ctx.scenarioRevisionId) {
+        return fail(
+          CalculationErrors.REPLAY_REQUIRES_SCENARIO_RUNTIME,
+          `Run ${runId} executed scenario revision ${ctx.scenarioRevisionId}. Its overrides live ` +
+            'with that revision, so replaying it here would silently drop them; replay it ' +
+            'through the scenario runtime.',
+          { runId, scenarioRevisionId: ctx.scenarioRevisionId },
+        );
+      }
       return engine.execute(scope, {
         fromNodeIds: ctx.rootNodeIds,
+        fromMetricKeys: ctx.rootMetricKeys,
+        subjectEntityIds: ctx.subjectEntityIds.length > 0 ? ctx.subjectEntityIds : undefined,
         effectiveAsOf: new Date(ctx.effectiveAsOf),
         recordedThrough: new Date(ctx.recordedThrough),
         horizon: ctx.horizon,
         preference: ctx.preference,
         scenarioEntityId: ctx.scenarioEntityId,
+        period: ctx.period,
         triggerType: 'REPLAY',
         notes: `replay of ${runId}`,
       });
@@ -1128,6 +1366,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
         nodeId,
         lensFor(options, clock),
         options.sourcePolicy ?? 'SOURCE_TRUTH',
+        options.period ?? null,
       );
     },
 
@@ -1201,7 +1440,21 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
     if (step.value && depthLeft > 0) {
       for (const traced of step.value.inputs) {
         // An aggregated input joins several observations with '+'.
-        for (const id of traced.observationId.split('+')) {
+        const ids = traced.observationId.split('+');
+        for (let i = 0; i < ids.length; i += 1) {
+          const id = ids[i];
+          if (id.startsWith('override:')) {
+            // A scenario override is not an observation. It is explained from
+            // the trace, which recorded it exactly as it was applied, and an
+            // ADD continues into the baseline observation it adjusted.
+            const part = traced.components?.[i];
+            const trace = part?.override ?? traced.override;
+            if (!trace) continue;
+            const child = await explainOverride(scope, traced, part?.nodeId ?? traced.nodeId,
+              part?.value ?? traced.value, trace, depthLeft - 1, seen);
+            if (child.ok) inputs.push(child.value);
+            continue;
+          }
           const child = await explainInternal(scope, id, depthLeft - 1, new Set(seen));
           if (child.ok) inputs.push(child.value);
         }
@@ -1243,6 +1496,38 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
           }
         : null,
       inputs,
+    });
+  }
+
+  async function explainOverride(
+    scope: Scope,
+    traced: TracedInput,
+    nodeId: string,
+    value: string,
+    trace: OverrideTrace,
+    depthLeft: number,
+    seen: Set<string>,
+  ): Promise<Result<Explanation>> {
+    const node = await valueGraph.getValueNode(scope, nodeId);
+    if (!node.ok) return node;
+    const baseline: Explanation[] = [];
+    if (trace.baseline && depthLeft > 0) {
+      const b = await explainInternal(scope, trace.baseline.observationId, depthLeft - 1, new Set(seen));
+      if (b.ok) baseline.push(b.value);
+    }
+    return ok({
+      observationId: `override:${trace.overrideId}`,
+      metricKey: traced.metricKey,
+      nodeLabel: node.value?.label ?? nodeId,
+      value,
+      unit: traced.unit,
+      currency: traced.currency,
+      observationType: 'SCENARIO',
+      confidence: traced.confidence,
+      derivation: null,
+      source: null,
+      override: trace,
+      inputs: baseline,
     });
   }
 
@@ -1347,10 +1632,21 @@ function periodFor(
   node: ValueNode,
   horizon: TimeHorizon | null,
   asOf: Date,
+  period: Period | null,
 ): { effectiveAt: ValidTime | null; periodStart: ValidTime | null; periodEnd: ValidTime | null } {
   const at = asValidTime(asOf.toISOString());
   if (timeBehavior === 'POINT_IN_TIME' || timeBehavior === 'RATE') {
     return { effectiveAt: at, periodStart: null, periodEnd: null };
+  }
+
+  // A stated period is written exactly, so the output is a claim about the
+  // same interval its period inputs were held to (ADR-0020).
+  if (period) {
+    return {
+      effectiveAt: null,
+      periodStart: asValidTime(period.start),
+      periodEnd: asValidTime(period.end),
+    };
   }
 
   const h = node.timeHorizon ?? horizon;

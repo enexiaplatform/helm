@@ -9,7 +9,6 @@
  *                   assumptions, governance, expected vs actual outcome, lesson.
  *   Alternative   — an option under a decision, with structured financial lines.
  *   Assumption    — an explicit, reviewable belief the analysis depends on.
- *   Scenario      — a what-if model over a P&L baseline.
  *   CostObject    — a profitability lens (company, unit, brand, product, customer…).
  *   EconomicsRow  — one period of economics for a cost object.
  *   InventoryItem — inventory viewed as capital, risk, and service level.
@@ -267,51 +266,6 @@ export type ApprovalRule = {
   thresholdAmount: number;
   requiredRole: 'manager' | 'admin';
   active: boolean;
-};
-
-// ---------------------------------------------------------------- scenarios
-
-/** The P&L baseline a scenario perturbs. Amounts are per period (a month). */
-export type ScenarioBaseline = {
-  label: string;
-  currency: string;
-  unitPrice: number;
-  unitsPerPeriod: number;
-  variableCostPerUnit: number;
-  fixedCostsPerPeriod: number;
-  /** Optional extras applied after contribution margin. */
-  otherIncomePerPeriod?: number;
-};
-
-/** Multiplicative/absolute deltas applied to the baseline. All optional. */
-export type ScenarioDeltas = {
-  unitPricePct?: number;
-  unitsPct?: number;
-  variableCostPerUnitPct?: number;
-  fixedCostsPct?: number;
-  unitPriceAbs?: number;
-  unitsAbs?: number;
-  variableCostPerUnitAbs?: number;
-  fixedCostsAbs?: number;
-};
-
-export type ScenarioVariant = {
-  id: string;
-  name: string;
-  deltas: ScenarioDeltas;
-  note?: string;
-};
-
-export type Scenario = {
-  id: string;
-  orgId: string;
-  decisionId: string | null;
-  name: string;
-  description: string;
-  baseline: ScenarioBaseline;
-  variants: ScenarioVariant[];
-  createdAt: string;
-  updatedAt: string;
 };
 
 // ---------------------------------------------------------------- economics

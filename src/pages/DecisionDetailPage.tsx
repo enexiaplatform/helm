@@ -561,56 +561,29 @@ function LabeledText({
 
 // ------------------------------------------------------------ scenarios tab
 
+/**
+ * Scenario analysis moved to the kernel Scenario Runtime in Phase 4. The
+ * pre-kernel per-decision P&L what-ifs are retired: they were a second
+ * calculation engine with no lineage, time or knowledge boundary. Linking a
+ * decision to a scenario revision and its simulations is Phase 5.
+ */
 function ScenariosTab({ decision }: { decision: Decision }) {
-  const navigate = useNavigate();
-  const scenarios = useHelmStore((s) => s.scenarios.filter((sc) => sc.decisionId === decision.id));
-  const createScenario = useHelmStore((s) => s.createScenario);
-
-  const newScenario = async () => {
-    const id = await createScenario({
-      name: `${decision.title} — what-if`,
-      decisionId: decision.id,
-      baseline: {
-        label: 'Baseline',
-        currency: decision.currency ?? 'USD',
-        unitPrice: 0,
-        unitsPerPeriod: 0,
-        variableCostPerUnit: 0,
-        fixedCostsPerPeriod: 0,
-      },
-    });
-    if (id) navigate(`/scenarios/${id}`);
-  };
-
   return (
-    <PanelCard
-      title="Attached scenarios"
-      action={
-        <button className="btn-secondary px-2.5 py-1 text-xs" onClick={() => void newScenario()}>
-          <Plus size={13} /> New scenario
-        </button>
-      }
-    >
-      {scenarios.length === 0 ? (
-        <EmptyState
-          title="No scenarios attached"
-          detail="Test the high-sensitivity assumptions before deciding — price, volume, cost moves."
-        />
-      ) : (
-        <ul className="space-y-2">
-          {scenarios.map((sc) => (
-            <li key={sc.id}>
-              <Link
-                to={`/scenarios/${sc.id}`}
-                className="flex items-center justify-between rounded-md border border-ink-100 px-3 py-2 text-sm hover:border-accent-300 hover:bg-accent-50/40"
-              >
-                <span className="font-medium">{sc.name}</span>
-                <span className="text-2xs text-ink-500">{sc.variants.length} variant{sc.variants.length === 1 ? '' : 's'}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+    <PanelCard title="Scenarios">
+      <EmptyState
+        title="Scenarios now run on the enterprise model"
+        detail={
+          `Model the futures behind “${decision.title}” in the Scenario Runtime: explicit ` +
+          'overrides on a pinned baseline, simulated through the propagation engine and ' +
+          'compared without a recommendation. Attaching a scenario revision to this decision ' +
+          'arrives with Decision Intelligence.'
+        }
+        action={
+          <Link to="/scenarios" className="btn-secondary">
+            Open the Scenario Runtime
+          </Link>
+        }
+      />
     </PanelCard>
   );
 }

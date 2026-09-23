@@ -45,6 +45,11 @@ const APPEND_ONLY = [
   // A recorded claim about what was, what we expected or what we wanted must
   // not be quietly rewritten later.
   'helm_value_observations',
+  // A scenario's revisions, its simulations and their feasibility results are
+  // the record a later decision review reads. Revising creates; nothing deletes.
+  'helm_scenario_revisions',
+  'helm_scenario_runs',
+  'helm_scenario_constraint_results',
 ];
 
 /**

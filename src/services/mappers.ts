@@ -11,7 +11,6 @@ import type {
   OrgUnit,
   Process,
   ProcessActivity,
-  Scenario,
   Signal,
 } from '../domain/types.ts';
 
@@ -134,27 +133,6 @@ export function mapSignal(r: Row): Signal {
     status: s(r.status) as Signal['status'],
     decisionId: sn(r.decision_id),
     detectedAt: s(r.detected_at),
-  };
-}
-
-export function mapScenario(r: Row): Scenario {
-  return {
-    id: s(r.id),
-    orgId: s(r.org_id),
-    decisionId: sn(r.decision_id),
-    name: s(r.name),
-    description: s(r.description),
-    baseline: (r.baseline as Scenario['baseline']) ?? {
-      label: 'Baseline',
-      currency: 'USD',
-      unitPrice: 0,
-      unitsPerPeriod: 0,
-      variableCostPerUnit: 0,
-      fixedCostsPerPeriod: 0,
-    },
-    variants: Array.isArray(r.variants) ? (r.variants as Scenario['variants']) : [],
-    createdAt: s(r.created_at),
-    updatedAt: s(r.updated_at),
   };
 }
 

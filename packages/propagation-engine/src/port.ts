@@ -7,13 +7,14 @@
  * is no `InMemoryPropagationEngine` and no `PostgresPropagationEngine`.
  */
 
-import type { EntityId, Result, Scope } from '@helm/shared';
+import type { EntityId, Period, Result, Scope } from '@helm/shared';
 import type { TimeHorizon } from '@helm/value-graph';
 import type {
   CalculationRun,
   CalculationStep,
   Explanation,
   Freshness,
+  InputOverlay,
   ObservationPolicy,
   RunObservationPolicy,
   PropagationPlan,
@@ -48,6 +49,19 @@ export type PropagationRequest = {
   preference?: RunObservationPolicy;
   /** Present for a scenario run: outputs become SCENARIO observations. */
   scenarioEntityId?: EntityId | null;
+  /**
+   * The business period being modelled. Period claims must be about exactly
+   * this period; outputs of period metrics are written for it. Omitted, the
+   * run refuses to choose between claims about different periods (ADR-0020).
+   */
+  period?: Period | null;
+  /**
+   * Scenario overrides to layer over the source world, from the scenario
+   * runtime. Requires `scenarioEntityId` and `scenarioRevisionId`, and may only
+   * name value nodes the run does not compute (ADR-0019).
+   */
+  overlay?: InputOverlay | null;
+  scenarioRevisionId?: string | null;
   triggerType?: TriggerType;
   /** Plan only, write nothing. */
   dryRun?: boolean;
@@ -100,6 +114,7 @@ export interface PropagationEngine {
       effectiveAsOf?: Date;
       recordedThrough?: Date;
       sourcePolicy?: ObservationPolicy;
+      period?: Period | null;
     },
   ): Promise<Result<TruthLayerReading>>;
 

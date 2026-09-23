@@ -23,8 +23,29 @@ const jsonb = (v) => `${q(JSON.stringify(v ?? {}))}::jsonb`;
 const arr = (v) =>
   v === null || v === undefined ? 'NULL' : `ARRAY[${v.map(q).join(', ')}]::text[]`;
 
+/**
+ * The seed AS IT WAS when this migration was applied.
+ *
+ * This migration is applied history, and an applied migration must keep
+ * describing what the database actually ran. Metrics introduced by a later
+ * phase are excluded, and a field revised later is emitted with its original
+ * value — both recorded as data on the seed entry (`metadata.introducedIn`,
+ * `metadata.revised`), so this reconstruction is mechanical rather than a
+ * hand-kept copy. What the seed says NOW reaches the database through the
+ * generated metric sync (scripts/generate-value-metric-sync.mjs).
+ */
+const asApplied = seedValueMetrics
+  .filter((m) => !m.metadata?.introducedIn)
+  .map((m) => {
+    const revised = m.metadata?.revised;
+    if (!revised) return m;
+    const { revised: _drop, ...metadata } = m.metadata;
+    void _drop;
+    return { ...m, [revised.field]: revised.from, metadata };
+  });
+
 function metricRows() {
-  return seedValueMetrics
+  return asApplied
     .map((m) => {
       return (
         `  (${q(valueMetricId(m.key))}, NULL, ${q(m.key)}, ${q(m.name)}, ${q(m.description)}, ` +

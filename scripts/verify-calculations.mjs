@@ -16,6 +16,11 @@ import { join } from 'node:path';
 import { buildSeedValueRegistry } from '../packages/value-graph/src/registry.ts';
 import { createCalculationRegistry } from '../packages/propagation-engine/src/registry.ts';
 import { meridianValueModelV1 } from '../packages/propagation-engine/src/meridianValueModelV1.ts';
+import { meridianValueModelV1_1 } from '../packages/propagation-engine/src/meridianValueModelV1_1.ts';
+
+// The governed model is v1.1. The frozen Phase 3 migration still describes v1
+// exactly as applied (rule 3); every other rule holds the whole model.
+const MODEL = meridianValueModelV1_1;
 
 const failures = [];
 const fail = (rule, detail) => failures.push({ rule, detail });
@@ -29,14 +34,14 @@ const ENGINE_SRC = join(root, 'packages', 'propagation-engine', 'src');
 
 // ------------------------------------------------- 1: the registry builds
 
-const registry = createCalculationRegistry(meridianValueModelV1, buildSeedValueRegistry());
+const registry = createCalculationRegistry(MODEL, buildSeedValueRegistry());
 if (!registry.ok) {
   fail('registry', `${registry.error.code}: ${registry.error.message}`);
 }
 
 // -------------------------------------------------- 2: governance is complete
 
-for (const calc of meridianValueModelV1) {
+for (const calc of MODEL) {
   const ref = `${calc.key}@${calc.version}`;
   check('governance', calc.owner.trim().length > 1, `${ref} has no owner`);
   check(
@@ -114,9 +119,9 @@ if (!existsSync(MIGRATION)) {
       'Run: node scripts/generate-calculation-governance.mjs',
   );
 
-  const SYNC = join(root, 'supabase', 'migrations', '20260921090100_helm_calculation_governance_sync.sql');
+  const SYNC = join(root, 'supabase', 'migrations', '20260922090200_helm_calculation_governance_v1_1.sql');
   const syncSql = existsSync(SYNC) ? readFileSync(SYNC, 'utf8') : '';
-  for (const calc of meridianValueModelV1) {
+  for (const calc of MODEL) {
     for (const input of calc.inputs) {
       check(
         'explicit-resolution',
@@ -135,8 +140,8 @@ if (!existsSync(MIGRATION)) {
   // An input on a metric the model itself produces is an execution dependency;
   // declaring it SOURCE_POLICY_ONLY is legal but should be deliberate, so the
   // Meridian model is held to the stricter rule that it never does so silently.
-  const produced = new Set(meridianValueModelV1.map((c) => c.outputMetricKey));
-  for (const calc of meridianValueModelV1) {
+  const produced = new Set(MODEL.map((c) => c.outputMetricKey));
+  for (const calc of MODEL) {
     for (const input of calc.inputs) {
       if (produced.has(input.metricKey)) {
         check(
@@ -209,7 +214,7 @@ for (const f of readdirSync(ENGINE_SRC)) {
 
 // ------------------------------------------------- 5: the model is honest
 
-for (const calc of meridianValueModelV1) {
+for (const calc of MODEL) {
   const ref = `${calc.key}@${calc.version}`;
   check(
     'model-honesty',
@@ -236,15 +241,15 @@ for (const calc of meridianValueModelV1) {
 
 // A magic number in a compute() is a business decision nobody owns. Small
 // integers used for arithmetic identity are fine; a business quantity is not.
-const modelSrc = stripNonCode(
-  readFileSync(join(ENGINE_SRC, 'meridianValueModelV1.ts'), 'utf8'),
-);
+const modelSrc = ['meridianValueModelV1.ts', 'meridianValueModelV1_1.ts']
+  .map((f) => stripNonCode(readFileSync(join(ENGINE_SRC, f), 'utf8')))
+  .join('\n');
 const computeBodies = [...modelSrc.matchAll(/compute\s*\([^)]*\)\s*\{([\s\S]*?)\n\s{4}\}/g)].map(
   (m) => m[1],
 );
 check(
   'no-hidden-constants',
-  computeBodies.length >= meridianValueModelV1.length - 1,
+  computeBodies.length >= MODEL.length - 1,
   'the compute bodies could not be located, so this check proved nothing',
 );
 for (const body of computeBodies) {
@@ -290,7 +295,7 @@ for (const body of computeBodies) {
 // Every metric a calculation reads must be a real metric, and every assumption
 // the model needs must be declared rather than assumed to exist.
 const metrics = buildSeedValueRegistry();
-for (const calc of meridianValueModelV1) {
+for (const calc of MODEL) {
   for (const input of calc.inputs) {
     check(
       'declared-inputs',
@@ -309,7 +314,7 @@ for (const calc of meridianValueModelV1) {
 
 if (failures.length === 0) {
   console.log(
-    `verify:calculations — ok (${meridianValueModelV1.length} governed calculations, ` +
+    `verify:calculations — ok (${MODEL.length} governed calculations, ` +
       'migration in sync, no executable code in the database)',
   );
   process.exit(0);

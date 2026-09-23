@@ -18,11 +18,15 @@ import {
 } from './types.ts';
 import {
   decimal,
+  describeInterval,
   fail,
+  intervalIs,
   ok,
+  periodKey,
   subtract,
   toString as decToString,
   type EntityId,
+  type Period,
   type Result,
   type Scope,
 } from '@helm/shared';
@@ -40,6 +44,15 @@ export type Lens = { readonly effectiveAsOf: Date; readonly recordedThrough: Dat
  * Chooses ONE observation, by an explicit type order and then by time. Never
  * "the latest" (§5): an actual, a forecast and a target are different kinds of
  * claim, and the caller says which it wants.
+ *
+ * PERIOD IDENTITY (ADR-0020). A claim about a period is a claim about THAT
+ * period. When the caller names a period, only a period claim about exactly
+ * that interval answers; a point-in-time claim answers "as of" the effective
+ * lens, which is the carry-forward an input declares by asking for the
+ * `current` horizon. When the caller names no period and the candidates speak
+ * to several, the read refuses rather than guessing — the old rule answered
+ * with whichever period started last, so a node holding Q4 and Q1 forecasts
+ * gave next year's number to every question about this quarter.
  */
 export async function selectObservation(
   valueGraph: ValueGraph,
@@ -48,6 +61,7 @@ export async function selectObservation(
   order: readonly ObservationType[],
   lens: Lens,
   scenarioEntityId: EntityId | null,
+  period: Period | null = null,
 ): Promise<Result<ValueObservation | null>> {
   // A scenario read sees scenario values AND reality; any other read sees only
   // reality, so a scenario can never leak into a baseline number.
@@ -75,15 +89,19 @@ export async function selectObservation(
 
   /**
    * Which claim SPEAKS TO the latest moment. A point-in-time observation anchors
-   * on `effectiveAt`, a period one on `periodStart`.
-   *
-   * Known limitation: two forecasts for different future periods on one node
-   * would be separated by period here, and the later one would win. The horizon
-   * filter keeps periods apart today; genuine multi-period forecasting on one
-   * node is not modelled yet.
+   * on `effectiveAt`, a period one on `periodStart`. Only ever compared between
+   * claims about the SAME period (or between point claims): period filtering
+   * happens first, so this can no longer pick the furthest-out forecast.
    */
   const validAt = (o: ValueObservation): number =>
     ms(o.effectiveAt ?? o.periodStart ?? o.observedAt ?? o.recordedAt);
+  const isPeriodClaim = (o: ValueObservation): boolean => o.periodStart !== null;
+  const intervalKey = (o: ValueObservation): string => `${o.periodStart}|${o.periodEnd}`;
+
+  // Period claims that were eligible in every other respect but are about a
+  // different period. Reported, so a reader learns the data is about the wrong
+  // quarter instead of hunting for data that is not missing.
+  const wrongPeriod: ValueObservation[] = [];
 
   for (const type of order) {
     let candidates = all.value.filter((o) => o.observationType === type);
@@ -101,6 +119,36 @@ export async function selectObservation(
       (o) => o.effectiveAt === null || ms(o.effectiveAt) <= effectiveCutoff,
     );
     if (candidates.length === 0) continue;
+
+    // PERIOD BOUNDARY.
+    const periodic = candidates.filter(isPeriodClaim);
+    const points = candidates.filter((o) => !isPeriodClaim(o));
+    if (period) {
+      const matching = periodic.filter((o) => intervalIs(period, o.periodStart, o.periodEnd));
+      if (matching.length > 0) {
+        candidates = matching;
+      } else if (points.length > 0) {
+        candidates = points;
+      } else {
+        wrongPeriod.push(...periodic);
+        continue;
+      }
+    } else {
+      const intervals = new Set(periodic.map(intervalKey));
+      if (intervals.size > 1) {
+        return fail(
+          CalculationErrors.AMBIGUOUS_PERIOD,
+          `Value node ${nodeId} has ${type} observations for ${intervals.size} different ` +
+            `periods (${[...new Set(periodic.map((o) => describeInterval(o.periodStart, o.periodEnd)))].join(', ')}) ` +
+            'and the read did not say which period it is about. HELM will not pick one.',
+          {
+            nodeId,
+            observationType: type,
+            periods: [...new Set(periodic.map((o) => describeInterval(o.periodStart, o.periodEnd)))],
+          },
+        );
+      }
+    }
 
     const bestValid = Math.max(...candidates.map(validAt));
     let winners = candidates.filter((o) => validAt(o) === bestValid);
@@ -123,6 +171,16 @@ export async function selectObservation(
       );
     }
     return ok(winners[0]);
+  }
+
+  if (period && wrongPeriod.length > 0) {
+    const found = [...new Set(wrongPeriod.map((o) => describeInterval(o.periodStart, o.periodEnd)))];
+    return fail(
+      CalculationErrors.TIME_CONTEXT_MISMATCH,
+      `Value node ${nodeId} has claims for ${found.join(', ')} but none for ${periodKey(period)}. ` +
+        'A claim about one period does not answer a question about another.',
+      { nodeId, requiredPeriod: periodKey(period), foundPeriods: found },
+    );
   }
   return ok(null);
 }
@@ -160,13 +218,16 @@ export function canonicalNumeric(value: string): string {
  */
 export function inputFingerprint(
   calculationRef: string,
-  context: { horizon: string; scenario: string },
+  context: { horizon: string; scenario: string; period?: Period | null },
   inputs: readonly Pick<TracedInput, 'name' | 'observationId' | 'value' | 'unit' | 'currency'>[],
 ): string {
   const canonical = [
     calculationRef,
     context.horizon,
     context.scenario,
+    // Appended only when stated, so every fingerprint recorded before period
+    // identity existed is still reproduced exactly.
+    ...(context.period ? [`period=${periodKey(context.period)}`] : []),
     ...[...inputs]
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(
@@ -237,6 +298,7 @@ export async function readTruthLayers(
   nodeId: string,
   lens: Lens,
   sourcePolicy: ObservationPolicy = 'SOURCE_TRUTH',
+  period: Period | null = null,
 ): Promise<Result<TruthLayerReading>> {
   if (sourcePolicy === 'MODEL_OUTPUT') {
     return fail(
@@ -253,6 +315,7 @@ export async function readTruthLayers(
     policyOrder[sourcePolicy],
     lens,
     null,
+    period,
   );
   if (!source.ok) return source;
   const model = await selectObservation(
@@ -262,6 +325,7 @@ export async function readTruthLayers(
     policyOrder.MODEL_OUTPUT,
     lens,
     null,
+    period,
   );
   if (!model.ok) return model;
 

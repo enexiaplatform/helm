@@ -19,3 +19,8 @@ export {
   canonicalValueLinkSpecs,
 } from './canonicalValueChain.ts';
 export type { CanonicalValueChain } from './canonicalValueChain.ts';
+export {
+  buildCanonicalScenarioExtension,
+  canonicalScenarioExtensionNodes,
+} from './canonicalScenarioExtension.ts';
+export type { CanonicalScenarioExtension } from './canonicalScenarioExtension.ts';

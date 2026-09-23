@@ -19,6 +19,11 @@ export {
   meridianModelAssumptions,
 } from './meridianValueModelV1.ts';
 export {
+  meridianValueModelV1_1,
+  meridianScenarioCalculations,
+  MERIDIAN_MODEL_V1_1,
+} from './meridianValueModelV1_1.ts';
+export {
   runCalculationConformanceSuite,
   type CalculationAdapterHarness,
 } from './conformance.ts';

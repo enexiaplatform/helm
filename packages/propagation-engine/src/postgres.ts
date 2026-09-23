@@ -20,6 +20,7 @@ import {
   fail,
   ok,
   type Clock,
+  type PeriodGrain,
   type Confidence,
   type EntityId,
   type OrgId,
@@ -67,7 +68,13 @@ type RunRow = {
   preference: RunObservationPolicy;
   scenario_entity_id: EntityId | null;
   root_node_ids: string[] | null;
+  root_metric_keys: string[] | null;
+  subject_entity_ids: EntityId[] | null;
   engine_version: string;
+  period_start: string | null;
+  period_end: string | null;
+  period_grain: PeriodGrain | null;
+  scenario_revision_id: string | null;
   started_at: string;
   completed_at: string | null;
   replay_of_run_id: string | null;
@@ -105,7 +112,8 @@ const num = (v: number | string | null | undefined): number | null =>
 const RUN_COLS =
   'id, org_id, status, trigger_type, effective_as_of, recorded_through, horizon, ' +
   'preference, scenario_entity_id, ' +
-  'root_node_ids, engine_version, started_at, completed_at, replay_of_run_id, notes, created_by';
+  'root_node_ids, root_metric_keys, subject_entity_ids, engine_version, period_start, period_end, period_grain, scenario_revision_id, ' +
+  'started_at, completed_at, replay_of_run_id, notes, created_by';
 const STEP_COLS =
   'id, org_id, run_id, sequence, calculation_key, calculation_version, output_node_id, ' +
   'output_metric_id, status, output_value, output_value_raw, output_unit, output_currency, ' +
@@ -135,7 +143,20 @@ export function createPostgresCalculationStore(
       preference: r.preference,
       scenarioEntityId: r.scenario_entity_id,
       rootNodeIds: r.root_node_ids ?? [],
+      rootMetricKeys: r.root_metric_keys ?? [],
+      subjectEntityIds: r.subject_entity_ids ?? [],
       engineVersion: r.engine_version,
+      // Timestamps come back in Postgres' own spelling; normalized to the ISO
+      // form every Period is built with, so equal periods compare equal.
+      period:
+        r.period_start && r.period_end && r.period_grain
+          ? {
+              start: new Date(r.period_start).toISOString(),
+              end: new Date(r.period_end).toISOString(),
+              grain: r.period_grain,
+            }
+          : null,
+      scenarioRevisionId: r.scenario_revision_id,
     },
     startedAt: asRecordTime(r.started_at),
     completedAt: r.completed_at === null ? null : asRecordTime(r.completed_at),
@@ -194,7 +215,13 @@ export function createPostgresCalculationStore(
           preference: run.context.preference,
           scenario_entity_id: run.context.scenarioEntityId,
           root_node_ids: run.context.rootNodeIds,
+          root_metric_keys: run.context.rootMetricKeys,
+          subject_entity_ids: run.context.subjectEntityIds,
           engine_version: run.context.engineVersion,
+          period_start: run.context.period?.start ?? null,
+          period_end: run.context.period?.end ?? null,
+          period_grain: run.context.period?.grain ?? null,
+          scenario_revision_id: run.context.scenarioRevisionId,
           completed_at: run.completedAt,
           replay_of_run_id: run.replayOfRunId,
           notes: run.notes,

@@ -101,6 +101,37 @@ try {
   fail('migration-drift', out || 'the generated migration no longer matches seed.ts');
 }
 
+// ---------------- 7b: the metric sync carries what the seed says NOW
+//
+// The Phase 2 migration reproduces the seed as it was applied; everything added
+// or revised since reaches the database through the generated metric sync.
+// Between them, every seeded metric must be accounted for.
+try {
+  execFileSync(process.execPath, ['scripts/generate-value-metric-sync.mjs', '--check'], {
+    stdio: 'pipe',
+    cwd: process.cwd(),
+  });
+} catch (e) {
+  const out = `${e.stdout ?? ''}${e.stderr ?? ''}`.trim();
+  fail('metric-sync-drift', out || 'the metric sync migration no longer matches seed.ts');
+}
+for (const m of seedValueMetrics) {
+  const revised = m.metadata?.revised;
+  if (revised) {
+    const ok = typeof revised.field === 'string' && revised.field in m && revised.from !== m[revised.field];
+    if (!ok) {
+      fail(
+        'metric-revision',
+        `"${m.key}" records a revision of "${revised.field}" that does not differ from its ` +
+          'current value, so the applied Phase 2 migration can no longer be reconstructed',
+      );
+    }
+    if ((m.version ?? 1) < 2) {
+      fail('metric-revision', `"${m.key}" was revised but its version was not raised`);
+    }
+  }
+}
+
 // ------------------------------------------------------------------ report
 
 if (failures.length === 0) {

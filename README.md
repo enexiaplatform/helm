@@ -38,7 +38,11 @@ managerial attention, analysis, decisions, and learning.
 | [Phase 2 implemented](docs/architecture/phase-2-implemented.md) | the enterprise value graph as built, with its debt |
 | [Phase 3 implemented](docs/architecture/phase-3-implemented.md) | the propagation engine as built, with its debt |
 | [Phase 3 hardening](docs/architecture/phase-3-hardening.md) | truth layers, run-bound lineage, the knowledge boundary, precision |
+| [Phase 4 implemented](docs/architecture/phase-4-implemented.md) | the scenario runtime as built, with its debt |
+| [Scenario terminology](docs/architecture/scenario-terminology.md) | what scenario, revision, override, simulation, future state and comparison mean here |
+| [Scenario engine assessment](docs/architecture/scenario-engine-assessment.md) | KEEP / ADAPT / MIGRATE / RETIRE for the pre-kernel CVP what-if |
 | [Meridian Value Model v1](docs/domain/meridian-value-model-v1.md) | the nine calculations, worked, with what each assumes |
+| [Meridian Value Model v1.1](docs/domain/meridian-value-model-v1-1.md) | the four scenario calculations: order quantity, coverage, unserved demand, revenue at risk |
 | [Value links vs calculation dependencies](docs/architecture/value-links-vs-calculation-dependencies.md) | why HELM keeps two graphs |
 | [Engine integration assessment](docs/architecture/engine-integration-assessment.md) | which pre-kernel engines become calculations, and when |
 | [Projection decisions](docs/architecture/projection-decisions.md) | which domain tables become ontology entities, and why |
@@ -73,16 +77,23 @@ enter it — and replay reconstructs that boundary exactly.
 Three engineering surfaces expose the kernel: `/ontology`, `/value-graph` and
 `/calculations`.
 
-What HELM cannot do yet is *compare*. It can compute one scenario; ranking them,
-recommending between them and governing the decision that follows are Phases 4
-and 5. `verify:phase-boundary` fails the build if any of that appears early. See
-[phase-3-implemented.md](docs/architecture/phase-3-implemented.md) and the
+HELM now *branches*. A scenario is a branch of the model — a pinned fork point
+plus a sealed set of explicit overrides — and simulating it re-runs the same
+propagation engine against the same source world, so several internally
+consistent futures exist side by side without touching the baseline. The
+`/scenarios` explorer shows the assumptions, the outcomes they produce, the
+feasibility of each, and the lineage of every number.
+
+What HELM still cannot do is *choose*. It compares futures; ranking them,
+recommending between them and governing the decision that follows are Phase 5.
+`verify:phase-boundary` fails the build if any of that appears early. See
+[phase-4-implemented.md](docs/architecture/phase-4-implemented.md) and the
 [roadmap](docs/architecture/roadmap.md).
 
 ```bash
 npm install
-npm run dev      # app + Ontology, Value Graph and Calculation explorers
-npm run check    # typecheck, lint, tests, and the 15 architecture contracts
+npm run dev      # app + Ontology, Value Graph, Calculation and Scenario explorers
+npm run check    # typecheck, lint, tests, and the 20 architecture contracts
 ```
 
 ## The operating loop (as implemented today)
@@ -141,9 +152,13 @@ cannot be rewritten from a client.
 
 ## Deterministic by design
 
-All management math lives in pure, unit-tested engines
-(`src/domain/engines/`): CVP, relevant cost, scenario/sensitivity, inventory,
-capacity, cost-object economics, signal rules, and decision-memory patterns.
+All management math lives in pure, unit-tested code: the kernel packages
+(`packages/`) hold the propagation engine and the scenario runtime, and the
+pre-kernel engines (`src/domain/engines/`) still serve the workspace surfaces —
+CVP, relevant cost, inventory, capacity, cost-object economics, signal rules and
+decision-memory patterns. The CVP what-if that used to be called the scenario
+engine was retired in Phase 4
+([assessment](docs/architecture/scenario-engine-assessment.md)).
 No LLM sits between data and a number; every recommendation is explainable
 back to a rule, a threshold, and evidence. An AI interpretation layer can be
 added later behind the same contracts.
@@ -197,7 +212,12 @@ npm run verify:calculations        # governance, code/metadata agreement, no cod
 npm run verify:calculation-graph   # acyclic, deterministic, incremental
 npm run verify:propagation         # the canonical proof: 2.94B → 3.78B, branch isolation
 npm run verify:lineage             # every derived number traces to stated facts
-npm run verify:phase-boundary      # no scenario management, decisions, authority or optimization
+npm run verify:scenario-schema     # scenario tables guarded, history immutable, migration additive
+npm run verify:scenario-runtime    # seven futures + baseline through one engine; nothing is chosen
+npm run verify:scenario-isolation  # baseline untouched, futures separate, tenants walled
+npm run verify:scenario-time       # period identity, pinned forks, replay is not rebase
+npm run verify:scenario-lineage    # every scenario value traces to an override or a source fact
+npm run verify:phase-boundary      # no recommendation, decisions, authority or optimization
 npm run verify:docs                # every relative link in the documentation resolves
 ```
 

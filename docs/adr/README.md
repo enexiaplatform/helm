@@ -55,3 +55,5 @@ a new one, so the reasoning history stays readable.
 | [0016](0016-decimal-arithmetic.md) | Exact decimal arithmetic on BigInt fixed-point, not floats | accepted | 3 |
 | [0017](0017-calculation-semantics.md) | Calculation semantics — definitions in code, metadata in data, and how inputs are chosen | accepted, §2 revised | 3 |
 | [0018](0018-numerical-normalization.md) | Numerical normalization — internal, storage and display precision | accepted | 3 |
+| [0019](0019-scenario-runtime.md) | The Scenario Runtime — branches of the model, not copies of the data | accepted | 4 |
+| [0020](0020-period-identity.md) | Period identity — a period is a value, not "the furthest-out forecast" | accepted | 4 |

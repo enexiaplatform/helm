@@ -20,6 +20,7 @@ import {
 import { createPostgresGraphStore } from '@helm/graph-store/postgres';
 import {
   buildSeedValueRegistry,
+  buildCanonicalScenarioExtension,
   buildCanonicalValueChain,
   createInMemoryValueGraph,
   type ValueGraph,
@@ -30,7 +31,7 @@ import {
   createCalculationRegistry,
   createInMemoryCalculationStore,
   createPropagationEngine,
-  meridianValueModelV1,
+  meridianValueModelV1_1,
   type CalculationRegistry,
   type CalculationStore,
   type PropagationEngine,
@@ -72,15 +73,22 @@ export type HelmGraphs = {
   /** Phase 3: the executable layer over the two graphs above. */
   engine: PropagationEngine;
   store: CalculationStore;
+  /**
+   * Demo only: the canonical value-node handles (value chain plus the Phase 4
+   * extension), so canonical scenarios can name their targets. Null in cloud
+   * mode, where an organization's nodes are its own.
+   */
+  nodeHandles: Readonly<Record<string, string>> | null;
 };
 
 /**
- * The calculation registry, built once. It validates every definition against
- * the metric registry, so a model that could produce a wrong number fails here
- * rather than in front of a manager.
+ * The calculation registry, built once: Meridian model v1.1 (v1 plus the four
+ * scenario calculations). It validates every definition against the metric
+ * registry, so a model that could produce a wrong number fails here rather than
+ * in front of a manager.
  */
 export const calculations: CalculationRegistry = (() => {
-  const built = createCalculationRegistry(meridianValueModelV1, valueMetrics);
+  const built = createCalculationRegistry(meridianValueModelV1_1, valueMetrics);
   if (!built.ok) {
     throw new Error(`calculation registry invalid: ${built.error.message}`);
   }
@@ -139,10 +147,20 @@ export function getDemoGraphs(): Promise<HelmGraphs> {
     if (!values.ok) {
       throw new Error(`demo value chain failed: ${values.error.code} ${values.error.message}`);
     }
+    const extension = await buildCanonicalScenarioExtension(valueGraph, graphStore, scope, values.value.nodeIds);
+    if (!extension.ok) {
+      throw new Error(`demo scenario extension failed: ${extension.error.code} ${extension.error.message}`);
+    }
 
     const store = createInMemoryCalculationStore({ clock: systemClock, idGen: uuidIdGen });
     demoStore = graphStore;
-    return { graphStore, valueGraph, engine: buildEngine(graphStore, valueGraph, store), store };
+    return {
+      graphStore,
+      valueGraph,
+      engine: buildEngine(graphStore, valueGraph, store),
+      store,
+      nodeHandles: { ...values.value.nodeIds, ...extension.value.nodeIds },
+    };
   })();
   return demoReady;
 }
@@ -167,7 +185,13 @@ export function getCloudGraphs(): HelmGraphs | null {
     metrics: valueMetrics,
     clock: systemClock,
   });
-  return { graphStore, valueGraph, engine: buildEngine(graphStore, valueGraph, store), store };
+  return {
+    graphStore,
+    valueGraph,
+    engine: buildEngine(graphStore, valueGraph, store),
+    store,
+    nodeHandles: null,
+  };
 }
 
 export function resolveGraphs(mode: 'demo' | 'cloud'): Promise<HelmGraphs | null> {

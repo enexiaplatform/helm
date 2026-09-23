@@ -8,7 +8,6 @@ import { AttentionPage } from './pages/AttentionPage.tsx';
 import { DecisionsPage } from './pages/DecisionsPage.tsx';
 import { DecisionDetailPage } from './pages/DecisionDetailPage.tsx';
 import { ScenariosPage } from './pages/ScenariosPage.tsx';
-import { ScenarioDetailPage } from './pages/ScenarioDetailPage.tsx';
 import { EconomicsPage } from './pages/EconomicsPage.tsx';
 import { OperationsPage } from './pages/OperationsPage.tsx';
 import { MemoryPage } from './pages/MemoryPage.tsx';
@@ -52,7 +51,8 @@ export default function App() {
           <Route path="decisions" element={<DecisionsPage />} />
           <Route path="decisions/:id" element={<DecisionDetailPage />} />
           <Route path="scenarios" element={<ScenariosPage />} />
-          <Route path="scenarios/:id" element={<ScenarioDetailPage />} />
+          {/* The pre-kernel CVP what-if detail page is retired (Phase 4). */}
+          <Route path="scenarios/:id" element={<Navigate to="/scenarios" replace />} />
           <Route path="economics" element={<EconomicsPage />} />
           <Route path="operations" element={<OperationsPage />} />
           <Route path="memory" element={<MemoryPage />} />

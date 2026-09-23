@@ -21,6 +21,7 @@ import type {
   RecordTime,
   Result,
   Scope,
+  Period,
   UserId,
   ValidTime,
 } from '@helm/shared';
@@ -49,6 +50,14 @@ export const CalculationErrors = {
   DEPTH_EXCEEDED: 'calculation.depth_exceeded',
   WRITE_FAILED: 'calculation.write_failed',
   READ_FAILED: 'calculation.read_failed',
+  /** Observations exist for several periods and the read did not say which. */
+  AMBIGUOUS_PERIOD: 'calculation.ambiguous_period',
+  /** A scenario override named a value the model computes. Outcomes are derived, never asserted. */
+  OVERRIDE_TARGETS_COMPUTED_NODE: 'calculation.override_targets_computed_node',
+  /** An overlay was malformed or combined with a policy it cannot mean anything under. */
+  INVALID_OVERLAY: 'calculation.invalid_overlay',
+  /** A scenario run's overlay lives in the scenario runtime, so only the runtime can replay it. */
+  REPLAY_REQUIRES_SCENARIO_RUNTIME: 'calculation.replay_requires_scenario_runtime',
 } as const;
 
 // -------------------------------------------------- observation selection
@@ -314,8 +323,95 @@ export type CalculationRunContext = {
   scenarioEntityId: EntityId | null;
   /** Value node ids the propagation started from. */
   rootNodeIds: readonly string[];
+  /**
+   * Metric keys the propagation started from, and the subjects it was limited
+   * to. Without them a replay of "everything downstream of the price" silently
+   * became a replay of the whole model — found by the Phase 4 period tests.
+   */
+  rootMetricKeys: readonly string[];
+  subjectEntityIds: readonly EntityId[];
   engineVersion: string;
+  /**
+   * The business period being modelled, when the caller stated one. A period
+   * claim answers this run only if it is about exactly this period; null means
+   * the caller did not say, and then the run refuses to choose between claims
+   * about different periods rather than guessing (ADR-0020).
+   */
+  period: Period | null;
+  /**
+   * The scenario revision whose overrides this run executed, if any. The
+   * overrides themselves live with the revision, which is immutable once
+   * sealed, so the run can always be reconstructed — but only by the scenario
+   * runtime, which is why `replay()` refuses such a run (ADR-0019).
+   */
+  scenarioRevisionId: string | null;
 };
+
+// ---------------------------------------------------------- input overlay
+
+export const overrideOperations = ['SET', 'ADD'] as const;
+/**
+ * SET replaces the baseline value; ADD adjusts it ("freight +80M"). ADD is
+ * resolved against the baseline value the run would otherwise have read —
+ * same lenses, same period, same policy — and the trace keeps both, so a
+ * reader sees 140M + 80M = 220M rather than an unexplained 220M.
+ */
+export type OverrideOperation = (typeof overrideOperations)[number];
+
+/**
+ * One scenario override, as the engine needs to see it. The engine knows
+ * nothing about scenarios; the scenario runtime resolves a revision (and its
+ * ancestors) into one of these per overridden value node.
+ */
+export type OverlayEntry = {
+  overrideId: string;
+  nodeId: string;
+  operation: OverrideOperation;
+  /** Exact decimal string. For ADD, the delta. */
+  value: string;
+  unit: QuantityUnit;
+  currency: string | null;
+  confidence: Confidence | null;
+  scenarioId: string;
+  revisionId: string;
+  /** Set when an ancestor scenario supplied this override. */
+  inheritedFromScenarioId: string | null;
+  /** Ancestor overrides of the same target this one shadows. Never silently lost. */
+  shadowedOverrideIds: readonly string[];
+  /** MANAGEMENT_ASSUMPTION, MODEL_ASSUMPTION, USER_OVERRIDE, ... */
+  provenanceKind: string;
+};
+
+/**
+ * Scenario overrides for one run, keyed by value node. May only name value
+ * nodes the run does NOT compute: an override changes an input, never an
+ * outcome.
+ */
+export type InputOverlay = {
+  scenarioId: string;
+  revisionId: string;
+  entries: ReadonlyMap<string, OverlayEntry>;
+};
+
+/** What a trace records about an input that came from a scenario override. */
+export type OverrideTrace = {
+  overrideId: string;
+  scenarioId: string;
+  revisionId: string;
+  operation: OverrideOperation;
+  /** The override's own value (the delta, for ADD). */
+  value: string;
+  inheritedFromScenarioId: string | null;
+  shadowedOverrideIds: readonly string[];
+  provenanceKind: string;
+  /** For ADD: the baseline observation the delta was applied to. */
+  baseline: {
+    observationId: string;
+    value: string;
+    observationType: ObservationType;
+  } | null;
+};
+
 
 export type CalculationRun = {
   id: string;
@@ -351,7 +447,7 @@ export type TracedInput = {
    * able to tell "the number my run computed one step earlier" from "what the
    * business had on file".
    */
-  boundTo?: 'RUN_OUTPUT' | 'SOURCE_OBSERVATION';
+  boundTo?: InputSource;
   /**
    * For an AGGREGATED input, the individual claims that were summed.
    *
@@ -365,8 +461,22 @@ export type TracedInput = {
     observationId: string;
     value: string;
     observationType: ObservationType;
+    boundTo?: Exclude<InputSource, 'MIXED'>;
+    override?: OverrideTrace;
   }[];
+  /** Present when the value came from a scenario override. */
+  override?: OverrideTrace;
 };
+
+/**
+ * Where an input's value came from:
+ *
+ *   RUN_OUTPUT          this run computed it one step earlier
+ *   SCENARIO_OVERRIDE   the scenario being executed states it
+ *   SOURCE_OBSERVATION  the persistent world said it, under the run's lenses
+ *   MIXED               an aggregate whose parts came from more than one of these
+ */
+export type InputSource = 'RUN_OUTPUT' | 'SCENARIO_OVERRIDE' | 'SOURCE_OBSERVATION' | 'MIXED';
 
 /**
  * One calculation execution within a run. This IS the trace: it records what
@@ -480,6 +590,12 @@ export type Explanation = {
     observedAt: ValidTime | null;
   } | null;
   /** Recursive: each input explained in turn, down to source facts. */
+  /**
+   * Present when this node of the lineage is a scenario override rather than an
+   * observation. Its `inputs` then hold the baseline observation an ADD
+   * override was applied to, so lineage still reaches source provenance.
+   */
+  override?: OverrideTrace;
   inputs: readonly Explanation[];
 };
 

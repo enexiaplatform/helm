@@ -13,3 +13,5 @@ export * from './provenance.ts';
 export * from './decimal.ts';
 export * from './quantity.ts';
 export * from './precision.ts';
+export * from './period.ts';
+export * from './fingerprint.ts';

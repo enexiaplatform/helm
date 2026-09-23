@@ -103,11 +103,33 @@ dependency graph with calculations that could not run. See
 [the assessment](engine-integration-assessment.md) for the engine-by-engine
 verdict and what each is blocked on.
 
-## 5. Phases 4–6 — reconnect governance
+**Phase 4** made the model branch. A scenario stopped being a CVP what-if over
+four numbers and became a *branch of the enterprise model*: a fork point, a
+sealed set of explicit overrides, and a simulation that re-executes the **same**
+propagation engine against the **same** source world with those overrides
+applied as an input overlay. Nothing is copied and no fake observation is
+written, so the baseline a manager reads is never polluted by somebody's
+what-if.
 
-4 and 5 exist and work; their job here is to stop being self-contained. Scenario
-variants become sparse graph overrides; decision alternatives stop being
-free-typed financial lines and become overrides whose consequences are computed.
+Period identity arrived with it and closed the Phase 3 "furthest-out forecast
+wins" defect — by refusing rather than guessing
+([ADR-0020](../adr/0020-period-identity.md)).
+
+The gate was the trade-off space: seven canonical futures over the Meridian
+baseline, each traceable to its stated assumptions, compared side by side with
+origin and confidence on every value — **and no recommendation**. Choosing
+between them is Phase 5's job, and `verify:phase-boundary` fails the build if
+Phase 4 starts doing it.
+Record: [phase-4-implemented.md](phase-4-implemented.md) ·
+[ADR-0019](../adr/0019-scenario-runtime.md) ·
+[terminology](scenario-terminology.md) ·
+[legacy engine assessment](scenario-engine-assessment.md).
+
+## 5. Phases 5–6 — reconnect governance
+
+Phase 5 is decision intelligence: decision alternatives stop being free-typed
+financial lines and become scenario revisions whose consequences are computed,
+so an approval records which future it approved and at what boundary.
 
 **Phase 6 is a security phase.** Authority gains scope, geography, BU, risk,
 action type, approval chain and escalation; unit-level and functional RLS land

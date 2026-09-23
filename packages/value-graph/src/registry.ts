@@ -293,7 +293,7 @@ export function buildSeedValueRegistry(): ValueMetricRegistry {
     directionality: m.directionality,
     timeBehavior: m.timeBehavior,
     scopeCategories: m.scopeCategories ?? null,
-    version: 1,
+    version: m.version ?? 1,
     status: 'active',
     isSystem: true,
     metadata: m.metadata ?? {},

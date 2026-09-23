@@ -14,7 +14,7 @@
  * Runner-agnostic, so it works under `node --test` and anything later.
  */
 
-import type { Result, Scope } from '@helm/shared';
+import { quarterPeriod, type Result, type Scope } from '@helm/shared';
 import type { GraphStore } from '@helm/graph-store';
 import type { ValueGraph } from '@helm/value-graph';
 import type { CalculationStore, PropagationEngine } from './port.ts';
@@ -106,6 +106,34 @@ export function runCalculationConformanceSuite(
         assert.equal(run.notes, 'conformance baseline');
         assert.ok(run.completedAt, 'a finished run is closed');
         assert.ok(['COMPLETED', 'PARTIAL'].includes(run.status));
+      } finally {
+        await h.cleanup?.();
+      }
+    });
+
+    test('a run stores its period and replay scope exactly, and replay restores them', async () => {
+      const h = await harness.create();
+      try {
+        const q4 = quarterPeriod(2026, 4);
+        const res = expectOk(
+          await h.engine.execute(h.scopeA, {
+            fromMetricKeys: ['AverageSellingPrice'],
+            effectiveAsOf: h.asOf,
+            period: q4,
+            notes: 'conformance period',
+          }),
+          'period run',
+        );
+        const stored = present(expectOk(await h.store.getRun(h.scopeA, res.run.id), 'getRun'), 'run');
+        assert.equal(stored.context.period?.start, q4.start, 'the period start round-trips');
+        assert.equal(stored.context.period?.end, q4.end, 'the period end round-trips');
+        assert.equal(stored.context.period?.grain, 'QUARTER');
+        assert.deepEqual([...stored.context.rootMetricKeys], ['AverageSellingPrice'], 'the replay scope');
+        assert.equal(stored.context.scenarioRevisionId, null, 'a baseline run executes no revision');
+        const replay = expectOk(await h.engine.replay(h.scopeA, res.run.id), 'replay');
+        assert.equal(replay.run.context.period?.start, q4.start, 'replay restores the period');
+        assert.deepEqual([...replay.run.context.rootMetricKeys], ['AverageSellingPrice'], 'and the scope');
+        assert.equal(replay.steps.length, res.steps.length, 'so it re-plans exactly the same steps');
       } finally {
         await h.cleanup?.();
       }

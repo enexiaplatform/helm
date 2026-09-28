@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, Database, GitBranch, Info, Layers } from 'lucide-react';
+import { ChevronRight, Database, GitBranch, Info, Layers, Network } from 'lucide-react';
 import type { Entity, EntityAlias } from '@helm/ontology';
 import type { GraphStore, Neighbor, TraversalResult } from '@helm/graph-store';
 import type { ProvenanceRecord, Scope } from '@helm/shared';
@@ -22,7 +22,7 @@ import {
   registry,
   resolveGraphStore,
 } from '../services/ontologyGraph.ts';
-import { PanelCard } from '../components/ui.tsx';
+import { PageHeader, PanelCard } from '../components/ui.tsx';
 
 type Loaded = {
   store: GraphStore;
@@ -53,7 +53,7 @@ const categoryOrder = [
 function Field({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex items-baseline gap-2 py-0.5">
-      <span className="w-40 shrink-0 text-2xs uppercase tracking-wide text-ink-400">{label}</span>
+      <span className="w-40 shrink-0 text-2xs uppercase tracking-wide text-ink-500">{label}</span>
       <span className={`text-xs text-ink-800 ${mono ? 'font-mono break-all' : ''}`}>{value}</span>
     </div>
   );
@@ -187,43 +187,47 @@ export function OntologyPage() {
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-ink-900">Ontology Explorer</h1>
-          <p className="text-xs text-ink-500">
+      <PageHeader
+        register="instrument"
+        icon={Network}
+        title="Ontology Explorer"
+        description={
+          <>
             Read-only kernel instrument. {registry.allEntityTypes().length} entity types,{' '}
             {registry.allRelationshipTypes().length} relationship types registered.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name or canonical key…"
-            className="w-56 rounded border border-ink-200 px-2 py-1 text-xs"
-          />
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="rounded border border-ink-200 px-2 py-1 text-xs"
-            aria-label="Filter by entity type"
-          >
-            <option value="">All types</option>
-            {categoryOrder.map((cat) => (
-              <optgroup key={cat} label={cat}>
-                {registry
-                  .allEntityTypes()
-                  .filter((t) => t.category === cat)
-                  .map((t) => (
-                    <option key={t.key} value={t.key}>
-                      {t.key}
-                    </option>
-                  ))}
-              </optgroup>
-            ))}
-          </select>
-        </div>
-      </header>
+          </>
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name or canonical key…"
+              className="w-56 rounded border border-ink-200 bg-white px-2 py-1 text-xs"
+            />
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="rounded border border-ink-200 bg-white px-2 py-1 text-xs"
+              aria-label="Filter by entity type"
+            >
+              <option value="">All types</option>
+              {categoryOrder.map((cat) => (
+                <optgroup key={cat} label={cat}>
+                  {registry
+                    .allEntityTypes()
+                    .filter((t) => t.category === cat)
+                    .map((t) => (
+                      <option key={t.key} value={t.key}>
+                        {t.key}
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        }
+      />
 
       {error && (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -273,7 +277,7 @@ export function OntologyPage() {
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-medium text-ink-900">{e.name}</span>
-                    <span className="block truncate font-mono text-2xs text-ink-400">
+                    <span className="block truncate font-mono text-2xs text-ink-500">
                       {e.canonicalKey}
                     </span>
                   </span>
@@ -285,7 +289,7 @@ export function OntologyPage() {
               </li>
             ))}
             {entities.length === 0 && !error && (
-              <li className="py-6 text-center text-xs text-ink-400">
+              <li className="py-6 text-center text-xs text-ink-500">
                 No entities in this organization yet.
               </li>
             )}
@@ -296,7 +300,7 @@ export function OntologyPage() {
         <div className="space-y-4">
           {!selected && (
             <PanelCard title="Entity detail">
-              <p className="py-8 text-center text-xs text-ink-400">
+              <p className="py-8 text-center text-xs text-ink-500">
                 Select an entity to inspect its attributes, provenance, validity and neighbours.
               </p>
             </PanelCard>
@@ -369,7 +373,7 @@ export function OntologyPage() {
                 >
                   <table className="w-full text-2xs">
                     <thead>
-                      <tr className="text-left text-ink-400">
+                      <tr className="text-left text-ink-500">
                         <th className="pb-1 font-medium">System</th>
                         <th className="pb-1 font-medium">Kind</th>
                         <th className="pb-1 font-medium">Value</th>
@@ -387,7 +391,7 @@ export function OntologyPage() {
                       ))}
                     </tbody>
                   </table>
-                  <p className="mt-2 text-2xs text-ink-400">
+                  <p className="mt-2 text-2xs text-ink-500">
                     The same management entity as named by each source system. Resolution is
                     structural in Phase 1 — see docs/architecture/identity-resolution.md.
                   </p>
@@ -402,7 +406,7 @@ export function OntologyPage() {
                 }
               >
                 {provenance.length === 0 && (
-                  <p className="text-xs text-ink-400">No provenance recorded.</p>
+                  <p className="text-xs text-ink-500">No provenance recorded.</p>
                 )}
                 <ul className="space-y-2">
                   {provenance.map((p) => (
@@ -413,7 +417,7 @@ export function OntologyPage() {
                         </span>
                         <span className="text-2xs text-ink-600">{p.system}</span>
                         {p.connector && (
-                          <span className="font-mono text-2xs text-ink-400">{p.connector}</span>
+                          <span className="font-mono text-2xs text-ink-500">{p.connector}</span>
                         )}
                       </div>
                       {p.sourceField && <Field label="Field" value={p.sourceField} />}
@@ -456,14 +460,14 @@ export function OntologyPage() {
                       >
                         {n.entity.name}
                       </button>
-                      <span className="shrink-0 text-2xs text-ink-400">
+                      <span className="shrink-0 text-2xs text-ink-500">
                         {n.via.weight !== null && `w=${n.via.weight} `}
                         {n.via.confidence !== null && `c=${n.via.confidence}`}
                       </span>
                     </li>
                   ))}
                   {neighbors.length === 0 && (
-                    <li className="py-3 text-xs text-ink-400">No relationships.</li>
+                    <li className="py-3 text-xs text-ink-500">No relationships.</li>
                   )}
                 </ul>
               </PanelCard>
@@ -486,7 +490,7 @@ export function OntologyPage() {
                   </div>
                 }
               >
-                {!walk && <p className="text-xs text-ink-400">No traversal result.</p>}
+                {!walk && <p className="text-xs text-ink-500">No traversal result.</p>}
                 {walk && (
                   <>
                     <p className="mb-2 text-2xs text-ink-500">
@@ -511,13 +515,13 @@ export function OntologyPage() {
                           <span className="shrink-0 rounded bg-ink-100 px-1 text-ink-500">
                             {n.entity.entityTypeKey}
                           </span>
-                          <span className="shrink-0 text-ink-400">
+                          <span className="shrink-0 text-ink-500">
                             conf {n.pathConfidence.toFixed(3)}
                           </span>
                         </li>
                       ))}
                     </ul>
-                    <p className="mt-2 text-2xs text-ink-400">
+                    <p className="mt-2 text-2xs text-ink-500">
                       Path confidence is the product of the edge confidences along the route, so a
                       long chain is never reported as more certain than its weakest link.
                     </p>

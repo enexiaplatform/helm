@@ -1,29 +1,32 @@
+import { Fragment } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   Calculator,
   Bell,
+  CircleAlert,
   GitBranch,
+  Info,
   Scale,
   LineChart,
   Factory,
   BookOpenCheck,
   Settings,
   LogOut,
-  Ship,
   Network,
   Workflow,
 } from 'lucide-react';
 import { useHelmStore } from '../services/helmStore.ts';
+import { HelmLogo } from './HelmLogo.tsx';
 
 const navItems = [
-  { to: '/', label: 'Attention', icon: Bell, end: true },
+  { to: '/', label: 'Attention', icon: Bell, end: true, group: 'Management' },
   { to: '/decisions', label: 'Decisions', icon: Scale },
   { to: '/scenarios', label: 'Scenarios', icon: GitBranch },
   { to: '/economics', label: 'Economics', icon: LineChart },
   { to: '/operations', label: 'Operations', icon: Factory },
   { to: '/memory', label: 'Memory', icon: BookOpenCheck },
-  // Phase 1 kernel instrument, not a management surface.
-  { to: '/ontology', label: 'Ontology', icon: Network },
+  // Kernel instruments, not management surfaces.
+  { to: '/ontology', label: 'Ontology', icon: Network, group: 'Kernel' },
   { to: '/value-graph', label: 'Value Graph', icon: Workflow },
   { to: '/calculations', label: 'Calculations', icon: Calculator },
 ];
@@ -44,21 +47,19 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="fixed inset-y-0 left-0 z-40 flex w-56 flex-col border-r border-ink-200 bg-ink-950 text-ink-200">
-        <div className="flex items-center gap-2.5 px-4 py-4">
-          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-ink-800">
-            <Ship size={17} className="text-accent-400" />
-          </span>
-          <div className="leading-tight">
-            <p className="text-sm font-bold tracking-wide text-white">HELM</p>
-            <p className="text-2xs text-ink-400">System of decision</p>
-          </div>
+      <aside
+        className="fixed inset-y-0 left-0 z-40 flex flex-col overflow-y-auto"
+        style={{ width: 'var(--sidebar-width)', background: 'var(--surface-chrome)', color: 'var(--text-on-chrome)' }}
+      >
+        <div style={{ padding: '26px 22px 22px' }}>
+          <HelmLogo />
         </div>
 
         {organizations.length > 0 && (
-          <div className="px-3 pb-2">
+          <div className="px-3.5 pb-2.5">
+            <p className="helm-chrome-label mb-1.5 ml-1.5">Organization</p>
             <select
-              className="w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-xs text-ink-100 focus:border-accent-500 focus:outline-none"
+              className="helm-chrome-select"
               value={activeOrgId ?? ''}
               onChange={(e) => void setActiveOrg(e.target.value)}
               aria-label="Active organization"
@@ -72,43 +73,33 @@ export function AppShell() {
           </div>
         )}
 
-        <nav className="flex-1 space-y-0.5 px-2 py-2">
-          {navItems.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive ? 'bg-ink-800 text-white' : 'text-ink-300 hover:bg-ink-900 hover:text-white'
-                }`
-              }
-            >
-              <Icon size={16} />
-              <span className="flex-1">{label}</span>
-              {label === 'Attention' && openSignals > 0 && (
-                <span className="rounded-full bg-accent-600 px-1.5 py-0.5 text-2xs font-semibold text-white">
-                  {openSignals}
-                </span>
-              )}
-            </NavLink>
+        <nav className="grid flex-1 content-start gap-0.5 px-2.5 pb-4">
+          {navItems.map(({ to, label, icon: Icon, end, group }) => (
+            <Fragment key={to}>
+              {group && <p className="helm-chrome-label mx-3 mb-1.5 mt-[18px]">{group}</p>}
+              <NavLink to={to} end={end} className="helm-nav-item">
+                <Icon size={18} />
+                <span className="flex-1">{label}</span>
+                {label === 'Attention' && openSignals > 0 && (
+                  <span
+                    className="rounded-full px-2 text-[11px] font-bold leading-[18px]"
+                    style={{ background: 'var(--count-bg)', color: 'var(--count-fg)' }}
+                  >
+                    {openSignals}
+                  </span>
+                )}
+              </NavLink>
+            </Fragment>
           ))}
         </nav>
 
-        <div className="space-y-0.5 border-t border-ink-800 px-2 py-2">
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              `flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                isActive ? 'bg-ink-800 text-white' : 'text-ink-300 hover:bg-ink-900 hover:text-white'
-              }`
-            }
-          >
-            <Settings size={16} />
+        <div className="grid gap-0.5 px-2.5 pb-4 pt-2.5" style={{ borderTop: '1px solid var(--border-chrome)' }}>
+          <NavLink to="/settings" className="helm-nav-item">
+            <Settings size={18} />
             Settings
           </NavLink>
           <button
-            className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium text-ink-300 transition-colors hover:bg-ink-900 hover:text-white"
+            className="helm-nav-item"
             onClick={() => {
               if (mode === 'demo') {
                 exitDemo();
@@ -118,24 +109,51 @@ export function AppShell() {
               }
             }}
           >
-            <LogOut size={16} />
+            <LogOut size={18} />
             {mode === 'demo' ? 'Exit demo' : 'Sign out'}
           </button>
-          <p className="truncate px-3 pt-1 text-2xs text-ink-500">{userEmail}</p>
+          {userEmail && (
+            <p className="truncate px-3 pt-1.5 text-2xs" style={{ color: 'var(--text-on-chrome-muted)' }}>
+              {userEmail}
+            </p>
+          )}
         </div>
       </aside>
 
-      <div className="ml-56 flex min-h-screen flex-1 flex-col">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col" style={{ marginLeft: 'var(--sidebar-width)' }}>
         {mode === 'demo' && (
-          <div className="border-b border-amber-200 bg-amber-50 px-6 py-1.5 text-xs text-amber-800">
-            Demo organization — <strong>{activeOrg?.name}</strong>. Everything here is local sample data; nothing
-            syncs to the cloud.
+          <div
+            className="flex items-center gap-2 border-b text-xs"
+            style={{
+              borderColor: 'var(--banner-demo-border)',
+              background: 'var(--banner-demo-bg)',
+              color: 'var(--banner-demo-fg)',
+              padding: '8px var(--page-pad-x)',
+            }}
+          >
+            <Info size={15} className="shrink-0" />
+            <span>
+              Demo organization — <strong className="font-semibold">{activeOrg?.name}</strong>. Everything here is
+              local sample data; nothing syncs to the cloud.
+            </span>
           </div>
         )}
         {error && (
-          <div className="border-b border-red-200 bg-red-50 px-6 py-1.5 text-xs text-red-700">{error}</div>
+          <div
+            role="alert"
+            className="flex items-center gap-2 border-b text-xs"
+            style={{
+              borderColor: 'var(--banner-error-border)',
+              background: 'var(--banner-error-bg)',
+              color: 'var(--banner-error-fg)',
+              padding: '8px var(--page-pad-x)',
+            }}
+          >
+            <CircleAlert size={15} className="shrink-0" />
+            <span>{error}</span>
+          </div>
         )}
-        <main className="flex-1 px-6 py-5">
+        <main className="min-w-0 flex-1" style={{ padding: 'var(--page-pad-y) var(--page-pad-x) 64px' }}>
           <Outlet />
         </main>
       </div>

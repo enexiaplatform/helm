@@ -1,0 +1,43 @@
+/* Space, shape, depth, layout, motion. 4px base. */
+:root {
+  --space-0_5: 2px;
+  --space-1: 4px;
+  --space-1_5: 6px;
+  --space-2: 8px;
+  --space-2_5: 10px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-16: 64px;
+
+  --radius-sm: 6px;      /* xs buttons, segmented pickers, small wells */
+  --radius-md: 8px;      /* buttons, inputs, nav items, state cards, wells */
+  --radius-lg: 12px;     /* panels, empty states */
+  --radius-xl: 16px;     /* modals, the auth card */
+  --radius-full: 9999px; /* chips, severity, counts */
+
+  --shadow-panel: 0 1px 2px 0 rgb(18 22 29 / 0.04), 0 4px 12px -6px rgb(18 22 29 / 0.08);
+  --shadow-overlay: 0 24px 64px -16px rgb(13 26 46 / 0.32), 0 8px 24px -12px rgb(13 26 46 / 0.2);
+  --ring-focus: 0 0 0 3px rgb(59 99 168 / 0.3);
+  --ring-input: 0 0 0 3px rgb(59 99 168 / 0.16);
+  --ring-selected: 0 0 0 2px var(--accent-500);
+
+  --sidebar-width: 248px;
+  --page-pad-x: 40px;
+  --page-pad-y: 32px;
+  --content-management: 1120px;  /* Attention, Decisions, Memory */
+  --content-workspace: 1240px;   /* Decision workspace */
+  --measure-prose: 720px;        /* page intro paragraphs */
+  --modal-width: 520px;
+  --modal-width-wide: 800px;
+  --modal-top: 10vh;
+
+  --duration-fast: 160ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  --z-sidebar: 40;
+  --z-modal: 50;
+}

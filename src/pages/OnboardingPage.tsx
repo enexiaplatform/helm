@@ -34,14 +34,16 @@ export function OnboardingPage() {
   ];
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-ink-50 p-6">
+    <div className="flex min-h-screen items-center justify-center p-6">
       <div className="w-full max-w-md">
-        <h1 className="mb-1 text-lg font-semibold">Set up your organization</h1>
-        <p className="mb-5 text-sm text-ink-500">
+        <h1 className="mb-2 tracking-display text-ink-950" style={{ font: 'var(--type-instrument-title)' }}>
+          Set up your organization
+        </h1>
+        <p className="mb-6 text-sm text-ink-600">
           The organization is HELM's tenant boundary: decisions, economics, and signals live inside it, and
           teammates you invite see only what their role allows.
         </p>
-        <form onSubmit={submit} className="space-y-4 rounded-lg border border-ink-200 bg-white p-5 shadow-panel">
+        <form onSubmit={submit} className="space-y-4 rounded-lg border border-ink-200 bg-white p-6 shadow-panel">
           <Field label="Organization name">
             <input className="field-input" required maxLength={200} value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
@@ -72,7 +74,7 @@ export function OnboardingPage() {
           </button>
         </form>
         <button
-          className="mt-3 w-full text-center text-xs text-ink-500 hover:text-ink-800"
+          className="helm-quiet-link mt-3 w-full text-center text-xs"
           onClick={() => {
             enterDemo();
             navigate('/');

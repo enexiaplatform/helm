@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, CheckCheck, EyeOff } from 'lucide-react';
+import { ArrowRight, Bell, CheckCheck, EyeOff } from 'lucide-react';
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
-import { PanelCard, SeverityBadge, EmptyState, Stat, Modal, Field } from '../components/ui.tsx';
+import { PageHeader, PanelCard, SeverityBadge, EmptyState, Stat, Modal, Field } from '../components/ui.tsx';
 import { buildMarginLadder } from '../domain/engines/economics.ts';
 import { formatMoney, formatPercent } from '../domain/format.ts';
 import type { Signal } from '../domain/types.ts';
@@ -82,16 +82,15 @@ export function AttentionPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <header className="flex items-end justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Attention</h1>
-          <p className="text-sm text-ink-500">
-            {openSignals.length === 0
-              ? 'Nothing is on fire.'
-              : `${openSignals.length} signal${openSignals.length === 1 ? '' : 's'} need a manager.`}
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        icon={Bell}
+        title="Attention"
+        description={
+          openSignals.length === 0
+            ? 'Nothing is on fire.'
+            : `${openSignals.length} signal${openSignals.length === 1 ? '' : 's'} need a manager.`
+        }
+      />
 
       {health && (
         <div className="grid grid-cols-2 gap-4 rounded-lg border border-ink-200 bg-white px-5 py-4 shadow-panel sm:grid-cols-4">
@@ -106,7 +105,7 @@ export function AttentionPage() {
         </div>
       )}
 
-      <PanelCard title="Signals" action={<span className="text-2xs text-ink-400">deterministic rules · every signal shows its evidence</span>}>
+      <PanelCard title="Signals" action="deterministic rules · every signal shows its evidence">
         {openSignals.length === 0 ? (
           <EmptyState
             title="No open signals"
@@ -128,14 +127,14 @@ export function AttentionPage() {
                     <p className="mt-0.5 text-xs text-ink-500">{sg.reason}</p>
                     {expanded === sg.id && (
                       <div className="mt-2 rounded-md border border-ink-100 bg-ink-50 p-3 text-xs">
-                        <p className="mb-1 text-2xs text-ink-400">
+                        <p className="mb-1 text-2xs text-ink-500">
                           Rule <span className="font-mono font-semibold text-ink-600">{sg.ruleCode}</span> · threshold:{' '}
                           {sg.thresholdLabel} · measured: {sg.measuredLabel}
                         </p>
                         <dl className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
                           {sg.evidence.map((e) => (
                             <div key={e.label}>
-                              <dt className="text-2xs text-ink-400">{e.label}</dt>
+                              <dt className="text-2xs text-ink-500">{e.label}</dt>
                               <dd className="font-medium tabular-nums">{e.value}</dd>
                             </div>
                           ))}
@@ -145,7 +144,7 @@ export function AttentionPage() {
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <button
-                      className="btn-primary px-2.5 py-1 text-xs"
+                      className="btn-secondary btn-xs"
                       onClick={() => {
                         setFraming(sg);
                         setQuestion('');

@@ -44,7 +44,7 @@ const stateTone: Record<string, string> = {
   EXECUTING: 'bg-accent-100 text-accent-800',
   COMPLETED: 'bg-ink-100 text-ink-600',
   REVIEWED: 'bg-ink-100 text-ink-500',
-  CANCELLED: 'bg-ink-100 text-ink-400',
+  CANCELLED: 'bg-ink-100 text-ink-500',
 };
 
 const outcomeTone: Record<string, string> = {
@@ -54,8 +54,8 @@ const outcomeTone: Record<string, string> = {
   MISSES_TARGET: 'text-amber-700',
   STATED: 'text-ink-700',
   ASSESSED: 'text-violet-800',
-  NOT_ASSESSED: 'text-ink-400',
-  UNKNOWN: 'text-ink-400',
+  NOT_ASSESSED: 'text-ink-500',
+  UNKNOWN: 'text-ink-500',
 };
 
 const ratingTone: Record<string, string> = {
@@ -158,18 +158,25 @@ export function DecisionDetailPage() {
       </Link>
 
       {/* -------------------------------------------- the management question */}
-      <header className="rounded-lg border border-ink-200 bg-white p-4 shadow-panel">
+      <header className="rounded-lg border border-ink-200 bg-white px-6 py-5 shadow-panel">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-2xs font-semibold uppercase tracking-wide text-ink-500">Management question</p>
-            <h1 className="mt-1 text-lg font-semibold text-ink-950">{decision.managementQuestion}</h1>
-            <p className="mt-1 text-xs text-ink-500">
+            <p className="text-[11px] font-semibold uppercase leading-4 tracking-wide text-ink-500">
+              Management question
+            </p>
+            <h1
+              className="mt-2 tracking-display text-ink-950"
+              style={{ font: 'var(--type-question)', textWrap: 'balance' }}
+            >
+              {decision.managementQuestion}
+            </h1>
+            <p className="mt-1.5 text-xs text-ink-500">
               {[decision.title, decision.scope].filter((x) => x).join(' · ')}
             </p>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
             <Chip tone={stateTone[decision.state] ?? 'bg-ink-100 text-ink-600'}>{readable(decision.state)}</Chip>
-            <span className="text-2xs text-ink-400">
+            <span className="text-2xs text-ink-500">
               authority {readable(decision.authorityStatus)} · Phase 6
             </span>
           </div>
@@ -237,7 +244,7 @@ export function DecisionDetailPage() {
       <PanelCard
         title="Alternatives and what each future does"
         action={
-          <span className="text-2xs text-ink-400">
+          <span className="text-2xs text-ink-500">
             every value read from the alternative&rsquo;s own simulation
           </span>
         }>
@@ -273,7 +280,7 @@ export function DecisionDetailPage() {
                         {criterion.threshold !== null && ` · ${criterion.threshold}`}
                         {criterion.required && ' · required'}
                       </span>
-                      <span className="mt-0.5 block text-2xs text-ink-400">
+                      <span className="mt-0.5 block text-2xs text-ink-500">
                         {criterion.author.label}
                         {criterion.demoPolicy && ' · demo management policy'}
                       </span>
@@ -380,9 +387,9 @@ function CriterionCell({ evaluation }: { evaluation: CriterionEvaluation | undef
           displayValue(value, unit, currency)
         )}
       </span>
-      <span className={`mt-0.5 block text-2xs ${outcomeTone[outcome] ?? 'text-ink-400'}`}>{readable(outcome)}</span>
-      {confidence !== null && <span className="block text-2xs text-ink-400">c {displayConfidence(confidence)}</span>}
-      {assessment && <span className="block text-2xs text-ink-400">{assessment.author.label}</span>}
+      <span className={`mt-0.5 block text-2xs ${outcomeTone[outcome] ?? 'text-ink-500'}`}>{readable(outcome)}</span>
+      {confidence !== null && <span className="block text-2xs text-ink-500">c {displayConfidence(confidence)}</span>}
+      {assessment && <span className="block text-2xs text-ink-500">{assessment.author.label}</span>}
     </span>
   );
 }
@@ -396,7 +403,7 @@ function TradeOffPanel({ workspace }: { workspace: DecisionWorkspace }) {
   return (
     <PanelCard
       title="What each alternative gains, and what it gives up"
-      action={<span className="text-2xs text-ink-400">relative to {reference?.label ?? 'the reference'}</span>}>
+      action={`relative to ${reference?.label ?? 'the reference'}`}>
       <p className="mb-3 rounded-md border border-ink-200 bg-ink-50 px-3 py-2 text-2xs text-ink-600">{space.statement}</p>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {columns.map((c) => (
@@ -404,7 +411,7 @@ function TradeOffPanel({ workspace }: { workspace: DecisionWorkspace }) {
             <p className="text-xs font-semibold text-ink-900">{c.alternativeLabel}</p>
             <Lines title="Gains" tone="text-emerald-700" lines={c.gains} />
             <Lines title="Gives up" tone="text-amber-800" lines={c.concessions} />
-            <Lines title="Not comparable" tone="text-ink-400" lines={c.unresolved} />
+            <Lines title="Not comparable" tone="text-ink-500" lines={c.unresolved} />
           </div>
         ))}
       </div>
@@ -456,7 +463,7 @@ function Lines({
             <span className="font-mono">
               {l.referenceValue ?? '—'} → {l.alternativeValue ?? '—'}
             </span>
-            {l.delta && <span className="text-ink-400"> ({l.delta})</span>}
+            {l.delta && <span className="text-ink-500"> ({l.delta})</span>}
           </li>
         ))}
       </ul>
@@ -468,7 +475,7 @@ function Lines({
 
 function AssumptionsPanel({ workspace }: { workspace: DecisionWorkspace }) {
   return (
-    <PanelCard title="What this rests on" action={<span className="text-2xs text-ink-400">who stands behind each</span>}>
+    <PanelCard title="What this rests on" action="who stands behind each">
       <ul className="space-y-2 text-xs">
         {workspace.assumptions.map((a) => (
           <li key={a.id} className="border-b border-ink-100 pb-2 last:border-0 last:pb-0">
@@ -494,7 +501,7 @@ function AssumptionsPanel({ workspace }: { workspace: DecisionWorkspace }) {
             )}
           </li>
         ))}
-        {workspace.assumptions.length === 0 && <li className="text-ink-400">No assumptions have been written down.</li>}
+        {workspace.assumptions.length === 0 && <li className="text-ink-500">No assumptions have been written down.</li>}
       </ul>
     </PanelCard>
   );
@@ -504,7 +511,7 @@ function ChallengesPanel({ workspace }: { workspace: DecisionWorkspace }) {
   return (
     <PanelCard
       title="Who disagreed"
-      action={<span className="text-2xs text-ink-400">decision evidence, not a conversation</span>}>
+      action="decision evidence, not a conversation">
       <ul className="space-y-2 text-xs">
         {workspace.challenges.map((c) => (
           <li key={c.id} className="border-b border-ink-100 pb-2 last:border-0 last:pb-0">
@@ -522,7 +529,7 @@ function ChallengesPanel({ workspace }: { workspace: DecisionWorkspace }) {
             </p>
           </li>
         ))}
-        {workspace.challenges.length === 0 && <li className="text-ink-400">Nobody has challenged anything here.</li>}
+        {workspace.challenges.length === 0 && <li className="text-ink-500">Nobody has challenged anything here.</li>}
       </ul>
     </PanelCard>
   );
@@ -531,9 +538,9 @@ function ChallengesPanel({ workspace }: { workspace: DecisionWorkspace }) {
 function EvidencePanel({ workspace }: { workspace: DecisionWorkspace }) {
   if (workspace.evidence.length === 0) return null;
   return (
-    <PanelCard title="Evidence" action={<span className="text-2xs text-ink-400">what it bears on, and how</span>}>
+    <PanelCard title="Evidence" action="what it bears on, and how">
       <table className="w-full text-left text-xs">
-        <thead className="text-2xs text-ink-400">
+        <thead className="text-2xs text-ink-500">
           <tr>
             <th className="py-1">Evidence</th>
             <th>Bears on</th>
@@ -595,7 +602,7 @@ function CommitmentPanel({
         </span>
       }
       action={
-        <span className="text-2xs text-ink-400" title={c.fingerprint}>
+        <span className="text-2xs text-ink-500" title={c.fingerprint}>
           {readable(c.authorship)} · {displayInstant(c.committedAt)}
         </span>
       }>
@@ -666,7 +673,7 @@ function CommitmentPanel({
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-2xs text-ink-400">
+          <p className="mt-1 text-2xs text-ink-500">
             HELM records the intent. The system named beside each one does the work.
           </p>
         </Section>
@@ -686,7 +693,7 @@ function CommitmentPanel({
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-2xs text-ink-400">
+          <p className="mt-1 text-2xs text-ink-500">
             {workspace.snapshot.criterionIds.length} criteria, {workspace.snapshot.assumptionIds.length} assumptions,{' '}
             {workspace.snapshot.evidenceIds.length} pieces of evidence, {workspace.snapshot.openChallenges.length} challenge
             {workspace.snapshot.openChallenges.length === 1 ? '' : 's'} still open when this was decided.
@@ -735,7 +742,7 @@ function OutcomeReviews({ workspace }: { workspace: DecisionWorkspace }) {
             {r.reviewedByLabel} · {displayInstant(r.reviewedAt)}
           </p>
           <table className="mt-1 w-full text-left text-xs">
-            <thead className="text-2xs text-ink-400">
+            <thead className="text-2xs text-ink-500">
               <tr>
                 <th className="py-1">Value</th>
                 <th className="text-right">Expected</th>
@@ -767,7 +774,7 @@ function OutcomeReviews({ workspace }: { workspace: DecisionWorkspace }) {
               ))}
             </ul>
           )}
-          <p className="mt-1 text-2xs text-ink-400">{r.statement}</p>
+          <p className="mt-1 text-2xs text-ink-500">{r.statement}</p>
         </div>
       ))}
     </Section>
@@ -787,7 +794,7 @@ function TimelinePanel({ workspace }: { workspace: DecisionWorkspace }) {
       <ol className="space-y-1 text-xs">
         {workspace.timeline.map((e) => (
           <li key={e.id} className="flex items-baseline gap-2">
-            <span className="w-40 shrink-0 text-2xs text-ink-400">{displayInstant(e.recordedAt)}</span>
+            <span className="w-40 shrink-0 text-2xs text-ink-500">{displayInstant(e.recordedAt)}</span>
             <span className="font-medium text-ink-800">{readable(e.eventType)}</span>
             <span className="truncate text-2xs text-ink-500">{summarize(e.payload)}</span>
           </li>

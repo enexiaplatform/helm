@@ -15,7 +15,7 @@ import { Link } from 'react-router-dom';
 import { Scale } from 'lucide-react';
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
-import { PanelCard, EmptyState } from '../components/ui.tsx';
+import { PageHeader, PanelCard, EmptyState } from '../components/ui.tsx';
 import { displayDate, readable, resolveDecisionContext } from '../services/decisionRuntime.ts';
 import { loadDecisions, type DecisionListItem } from '../services/decisionWorkspace.ts';
 
@@ -28,7 +28,7 @@ const stateTone: Record<string, string> = {
   EXECUTING: 'bg-accent-100 text-accent-800',
   COMPLETED: 'bg-ink-100 text-ink-600',
   REVIEWED: 'bg-ink-100 text-ink-500',
-  CANCELLED: 'bg-ink-100 text-ink-400',
+  CANCELLED: 'bg-ink-100 text-ink-500',
 };
 
 export function DecisionsPage() {
@@ -70,16 +70,11 @@ export function DecisionsPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
-      <header>
-        <h1 className="flex items-center gap-2 text-xl font-semibold">
-          <Scale className="h-5 w-5" /> Decisions
-        </h1>
-        <p className="mt-1 max-w-3xl text-sm text-ink-600">
-          One management question each, with the alternatives that were considered, the futures the model computed for
-          them, what mattered, who disagreed, and what was committed. HELM preserves the reasoning; it does not do the
-          deciding.
-        </p>
-      </header>
+      <PageHeader
+        icon={Scale}
+        title="Decisions"
+        description="One management question each, with the alternatives that were considered, the futures the model computed for them, what mattered, who disagreed, and what was committed. HELM preserves the reasoning; it does not do the deciding."
+      />
 
       {items.length === 0 ? (
         <EmptyState

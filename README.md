@@ -23,6 +23,7 @@ managerial attention, analysis, decisions, and learning.
 | Document | Contents |
 | --- | --- |
 | [Product vision](docs/product/vision.md) | what HELM is, is not, and who it serves |
+| [Visual system](docs/product/visual-system.md) | the "chart room" tokens, typefaces and the rules the console relies on |
 | [System overview](docs/architecture/system-overview.md) | the four layers and their invariants |
 | [Domain model](docs/architecture/domain-model.md) | ontology, value graph, managerial tier |
 | [Enterprise Value Ontology](docs/domain/ontology.md) | the seed entity, relationship and metric taxonomy |

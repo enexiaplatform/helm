@@ -1,0 +1,143 @@
+/* HELM's semantic layers — the "truth grammar". Every mapping below is lifted
+   from the app's tone maps (ui.tsx, DecisionDetailPage, ScenariosPage,
+   ValueGraphPage). Words carry the meaning; these tints are the second
+   channel. Never re-map a hue to a different meaning in product UI. */
+:root {
+  /* ── Signal severity (Attention) ─────────────────────────────── */
+  --signal-critical-dot: var(--red-500);
+  --signal-critical-bg: var(--red-50);
+  --signal-critical-fg: var(--red-700);
+  --signal-critical-border: var(--red-200);
+  --signal-warning-dot: var(--amber-500);
+  --signal-warning-bg: var(--amber-50);
+  --signal-warning-fg: var(--amber-800);
+  --signal-warning-border: var(--amber-200);
+  --signal-watch-dot: var(--accent-500);
+  --signal-watch-bg: var(--accent-50);
+  --signal-watch-fg: var(--accent-800);
+  --signal-watch-border: var(--accent-200);
+  --signal-info-dot: var(--ink-400);
+  --signal-info-bg: var(--ink-50);
+  --signal-info-fg: var(--ink-600);
+  --signal-info-border: var(--ink-200);
+
+  /* ── Truth kind: what sort of claim a value is (observations) ── */
+  --truth-actual-bg: var(--emerald-100);     --truth-actual-fg: var(--emerald-900);
+  --truth-forecast-bg: var(--accent-100);    --truth-forecast-fg: var(--accent-900);
+  --truth-target-bg: var(--indigo-100);      --truth-target-fg: var(--indigo-900);
+  --truth-scenario-bg: var(--amber-100);     --truth-scenario-fg: var(--amber-900);
+  --truth-estimate-bg: var(--ink-100);       --truth-estimate-fg: var(--ink-700);
+  --truth-derived-bg: var(--violet-100);     --truth-derived-fg: var(--violet-900);
+  --truth-assumption-bg: var(--orange-100);  --truth-assumption-fg: var(--orange-900);
+
+  /* ── Origin: how a value in a future state came to be ─────────── */
+  --origin-computed-bg: var(--violet-50);    --origin-computed-fg: var(--violet-800);
+  --origin-overridden-bg: var(--amber-50);   --origin-overridden-fg: var(--amber-900);
+  --origin-inherited-bg: var(--ink-50);      --origin-inherited-fg: var(--ink-600);
+  --origin-blocked-bg: var(--red-50);        --origin-blocked-fg: var(--red-700);
+  --origin-unavailable-bg: var(--ink-50);    --origin-unavailable-fg: var(--ink-500);
+  /* lineage source leaf (a stated fact) */
+  --origin-source-bg: var(--emerald-50);     --origin-source-fg: var(--emerald-800);
+
+  /* ── Value dimensions: enterprise value is never one score ────── */
+  --dim-financial-bg: var(--emerald-50);  --dim-financial-fg: var(--emerald-800);  --dim-financial-border: var(--emerald-200);
+  --dim-commercial-bg: var(--accent-50);  --dim-commercial-fg: var(--accent-800);  --dim-commercial-border: var(--accent-200);
+  --dim-customer-bg: var(--violet-50);    --dim-customer-fg: var(--violet-800);    --dim-customer-border: var(--violet-200);
+  --dim-operational-bg: var(--sky-50);    --dim-operational-fg: var(--sky-800);    --dim-operational-border: var(--sky-200);
+  --dim-capital-bg: var(--amber-50);      --dim-capital-fg: var(--amber-800);      --dim-capital-border: var(--amber-200);
+  --dim-risk-bg: var(--red-50);           --dim-risk-fg: var(--red-700);           --dim-risk-border: var(--red-200);
+  --dim-strategic-bg: var(--indigo-50);   --dim-strategic-fg: var(--indigo-800);   --dim-strategic-border: var(--indigo-200);
+  --dim-resource-bg: var(--teal-50);      --dim-resource-fg: var(--teal-800);      --dim-resource-border: var(--teal-200);
+  --dim-resilience-bg: var(--lime-50);    --dim-resilience-fg: var(--lime-800);    --dim-resilience-border: var(--lime-200);
+
+  /* ── Decision lifecycle state ──────────────────────────────────── */
+  --state-draft-bg: var(--ink-100);              --state-draft-fg: var(--ink-600);
+  --state-investigating-bg: var(--accent-100);   --state-investigating-fg: var(--accent-800);
+  --state-modelling-bg: var(--violet-100);       --state-modelling-fg: var(--violet-800);
+  --state-ready-bg: var(--amber-100);            --state-ready-fg: var(--amber-800);
+  --state-committed-bg: var(--emerald-100);      --state-committed-fg: var(--emerald-800);
+  --state-executing-bg: var(--accent-100);       --state-executing-fg: var(--accent-800);
+  --state-completed-bg: var(--ink-100);          --state-completed-fg: var(--ink-600);
+  --state-reviewed-bg: var(--ink-100);           --state-reviewed-fg: var(--ink-500);
+  --state-cancelled-bg: var(--ink-100);          --state-cancelled-fg: var(--ink-500);
+
+  /* ── Scenario status ───────────────────────────────────────────── */
+  --scenario-draft-bg: var(--ink-100);       --scenario-draft-fg: var(--ink-700);
+  --scenario-ready-bg: var(--sky-100);       --scenario-ready-fg: var(--sky-800);
+  --scenario-running-bg: var(--amber-100);   --scenario-running-fg: var(--amber-800);
+  --scenario-computed-bg: var(--emerald-100); --scenario-computed-fg: var(--emerald-800);
+  --scenario-archived-bg: var(--ink-100);    --scenario-archived-fg: var(--ink-500);
+  --scenario-invalidated-bg: var(--red-100); --scenario-invalidated-fg: var(--red-700);
+
+  /* ── Alternative status + the chosen mark ──────────────────────── */
+  --alt-modelled-bg: var(--emerald-50);    --alt-modelled-fg: var(--emerald-800);
+  --alt-unmodelled-bg: var(--amber-50);    --alt-unmodelled-fg: var(--amber-800);
+  --alt-withdrawn-bg: var(--ink-100);      --alt-withdrawn-fg: var(--ink-500);
+  --alt-chosen-bg: var(--emerald-600);     --alt-chosen-fg: var(--white);
+
+  /* ── Criterion outcome (against management's own line) ─────────── */
+  --outcome-satisfied: var(--emerald-700);   /* SATISFIED, MEETS_TARGET */
+  --outcome-violated: var(--red-700);
+  --outcome-misses: var(--amber-700);        /* MISSES_TARGET */
+  --outcome-stated: var(--ink-700);
+  --outcome-assessed: var(--violet-800);
+  --outcome-unknown: var(--ink-500);         /* NOT_ASSESSED, UNKNOWN */
+
+  /* ── Qualitative judgement (authored, never HELM's) ────────────── */
+  --rating-strong-support: var(--emerald-700);
+  --rating-support: var(--emerald-600);
+  --rating-neutral: var(--ink-500);
+  --rating-concern: var(--amber-700);
+  --rating-strong-concern: var(--red-700);
+
+  /* ── Direction of a delta, as the metric's semantics read it ───── */
+  --interp-favorable: var(--emerald-700);
+  --interp-unfavorable: var(--red-700);
+  --interp-neutral: var(--ink-500);
+  --interp-context: var(--sky-700);
+  --interp-unresolved: var(--ink-500);
+
+  /* ── Constraint / feasibility ──────────────────────────────────── */
+  --constraint-met: var(--emerald-700);
+  --constraint-breached: var(--red-700);
+  --constraint-unknown: var(--ink-500);
+
+  /* ── Completeness of a future state ────────────────────────────── */
+  --complete-bg: var(--emerald-50);     --complete-fg: var(--emerald-800);
+  --incomplete-bg: var(--amber-50);     --incomplete-fg: var(--amber-800);
+
+  /* ── Readiness (procedural completeness only) ──────────────────── */
+  --ready-bg: var(--emerald-50);        --ready-fg: var(--emerald-900);   --ready-border: var(--emerald-200);
+  --ready-gaps-bg: var(--amber-50);     --ready-gaps-fg: var(--amber-900); --ready-gaps-border: var(--amber-200);
+  --not-ready-bg: var(--red-50);        --not-ready-fg: var(--red-900);   --not-ready-border: var(--red-200);
+
+  /* ── Trade-offs ────────────────────────────────────────────────── */
+  --gain-fg: var(--emerald-700);
+  --concession-fg: var(--amber-800);
+  --not-comparable-fg: var(--ink-500);
+  --accepted-bg: var(--amber-50);       --accepted-fg: var(--amber-900);  --accepted-border: var(--amber-200);
+
+  /* ── Evidence relation / challenge / assumption result ─────────── */
+  --relation-challenge-bg: var(--amber-50);  --relation-challenge-fg: var(--amber-800); /* CHALLENGE, INVALIDATE */
+  --relation-neutral-bg: var(--ink-100);     --relation-neutral-fg: var(--ink-600);     /* SUPPORT, CONTEXTUALIZE */
+  --challenge-open-bg: var(--amber-50);      --challenge-open-fg: var(--amber-800);
+  --challenge-closed-bg: var(--ink-100);     --challenge-closed-fg: var(--ink-600);
+  --challenge-icon: var(--amber-600);
+  --assumption-held-bg: var(--emerald-50);   --assumption-held-fg: var(--emerald-800);
+  --assumption-disproved-bg: var(--red-50);  --assumption-disproved-fg: var(--red-700);
+  --assumption-unowned-fg: var(--amber-700); /* "nobody stands behind this" */
+
+  /* ── Commitment and what arrives after it ──────────────────────── */
+  --commitment-mark: var(--emerald-700);     /* the Lock */
+  --after-bg: var(--accent-50);              /* evidence after commitment */
+  --after-fg: var(--accent-900);
+  --after-border: var(--accent-200);
+
+  /* ── Graph links ───────────────────────────────────────────────── */
+  --link-upstream-bg: var(--violet-50);      --link-upstream-fg: var(--violet-800);
+  --link-downstream-bg: var(--emerald-50);   --link-downstream-fg: var(--emerald-800);
+  --link-neutral-bg: var(--ink-100);         --link-neutral-fg: var(--ink-600);
+  --contention-bg: rgb(251 244 228 / 0.6);   --contention-border: var(--amber-200);
+  --connector: var(--ink-300);               /* branch + chain connectors */
+  --lineage-rule: var(--ink-200);            /* nested lineage left rule */
+}

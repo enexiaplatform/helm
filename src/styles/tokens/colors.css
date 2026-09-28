@@ -1,0 +1,107 @@
+/* HELM palette — "chart room": warm chart paper, navy-graphite ink, one
+   Prussian accent, brass for the mark. The hue families keep Tailwind-style
+   names (emerald, amber, red…) so semantic tokens read naturally, but every
+   value is HELM's own, tuned to sit quietly on paper. Product UI reaches
+   these through semantic.css and helm-semantics.css, never directly. */
+:root {
+  --paper: #f3f1eb;
+  --white: #ffffff;
+
+  /* ink — warm paper tones at the light end, navy-graphite at the dark end */
+  --ink-50: #f8f6f1;
+  --ink-100: #efece5;
+  --ink-200: #e2ded4;
+  --ink-300: #c9c4b8;
+  --ink-400: #8e8f8c;
+  --ink-500: #646a73;
+  --ink-600: #4f5560;
+  --ink-700: #3a404a;
+  --ink-800: #2a303a;
+  --ink-900: #1d222b;
+  --ink-950: #12161d;
+
+  /* accent — Prussian chart blue; 800–950 double as the navy chrome */
+  --accent-50: #eef2f9;
+  --accent-100: #dce5f3;
+  --accent-200: #bacbe6;
+  --accent-300: #8da8d4;
+  --accent-400: #5f82be;
+  --accent-500: #3b63a8;
+  --accent-600: #284c8f;
+  --accent-700: #1f3e78;
+  --accent-800: #19325f;
+  --accent-900: #14284b;
+  --accent-950: #0d1a2e;
+
+  /* brass — the helm mark and the attention count, nothing else */
+  --brass-300: #dcc38e;
+  --brass-400: #c9a45c;
+  --brass-500: #b08a3e;
+  --brass-600: #9c7a32; /* brass on paper, graphic use only */
+
+  /* sea green — favourable, actual, met, committed */
+  --emerald-50: #edf6f1;
+  --emerald-100: #d8ede2;
+  --emerald-200: #b5dac6;
+  --emerald-500: #3c9a70;
+  --emerald-600: #2a7f5a;
+  --emerald-700: #1f6a4a;
+  --emerald-800: #195539;
+  --emerald-900: #13442e;
+
+  /* ochre — warning, scenario, override, accepted trade-off */
+  --amber-50: #fbf4e4;
+  --amber-100: #f6e7c3;
+  --amber-200: #edd49a;
+  --amber-500: #c8922a;
+  --amber-600: #a8761a;
+  --amber-700: #875d12;
+  --amber-800: #6f4c10;
+  --amber-900: #5a3e0e;
+
+  /* brick — critical, breached, blocked, violated */
+  --red-50: #fbeeec;
+  --red-100: #f7dcd8;
+  --red-200: #eebdb6;
+  --red-500: #cc4a3d;
+  --red-600: #b23a2e;
+  --red-700: #962e24;
+  --red-800: #7c261e;
+  --red-900: #661f19;
+
+  /* plum — derived, computed, customer */
+  --violet-50: #f4f0f8;
+  --violet-100: #e8e0f1;
+  --violet-200: #d3c4e5;
+  --violet-700: #5e3f8e;
+  --violet-800: #4e3476;
+  --violet-900: #3f2a60;
+
+  /* harbour — operational, context-dependent, ready */
+  --sky-50: #edf5f7;
+  --sky-100: #d9ebef;
+  --sky-200: #b6d7e0;
+  --sky-700: #22627a;
+  --sky-800: #1b5064;
+
+  /* indigo — target, strategic */
+  --indigo-50: #eff0f9;
+  --indigo-100: #e0e2f3;
+  --indigo-200: #c5c9e8;
+  --indigo-800: #373d86;
+  --indigo-900: #2d316c;
+
+  /* teal — resource */
+  --teal-50: #ecf6f4;
+  --teal-200: #b3dcd4;
+  --teal-800: #1a5c55;
+
+  /* olive — resilience */
+  --lime-50: #f3f5e6;
+  --lime-200: #d7deaf;
+  --lime-800: #4e5a1a;
+
+  /* rust — assumption */
+  --orange-100: #f8e4d6;
+  --orange-900: #7a3512;
+}

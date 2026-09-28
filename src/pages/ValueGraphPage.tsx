@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowDown, ArrowUp, Info, Layers } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, Info, Layers, Workflow } from 'lucide-react';
 import type {
   ContentionPoint,
   ValueChain,
@@ -27,7 +27,7 @@ import type { GraphStore } from '@helm/graph-store';
 import type { Scope } from '@helm/shared';
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope, resolveGraphs, valueMetrics } from '../services/ontologyGraph.ts';
-import { PanelCard } from '../components/ui.tsx';
+import { PageHeader, PanelCard } from '../components/ui.tsx';
 
 type Loaded = { valueGraph: ValueGraph; graphStore: GraphStore; scope: Scope };
 
@@ -86,7 +86,7 @@ function formatValue(o: ValueObservation): string {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline gap-2 py-0.5">
-      <span className="w-36 shrink-0 text-2xs uppercase tracking-wide text-ink-400">{label}</span>
+      <span className="w-36 shrink-0 text-2xs uppercase tracking-wide text-ink-500">{label}</span>
       <span className="text-xs text-ink-800">{value}</span>
     </div>
   );
@@ -248,49 +248,53 @@ export function ValueGraphPage() {
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-ink-900">Value Graph Explorer</h1>
-          <p className="text-xs text-ink-500">
+      <PageHeader
+        register="instrument"
+        icon={Workflow}
+        title="Value Graph Explorer"
+        description={
+          <>
             Read-only kernel instrument. {valueMetrics.allMetrics().length} metrics across{' '}
             {valueDimensions.length} value dimensions. Structure only — nothing here is calculated.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search value nodes…"
-            className="w-52 rounded border border-ink-200 px-2 py-1 text-xs"
-          />
-          <select
-            value={dimFilter}
-            onChange={(e) => setDimFilter(e.target.value as ValueDimension | '')}
-            className="rounded border border-ink-200 px-2 py-1 text-xs"
-            aria-label="Filter by value dimension"
-          >
-            <option value="">All dimensions</option>
-            {valueDimensions.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-          <select
-            value={scenarioId}
-            onChange={(e) => setScenarioId(e.target.value)}
-            className="rounded border border-ink-200 px-2 py-1 text-xs"
-            aria-label="Observation context"
-          >
-            <option value="">Reality (actual / forecast / target)</option>
-            {scenarios.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </header>
+          </>
+        }
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search value nodes…"
+              className="w-52 rounded border border-ink-200 bg-white px-2 py-1 text-xs"
+            />
+            <select
+              value={dimFilter}
+              onChange={(e) => setDimFilter(e.target.value as ValueDimension | '')}
+              className="rounded border border-ink-200 bg-white px-2 py-1 text-xs"
+              aria-label="Filter by value dimension"
+            >
+              <option value="">All dimensions</option>
+              {valueDimensions.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+            <select
+              value={scenarioId}
+              onChange={(e) => setScenarioId(e.target.value)}
+              className="rounded border border-ink-200 bg-white px-2 py-1 text-xs"
+              aria-label="Observation context"
+            >
+              <option value="">Reality (actual / forecast / target)</option>
+              {scenarios.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        }
+      />
 
       {error && (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -370,7 +374,7 @@ export function ValueGraphPage() {
                       <span className="block truncate text-xs font-medium text-ink-900">
                         {n.label}
                       </span>
-                      <span className="block truncate text-2xs text-ink-400">
+                      <span className="block truncate text-2xs text-ink-500">
                         {n.metricKey}
                         {n.timeHorizon && ` · ${n.timeHorizon}`}
                       </span>
@@ -387,7 +391,7 @@ export function ValueGraphPage() {
               );
             })}
             {nodes.length === 0 && !error && (
-              <li className="py-6 text-center text-xs text-ink-400">No value nodes yet.</li>
+              <li className="py-6 text-center text-xs text-ink-500">No value nodes yet.</li>
             )}
           </ul>
         </PanelCard>
@@ -395,7 +399,7 @@ export function ValueGraphPage() {
         <div className="space-y-4">
           {!current && (
             <PanelCard title="Value node detail">
-              <p className="py-8 text-center text-xs text-ink-400">
+              <p className="py-8 text-center text-xs text-ink-500">
                 Select a value node to inspect its metric semantics, observations, provenance and
                 position in the value chain.
               </p>
@@ -439,12 +443,12 @@ export function ValueGraphPage() {
                     <Field label="Type" value={current.subject.entityTypeKey} />
                     <Field label="Canonical key" value={current.subject.canonicalKey} />
                     <Field label="Source system" value={current.subject.sourceSystem} />
-                    <p className="mt-1 text-2xs text-ink-400">
+                    <p className="mt-1 text-2xs text-ink-500">
                       The value node references this entity. It holds no copy of its attributes.
                     </p>
                   </>
                 ) : (
-                  <p className="text-xs text-ink-400">Scoped node, not bound to a single entity.</p>
+                  <p className="text-xs text-ink-500">Scoped node, not bound to a single entity.</p>
                 )}
               </PanelCard>
 
@@ -456,12 +460,12 @@ export function ValueGraphPage() {
                 }
               >
                 {current.observations.length === 0 && (
-                  <p className="text-xs text-ink-400">No observations recorded for this node.</p>
+                  <p className="text-xs text-ink-500">No observations recorded for this node.</p>
                 )}
                 {current.observations.length > 0 && (
                   <table className="w-full text-2xs">
                     <thead>
-                      <tr className="text-left text-ink-400">
+                      <tr className="text-left text-ink-500">
                         <th className="pb-1 font-medium">Type</th>
                         <th className="pb-1 font-medium">Value</th>
                         <th className="pb-1 font-medium">When</th>
@@ -499,7 +503,7 @@ export function ValueGraphPage() {
                     </tbody>
                   </table>
                 )}
-                <p className="mt-2 text-2xs text-ink-400">
+                <p className="mt-2 text-2xs text-ink-500">
                   These coexist: an actual, a forecast, a target and a scenario value are different
                   kinds of fact about the same quantity, and none supersedes another.
                 </p>
@@ -525,14 +529,14 @@ export function ValueGraphPage() {
                       >
                         {n.node.label}
                       </button>
-                      <span className="shrink-0 text-2xs text-ink-400">
+                      <span className="shrink-0 text-2xs text-ink-500">
                         {n.via.weight !== null && `w=${n.via.weight} `}
                         {n.via.confidence !== null && `c=${n.via.confidence}`}
                       </span>
                     </li>
                   ))}
                   {current.upstream.length === 0 && (
-                    <li className="py-2 text-xs text-ink-400">Origin node — nothing upstream.</li>
+                    <li className="py-2 text-xs text-ink-500">Origin node — nothing upstream.</li>
                   )}
                 </ul>
               </PanelCard>
@@ -557,14 +561,14 @@ export function ValueGraphPage() {
                       >
                         {n.node.label}
                       </button>
-                      <span className="shrink-0 text-2xs text-ink-400">
+                      <span className="shrink-0 text-2xs text-ink-500">
                         {n.via.weight !== null && `w=${n.via.weight} `}
                         {n.via.confidence !== null && `c=${n.via.confidence}`}
                       </span>
                     </li>
                   ))}
                   {current.downstream.length === 0 && (
-                    <li className="py-2 text-xs text-ink-400">
+                    <li className="py-2 text-xs text-ink-500">
                       Terminal node — nothing downstream.
                     </li>
                   )}
@@ -630,27 +634,27 @@ export function ValueGraphPage() {
                               {latest ? (
                                 <span className="shrink-0 font-mono text-ink-700">
                                   {formatValue(latest)}
-                                  <span className="ml-1 text-ink-400">
+                                  <span className="ml-1 text-ink-500">
                                     {latest.observationType}
                                   </span>
                                 </span>
                               ) : (
                                 <span className="shrink-0 text-ink-300">no value</span>
                               )}
-                              <span className="shrink-0 text-ink-400">
+                              <span className="shrink-0 text-ink-500">
                                 conf {n.pathConfidence.toFixed(3)}
                               </span>
                             </li>
                           );
                         })}
                         {rows.length === 0 && (
-                          <li className="text-2xs text-ink-400">Nothing {label.toLowerCase()}.</li>
+                          <li className="text-2xs text-ink-500">Nothing {label.toLowerCase()}.</li>
                         )}
                       </ul>
                     </div>
                   );
                 })}
-                <p className="mt-2 text-2xs text-ink-400">
+                <p className="mt-2 text-2xs text-ink-500">
                   Values shown are the observations attached to each node. Nothing is computed
                   through the chain — a downstream node with no observation stays empty, by design.
                   Propagation is Phase 3.

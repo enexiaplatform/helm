@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Ship } from 'lucide-react';
 import { useHelmStore } from '../services/helmStore.ts';
 import { isSupabaseConfigured } from '../lib/supabaseClient.ts';
 import { Field } from '../components/ui.tsx';
+import { HelmLogo } from '../components/HelmLogo.tsx';
 
 export function AuthPage() {
   const navigate = useNavigate();
@@ -31,19 +31,13 @@ export function AuthPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-ink-950 p-6">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-ink-800">
-            <Ship size={20} className="text-accent-400" />
-          </span>
-          <div>
-            <h1 className="text-lg font-bold tracking-wide text-white">HELM</h1>
-            <p className="text-xs text-ink-400">The system of decision for managers</p>
-          </div>
-        </div>
+    <div className="flex min-h-screen items-center justify-center p-6" style={{ background: 'var(--surface-chrome)' }}>
+      <div className="w-full max-w-[400px]">
+        <h1 className="mb-7">
+          <HelmLogo size="auth" />
+        </h1>
 
-        <div className="rounded-lg bg-white p-5 shadow-overlay">
+        <div className="rounded-xl bg-white p-7 shadow-overlay">
           <form onSubmit={submit} className="space-y-3">
             <Field label="Email">
               <input
@@ -78,13 +72,13 @@ export function AuthPage() {
             </button>
           </form>
           <button
-            className="mt-2 w-full text-center text-xs text-ink-500 hover:text-ink-800"
+            className="helm-quiet-link mt-2 w-full text-center text-xs"
             onClick={() => setEmailMode(emailMode === 'signin' ? 'signup' : 'signin')}
           >
             {emailMode === 'signin' ? 'New here? Create an account' : 'Already have an account? Sign in'}
           </button>
 
-          <div className="my-4 flex items-center gap-3 text-2xs uppercase tracking-wide text-ink-400">
+          <div className="my-4 flex items-center gap-3 text-2xs uppercase tracking-wide text-ink-500">
             <span className="h-px flex-1 bg-ink-200" />
             or
             <span className="h-px flex-1 bg-ink-200" />
@@ -99,12 +93,12 @@ export function AuthPage() {
           >
             Explore the demo organization
           </button>
-          <p className="mt-2 text-center text-2xs text-ink-400">
+          <p className="mt-2 text-center text-2xs text-ink-500">
             Meridian Life Sciences Vietnam — realistic data, nothing syncs.
           </p>
         </div>
 
-        <p className="mt-4 text-center text-2xs text-ink-500">
+        <p className="mt-4 text-center text-2xs" style={{ color: 'var(--text-on-chrome-muted)' }}>
           HELM shares its database and identity with Memoire. Sign in with your Memoire account to analyze live
           commercial data.
         </p>

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
+import { Factory } from 'lucide-react';
 import { useHelmStore } from '../services/helmStore.ts';
-import { PanelCard, EmptyState, Stat } from '../components/ui.tsx';
+import { PageHeader, PanelCard, EmptyState, Stat } from '../components/ui.tsx';
 import { analyzeProcess } from '../domain/engines/capacity.ts';
 import { analyzeInventoryItem, analyzeWorkingCapital } from '../domain/engines/inventory.ts';
 import { demoWorkingCapital } from '../data/demoOrg.ts';
@@ -34,10 +35,11 @@ export function OperationsPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
-      <header>
-        <h1 className="text-xl font-semibold">Operations</h1>
-        <p className="text-sm text-ink-500">Capacity, bottlenecks, and inventory as capital — diagnosis, not execution.</p>
-      </header>
+      <PageHeader
+        icon={Factory}
+        title="Operations"
+        description="Capacity, bottlenecks, and inventory as capital — diagnosis, not execution."
+      />
 
       {wc && (
         <div className="grid grid-cols-2 gap-4 rounded-lg border border-ink-200 bg-white px-5 py-4 shadow-panel sm:grid-cols-5">
@@ -87,12 +89,12 @@ export function OperationsPage() {
                         </span>
                         <div className="relative h-4 flex-1 overflow-hidden rounded bg-ink-50">
                           <div
-                            className={`absolute inset-y-0 left-0 rounded ${u >= 1 ? 'bg-red-400' : u >= 0.85 ? 'bg-amber-400' : 'bg-accent-300'}`}
+                            className={`absolute inset-y-0 left-0 rounded ${u >= 1 ? 'bg-red-500' : u >= 0.85 ? 'bg-amber-500' : 'bg-accent-300'}`}
                             style={{ width: `${Math.min(100, u * 100)}%` }}
                           />
                         </div>
                         <span className="w-16 shrink-0 text-right tabular-nums text-ink-500">{formatPercent(u, 0)}</span>
-                        <span className="w-24 shrink-0 text-right text-2xs text-ink-400">
+                        <span className="w-24 shrink-0 text-right text-2xs text-ink-500">
                           {Number.isFinite(a.weeklyCapacity) ? `${formatNumber(a.weeklyCapacity)}/wk cap` : '—'}
                         </span>
                       </div>
@@ -127,13 +129,13 @@ export function OperationsPage() {
                   <tr key={item.id} className="border-b border-ink-50 last:border-0">
                     <td className="table-td">
                       <p className="font-medium">{item.name}</p>
-                      <p className="text-2xs text-ink-400">
+                      <p className="text-2xs text-ink-500">
                         {item.sku} · demand {formatNumber(item.avgDailyDemand, 1)}/day · lead {formatNumber(item.leadTimeDays)}d
                       </p>
                     </td>
                     <td className="table-td text-right tabular-nums">
                       {formatNumber(item.stockOnHand)}
-                      {item.stockInbound > 0 && <span className="text-ink-400"> +{formatNumber(item.stockInbound)}</span>}
+                      {item.stockInbound > 0 && <span className="text-ink-500"> +{formatNumber(item.stockInbound)}</span>}
                     </td>
                     <td className="table-td text-right tabular-nums">{formatNumber(analysis.reorderPoint)}</td>
                     <td className="table-td text-right tabular-nums">{formatNumber(analysis.safetyStock)}</td>
@@ -157,7 +159,7 @@ export function OperationsPage() {
                           </span>
                         )}
                         {!analysis.stockoutRisk && (analysis.expiryExposureUnits ?? 0) === 0 && (
-                          <span className="text-2xs text-ink-400">healthy</span>
+                          <span className="text-2xs text-ink-500">healthy</span>
                         )}
                       </div>
                     </td>

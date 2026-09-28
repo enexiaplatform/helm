@@ -50,7 +50,7 @@ import {
   type OverridableNode,
   type ScenarioSnapshot,
 } from '../services/scenarioExplorer.ts';
-import { Field, Modal, PanelCard } from '../components/ui.tsx';
+import { Field, Modal, PageHeader, PanelCard } from '../components/ui.tsx';
 
 const interpretationTone: Record<string, string> = {
   FAVORABLE: 'text-emerald-700',
@@ -63,14 +63,14 @@ const originTone: Record<string, string> = {
   OVERRIDDEN: 'bg-amber-50 text-amber-900',
   INHERITED: 'bg-ink-50 text-ink-600',
   BLOCKED: 'bg-red-50 text-red-700',
-  UNAVAILABLE: 'bg-ink-50 text-ink-400',
+  UNAVAILABLE: 'bg-ink-50 text-ink-500',
 };
 const statusTone: Record<string, string> = {
   DRAFT: 'bg-ink-100 text-ink-700',
   READY: 'bg-sky-100 text-sky-800',
   RUNNING: 'bg-amber-100 text-amber-800',
   COMPUTED: 'bg-emerald-100 text-emerald-800',
-  ARCHIVED: 'bg-ink-100 text-ink-400',
+  ARCHIVED: 'bg-ink-100 text-ink-500',
   INVALIDATED: 'bg-red-100 text-red-700',
 };
 const arrow = (d: ValueDelta | undefined) =>
@@ -176,34 +176,31 @@ export function ScenariosPage() {
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-lg font-semibold text-ink-900">
-            <GitBranch className="h-5 w-5" /> Scenario Runtime
-          </h1>
-          <p className="max-w-3xl text-xs text-ink-500">
-            Branching future states over one pinned baseline. Every number is computed by the propagation
-            engine from explicit overrides; HELM compares the futures and does not choose between them.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="btn-secondary inline-flex items-center gap-1.5 px-2.5 py-1 text-xs"
-            disabled={busy}
-            onClick={() =>
-              void act(() =>
-                ws.runtime.executeBaseline(ws.scope, { fork: ws.defaultFork, periods: ws.periodChoices.slice(0, 1) }),
-              )
-            }
-          >
-            <Play className="h-3.5 w-3.5" /> Simulate baseline
-          </button>
-          <button type="button" className="btn-primary inline-flex items-center gap-1.5 px-2.5 py-1 text-xs" onClick={() => setCreating(true)}>
-            <Plus className="h-3.5 w-3.5" /> New scenario
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        register="instrument"
+        icon={GitBranch}
+        title="Scenario Runtime"
+        description="Branching future states over one pinned baseline. Every number is computed by the propagation engine from explicit overrides; HELM compares the futures and does not choose between them."
+        actions={
+          <>
+            <button
+              type="button"
+              className="btn-secondary btn-sm"
+              disabled={busy}
+              onClick={() =>
+                void act(() =>
+                  ws.runtime.executeBaseline(ws.scope, { fork: ws.defaultFork, periods: ws.periodChoices.slice(0, 1) }),
+                )
+              }
+            >
+              <Play className="h-3.5 w-3.5" /> Simulate baseline
+            </button>
+            <button type="button" className="btn-primary btn-sm" onClick={() => setCreating(true)}>
+              <Plus className="h-3.5 w-3.5" /> New scenario
+            </button>
+          </>
+        }
+      />
 
       <ForkStrip ws={ws} data={data} />
 
@@ -227,7 +224,7 @@ export function ScenariosPage() {
               {periodKey(p)}
             </button>
           ))}
-          <span className="ml-2 text-2xs text-ink-400">periods are never compared across one another</span>
+          <span className="ml-2 text-2xs text-ink-500">periods are never compared across one another</span>
         </div>
       )}
 
@@ -391,7 +388,7 @@ function StateCard({
         )}
       </div>
       {!state ? (
-        <p className="mt-2 text-2xs text-ink-400">not simulated yet</p>
+        <p className="mt-2 text-2xs text-ink-500">not simulated yet</p>
       ) : (
         <dl className="mt-2 space-y-0.5">
           {BRANCH_METRICS.map((m) => {
@@ -401,13 +398,13 @@ function StateCard({
               <div key={m.label} className="flex items-baseline justify-between gap-2 text-xs">
                 <dt className="text-ink-500">{m.label}</dt>
                 <dd className="text-right font-mono" title={v?.value ?? v?.reason ?? ''}>
-                  {v?.value === null || !v ? <span className="text-ink-400">{v?.origin ?? '—'}</span> : displayValue(v.value, v.unit, v.currency)}
+                  {v?.value === null || !v ? <span className="text-ink-500">{v?.origin ?? '—'}</span> : displayValue(v.value, v.unit, v.currency)}
                   {d && d.direction !== 'UNCHANGED' && (
                     <span
                       className={`ml-1 ${
                         d.direction === 'UNRESOLVED'
-                          ? 'text-ink-400'
-                          : (interpretationTone[d.directionalInterpretation ?? 'NEUTRAL'] ?? 'text-ink-400')
+                          ? 'text-ink-500'
+                          : (interpretationTone[d.directionalInterpretation ?? 'NEUTRAL'] ?? 'text-ink-500')
                       }`}
                       title={d.unresolvedReason ?? d.directionalInterpretation ?? ''}>
                       {d.direction === 'UNRESOLVED'
@@ -525,10 +522,10 @@ function ScenarioPanel({
         <section>
           <h3 className="mb-1 text-2xs font-semibold uppercase tracking-wide text-ink-500">Assumptions (what changed)</h3>
           {effective.length === 0 ? (
-            <p className="text-ink-400">No overrides: this revision simulates the baseline itself.</p>
+            <p className="text-ink-500">No overrides: this revision simulates the baseline itself.</p>
           ) : (
             <table className="w-full text-left">
-              <thead className="text-2xs text-ink-400">
+              <thead className="text-2xs text-ink-500">
                 <tr><th className="py-1">Target</th><th>Change</th><th>Period</th><th>Source</th><th>Conf.</th><th /></tr>
               </thead>
               <tbody>
@@ -548,7 +545,7 @@ function ScenarioPanel({
                       </td>
                       <td className="pr-2 font-mono">{o.operation === 'ADD' ? '+' : '='}{displayValue(o.value, o.unit, o.currency)}</td>
                       <td className="pr-2">{o.period ? periodKey(o.period) : 'all'}</td>
-                      <td className="pr-2 text-2xs">{o.provenanceKind.replaceAll('_', ' ').toLowerCase()}<br /><span className="text-ink-400">{o.overrideType === 'ASSUMPTION_OVERRIDE' ? 'assumption' : 'value'}</span></td>
+                      <td className="pr-2 text-2xs">{o.provenanceKind.replaceAll('_', ' ').toLowerCase()}<br /><span className="text-ink-500">{o.overrideType === 'ASSUMPTION_OVERRIDE' ? 'assumption' : 'value'}</span></td>
                       <td className="pr-2">{displayConfidence(o.confidence)}</td>
                       <td>
                         {draft && !e.inheritedFromScenarioId && (
@@ -603,7 +600,7 @@ function ScenarioPanel({
                 <span>{r.state.toLowerCase()}</span>
                 <span>{r.reason.toLowerCase()}</span>
                 <span>known through {displayInstant(r.fork.recordedThrough)}</span>
-                {r.fingerprint && <span className="font-mono text-ink-400">{r.fingerprint.slice(0, 22)}…</span>}
+                {r.fingerprint && <span className="font-mono text-ink-500">{r.fingerprint.slice(0, 22)}…</span>}
               </li>
             ))}
           </ul>
@@ -759,7 +756,7 @@ function ComparisonView({
       <h3 className="mb-1 text-2xs font-semibold uppercase tracking-wide text-ink-500">Assumption delta — what each future changes</h3>
       <div className="mb-4 overflow-x-auto">
         <table className="w-full text-left text-xs">
-          <thead className="text-2xs text-ink-400">
+          <thead className="text-2xs text-ink-500">
             <tr><th className="py-1">Future</th><th>Assumption</th><th>Baseline</th><th>Future</th><th>Change</th><th>Why</th></tr>
           </thead>
           <tbody>
@@ -769,12 +766,12 @@ function ComparisonView({
                 <td className="pr-2">
                   {a.nodeLabel}
                   {a.inheritedFromScenarioId && <span className="ml-1 text-2xs text-sky-700">inherited</span>}
-                  {!a.consumed && <span className="ml-1 text-2xs text-ink-400" title="No calculation reads this value: stated, not propagated">not modelled</span>}
+                  {!a.consumed && <span className="ml-1 text-2xs text-ink-500" title="No calculation reads this value: stated, not propagated">not modelled</span>}
                 </td>
                 <td className="pr-2 font-mono">{displayValue(a.baselineValue, a.unit, a.currency)}</td>
                 <td className="pr-2 font-mono">{displayValue(a.scenarioValue, a.unit, a.currency)}</td>
                 <td className="pr-2 font-mono">{a.operation === 'ADD' ? displayDelta(a.overrideValue, a.unit, a.currency) : 'set'}</td>
-                <td className="text-2xs text-ink-500">{a.rationale} <span className="text-ink-400">({a.provenanceKind.replaceAll('_', ' ').toLowerCase()}, conf {displayConfidence(a.confidence)})</span></td>
+                <td className="text-2xs text-ink-500">{a.rationale} <span className="text-ink-500">({a.provenanceKind.replaceAll('_', ' ').toLowerCase()}, conf {displayConfidence(a.confidence)})</span></td>
               </tr>
             ))}
           </tbody>
@@ -784,7 +781,7 @@ function ComparisonView({
       <h3 className="mb-1 text-2xs font-semibold uppercase tracking-wide text-ink-500">Outcome delta — what the model computes from them</h3>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs">
-          <thead className="text-2xs text-ink-400">
+          <thead className="text-2xs text-ink-500">
             <tr>
               <th className="py-1">Value</th>
               <th>Baseline</th>
@@ -800,7 +797,7 @@ function ComparisonView({
                   <tr key={r.nodeId} className="border-t border-ink-100 align-top">
                     <td className="py-1 pr-2">
                       <span className="text-ink-800">{r.nodeLabel}</span>
-                      <span className="ml-1 text-2xs text-ink-400">{r.dimension.toLowerCase()}</span>
+                      <span className="ml-1 text-2xs text-ink-500">{r.dimension.toLowerCase()}</span>
                     </td>
                     <td className="pr-2">
                       <Cell value={base.value} origin={base.origin} confidence={base.confidence} reason={base.reason}
@@ -817,7 +814,7 @@ function ComparisonView({
                             reason={cell?.reason ?? null} unit={d?.unit ?? null} currency={d?.currency ?? null}
                             onClick={() => onExplain(a.runId, r.nodeId)} />
                           {d && d.direction !== 'UNCHANGED' && (
-                            <div className={`font-mono text-2xs ${interpretationTone[d.directionalInterpretation ?? ''] ?? 'text-ink-400'}`}
+                            <div className={`font-mono text-2xs ${interpretationTone[d.directionalInterpretation ?? ''] ?? 'text-ink-500'}`}
                               title={d.unresolvedReason ?? d.directionalInterpretation ?? ''}>
                               {d.direction === 'UNRESOLVED' ? 'unresolved' : `${arrow(d)} ${displayDelta(d.absoluteDelta, d.unit, d.currency)}`}
                               {d.directionalInterpretation === 'CONTEXT_DEPENDENT' && ' · context'}
@@ -876,7 +873,7 @@ function Cell({
     <button type="button" className="text-left hover:underline" onClick={onClick} title={value ?? reason ?? ''}>
       <span className="font-mono">{value === null ? '—' : displayValue(value, unit, currency)}</span>
       {origin && <Chip tone={`ml-1 ${originTone[origin] ?? ''}`}>{origin.toLowerCase()}</Chip>}
-      {confidence !== null && <span className="ml-1 text-2xs text-ink-400">c {displayConfidence(confidence)}</span>}
+      {confidence !== null && <span className="ml-1 text-2xs text-ink-500">c {displayConfidence(confidence)}</span>}
     </button>
   );
 }

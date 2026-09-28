@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Settings } from 'lucide-react';
 import { useHelmStore } from '../services/helmStore.ts';
-import { PanelCard } from '../components/ui.tsx';
+import { PageHeader, PanelCard } from '../components/ui.tsx';
 import { orgRoles, type OrgRole } from '../domain/types.ts';
 
 export function SettingsPage() {
@@ -22,12 +22,16 @@ export function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
-      <header>
-        <h1 className="text-xl font-semibold">Settings</h1>
-        <p className="text-sm text-ink-500">
-          {org.name} · base currency {org.baseCurrency} · your role: <span className="font-medium">{myRole}</span>
-        </p>
-      </header>
+      <PageHeader
+        icon={Settings}
+        eyebrow="Organization"
+        title="Settings"
+        description={
+          <>
+            {org.name} · base currency {org.baseCurrency} · your role: <span className="font-medium">{myRole}</span>
+          </>
+        }
+      />
 
       <PanelCard title="Members">
         <ul className="divide-y divide-ink-50">
@@ -35,7 +39,7 @@ export function SettingsPage() {
             <li key={m.userId} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0 text-sm">
               <div className="min-w-0">
                 <p className="truncate font-medium">{m.displayName}</p>
-                <p className="truncate text-2xs text-ink-400">{m.email}</p>
+                <p className="truncate text-2xs text-ink-500">{m.email}</p>
               </div>
               <span className="rounded-full bg-ink-100 px-2 py-0.5 text-2xs font-semibold text-ink-600">{m.role}</span>
             </li>
@@ -73,12 +77,12 @@ export function SettingsPage() {
             {inviteMessage && <p className="w-full text-xs text-ink-500">{inviteMessage}</p>}
           </form>
         )}
-        {mode === 'demo' && <p className="mt-2 text-2xs text-ink-400">Demo mode — membership is read-only.</p>}
+        {mode === 'demo' && <p className="mt-2 text-2xs text-ink-500">Demo mode — membership is read-only.</p>}
       </PanelCard>
 
       <PanelCard title="Organization units">
         {units.length === 0 ? (
-          <p className="text-xs text-ink-400">No units defined.</p>
+          <p className="text-xs text-ink-500">No units defined.</p>
         ) : (
           <ul className="space-y-1 text-sm">
             {units
@@ -92,7 +96,7 @@ export function SettingsPage() {
 
       <PanelCard
         title="Decision authority"
-        action={<span className="text-2xs text-ink-400">not evaluated in this phase</span>}
+        action="not evaluated in this phase"
       >
         <p className="text-xs text-ink-600">
           HELM records what management decided and on what grounds. It does not yet decide who is permitted to decide.
@@ -117,7 +121,7 @@ export function SettingsPage() {
           and its own immutable snapshot of what was true when it was made.
         </p>
         {mode === 'demo' && (
-          <p className="mt-2 text-2xs text-ink-400">
+          <p className="mt-2 text-2xs text-ink-500">
             In demo mode, sample opportunities stand in for the live Memoire workspace.
           </p>
         )}

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, LineChart } from 'lucide-react';
 import { useHelmStore } from '../services/helmStore.ts';
-import { PanelCard, EmptyState } from '../components/ui.tsx';
+import { PageHeader, PanelCard, EmptyState } from '../components/ui.tsx';
 import { buildMarginLadder, buildVariances, type MarginLadder } from '../domain/engines/economics.ts';
 import { formatMoney, formatPercent, periodLabel } from '../domain/format.ts';
 import { costObjectKindLabels } from '../domain/types.ts';
@@ -32,8 +32,8 @@ export function EconomicsPage() {
 
   if (ladders.length === 0) {
     return (
-      <div className="mx-auto max-w-5xl">
-        <h1 className="mb-4 text-xl font-semibold">Economics</h1>
+      <div className="mx-auto max-w-5xl space-y-5">
+        <PageHeader icon={LineChart} title="Economics" />
         <EmptyState
           title="No economics data yet"
           detail="Add cost objects (products, customers, business units) and their period economics to see the margin ladder and allocation-trap flags."
@@ -44,13 +44,11 @@ export function EconomicsPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
-      <header>
-        <h1 className="text-xl font-semibold">Economics</h1>
-        <p className="text-sm text-ink-500">
-          The margin ladder per cost object. Segment margin is the decision line — allocated overhead is shown, not
-          obeyed.
-        </p>
-      </header>
+      <PageHeader
+        icon={LineChart}
+        title="Economics"
+        description="The margin ladder per cost object. Segment margin is the decision line — allocated overhead is shown, not obeyed."
+      />
 
       <div className="grid gap-4 xl:grid-cols-3">
         <PanelCard className="xl:col-span-2" title="Margin ladder by cost object">
@@ -77,7 +75,7 @@ export function EconomicsPage() {
                   >
                     <td className="table-td">
                       <p className="font-medium">{l.name}</p>
-                      <p className="text-2xs text-ink-400">
+                      <p className="text-2xs text-ink-500">
                         {costObjectKindLabels[l.kind]} · {l.periods.map(periodLabel).join(', ')}
                       </p>
                     </td>
@@ -85,7 +83,7 @@ export function EconomicsPage() {
                     <td className="table-td text-right tabular-nums">
                       {formatMoney(l.contributionMargin, currency)}
                       {l.contributionMarginRatio !== null && (
-                        <span className="block text-2xs text-ink-400">{formatPercent(l.contributionMarginRatio)}</span>
+                        <span className="block text-2xs text-ink-500">{formatPercent(l.contributionMarginRatio)}</span>
                       )}
                     </td>
                     <td className={`table-td text-right font-semibold tabular-nums ${l.segmentMargin >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
@@ -117,13 +115,13 @@ export function EconomicsPage() {
             <LadderDetail ladder={selected} currency={currency} />
           ) : (
             <PanelCard title="Detail">
-              <p className="text-xs text-ink-400">Select a row to see its full ladder.</p>
+              <p className="text-xs text-ink-500">Select a row to see its full ladder.</p>
             </PanelCard>
           )}
 
           <PanelCard title="Budget vs actual (latest)">
             {variances.length === 0 ? (
-              <p className="text-xs text-ink-400">No budget rows to compare.</p>
+              <p className="text-xs text-ink-500">No budget rows to compare.</p>
             ) : (
               <ul className="space-y-1.5 text-xs">
                 {variances
@@ -139,7 +137,7 @@ export function EconomicsPage() {
                         {v.revenueVariancePct !== null
                           ? `${v.revenueVariancePct > 0 ? '+' : ''}${formatPercent(v.revenueVariancePct)}`
                           : '—'}{' '}
-                        <span className="text-ink-400">vs budget</span>
+                        <span className="text-ink-500">vs budget</span>
                       </span>
                     </li>
                   ))}
@@ -167,7 +165,7 @@ function LadderDetail({ ladder, currency }: { ladder: MarginLadder; currency: st
       <table className="w-full text-sm">
         <tbody>
           {rows.map((r) => (
-            <tr key={r.label} className={r.muted ? 'text-ink-400' : ''}>
+            <tr key={r.label} className={r.muted ? 'text-ink-500' : ''}>
               <td className={`py-1 ${r.strong ? 'font-semibold' : ''}`}>{r.label}</td>
               <td className={`py-1 text-right tabular-nums ${r.strong ? 'font-semibold' : ''} ${r.amount < 0 && r.strong ? 'text-red-700' : ''}`}>
                 {formatMoney(r.amount, currency)}

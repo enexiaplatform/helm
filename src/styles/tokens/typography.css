@@ -1,0 +1,42 @@
+/* Type. Three families with distinct jobs:
+   - Newsreader (serif) is the management voice — page titles, the question,
+     panel titles, headline figures.
+   - Be Vietnam Pro (sans) carries every control and every sentence of UI.
+   - IBM Plex Mono carries every value, key, fingerprint and formula. */
+:root {
+  --font-sans: 'Be Vietnam Pro', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: 'Newsreader', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 12px;  --leading-2xs: 18px;  /* meta, chips, caveats */
+  --text-xs: 13px;   --leading-xs: 20px;   /* panel body — the working size */
+  --text-sm: 14px;   --leading-sm: 22px;   /* base UI, buttons */
+  --text-base: 16px; --leading-base: 24px;
+  --text-lg: 20px;   --leading-lg: 28px;
+  --text-xl: 28px;   --leading-xl: 34px;
+  --text-2xl: 34px;  --leading-2xl: 40px;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --tracking-wide: 0.08em;      /* uppercase labels */
+  --tracking-display: -0.012em; /* serif display sizes */
+  --tracking-wordmark: 0.22em;  /* H E L M */
+
+  /* roles — use with font: var(--type-…) */
+  --type-page-title: 500 34px/40px var(--font-serif);
+  --type-instrument-title: 500 28px/34px var(--font-serif);
+  --type-question: 500 27px/34px var(--font-serif);
+  --type-panel-title: 500 19px/26px var(--font-serif);
+  --type-body: 400 14px/22px var(--font-sans);
+  --type-body-dense: 400 13px/20px var(--font-sans);
+  --type-meta: 400 12px/18px var(--font-sans);
+  --type-label: 600 11px/16px var(--font-sans);   /* + uppercase + --tracking-wide */
+  --type-stat: 500 30px/36px var(--font-serif);   /* + lining tabular figures */
+  --type-value: 400 13px/20px var(--font-mono);
+  --type-value-meta: 400 12px/18px var(--font-mono);
+  --type-wordmark: 700 15px/20px var(--font-sans); /* + --tracking-wordmark */
+  --type-quote: italic 400 17px/26px var(--font-serif);
+}

@@ -1,46 +1,228 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+/* HELM visual layer — "chart room": warm chart paper, navy chrome, one
+   Prussian accent, brass for the mark. Tokens are the design system's own
+   (src/styles/tokens); Tailwind reads the same palette (tailwind.config.js). */
+@import './styles/tokens/fonts.css';
+@import './styles/tokens/colors.css';
+@import './styles/tokens/semantic.css';
+@import './styles/tokens/helm-semantics.css';
+@import './styles/tokens/typography.css';
+@import './styles/tokens/spacing.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   html {
-    @apply antialiased;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   body {
-    @apply bg-ink-50 text-ink-950 text-sm;
+    background: var(--surface-canvas);
+    color: var(--text-strong);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    line-height: var(--leading-sm);
+    text-rendering: optimizeLegibility;
   }
   ::selection {
-    @apply bg-accent-200;
+    background: var(--selection);
   }
 }
 
 @layer components {
   .field-label {
-    @apply block text-2xs font-semibold uppercase tracking-wide text-ink-500 mb-1;
+    display: block;
+    margin-bottom: 6px;
+    font: var(--type-label);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    color: var(--text-muted);
   }
   .field-input {
-    @apply w-full rounded-md border border-ink-200 bg-white px-2.5 py-1.5 text-sm text-ink-950 placeholder:text-ink-400 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500 disabled:bg-ink-100 disabled:text-ink-500;
+    width: 100%;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-default);
+    background: var(--white);
+    padding: 8px 12px;
+    font: 400 var(--text-sm) / 20px var(--font-sans);
+    color: var(--text-strong);
+    transition:
+      border-color var(--duration-fast) var(--ease-standard),
+      box-shadow var(--duration-fast) var(--ease-standard);
   }
+  .field-input::placeholder {
+    color: var(--ink-400);
+  }
+  .field-input:hover {
+    border-color: var(--ink-300);
+  }
+  .field-input:focus {
+    border-color: var(--accent-500);
+    outline: none;
+    box-shadow: var(--ring-input);
+  }
+  .field-input:disabled {
+    background: var(--surface-disabled);
+    color: var(--ink-500);
+  }
+
   .btn {
-    @apply inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 disabled:opacity-50 disabled:pointer-events-none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    padding: 7px 14px;
+    font: 500 var(--text-sm) / 20px var(--font-sans);
+    white-space: nowrap;
+    transition:
+      color var(--duration-fast) var(--ease-standard),
+      background-color var(--duration-fast) var(--ease-standard),
+      border-color var(--duration-fast) var(--ease-standard),
+      box-shadow var(--duration-fast) var(--ease-standard);
   }
+  .btn:focus {
+    outline: none;
+  }
+  .btn:focus-visible {
+    box-shadow: var(--ring-focus);
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+  /* Pages use the variants on their own (`btn-primary`, not `btn btn-primary`). */
   .btn-primary {
-    @apply btn bg-ink-950 text-white hover:bg-ink-800;
+    @apply btn;
+    background: var(--surface-inverse);
+    color: var(--white);
+    box-shadow: 0 1px 2px rgb(13 26 46 / 0.24);
+  }
+  .btn-primary:hover {
+    background: var(--surface-inverse-hover);
   }
   .btn-secondary {
-    @apply btn border border-ink-200 bg-white text-ink-800 hover:bg-ink-100;
+    @apply btn;
+    border-color: var(--border-default);
+    background: var(--white);
+    color: var(--ink-800);
+    box-shadow: 0 1px 2px rgb(18 22 29 / 0.04);
+  }
+  .btn-secondary:hover {
+    background: var(--ink-50);
+    border-color: var(--ink-300);
   }
   .btn-ghost {
-    @apply btn text-ink-600 hover:bg-ink-100 hover:text-ink-900;
+    @apply btn;
+    color: var(--ink-600);
+  }
+  .btn-ghost:hover {
+    background: var(--surface-hover);
+    color: var(--ink-900);
   }
   .btn-danger {
-    @apply btn border border-red-200 bg-white text-red-700 hover:bg-red-50;
+    @apply btn;
+    border-color: var(--red-200);
+    background: var(--white);
+    color: var(--red-700);
   }
+  .btn-danger:hover {
+    background: var(--red-50);
+  }
+  /* Sizes come after the variants so they win over the variants' .btn padding. */
+  .btn-sm {
+    padding: 5px 12px;
+    font-size: 13px;
+    line-height: 20px;
+    gap: 6px;
+  }
+  .btn-xs {
+    padding: 3px 10px;
+    font-size: 12px;
+    line-height: 18px;
+    gap: 5px;
+    border-radius: var(--radius-sm);
+  }
+
   .table-th {
-    @apply px-3 py-2 text-left text-2xs font-semibold uppercase tracking-wide text-ink-500;
+    padding: 10px 12px;
+    text-align: left;
+    font: var(--type-label);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    color: var(--text-subtle);
   }
   .table-td {
-    @apply px-3 py-2 align-top;
+    padding: 10px 12px;
+    vertical-align: top;
+  }
+
+  /* Navy chrome */
+  .helm-nav-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 12px;
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+    font: 500 var(--text-sm) / 20px var(--font-sans);
+    color: var(--text-on-chrome);
+    text-align: left;
+    transition:
+      color var(--duration-fast) var(--ease-standard),
+      background-color var(--duration-fast) var(--ease-standard);
+  }
+  .helm-nav-item:hover {
+    background: var(--surface-chrome-hover);
+    color: var(--white);
+  }
+  .helm-nav-item[aria-current='page'] {
+    background: var(--surface-chrome-active);
+    color: var(--white);
+  }
+  .helm-nav-item[aria-current='page'] svg {
+    color: var(--brand-mark);
+  }
+  .helm-chrome-label {
+    font: var(--type-label);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    color: var(--text-on-chrome-muted);
+  }
+  .helm-chrome-select {
+    width: 100%;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-chrome-field);
+    background: var(--surface-chrome-field);
+    padding: 8px 10px;
+    font: 500 13px / 18px var(--font-sans);
+    color: var(--white);
+  }
+  .helm-chrome-select:focus {
+    border-color: var(--accent-400);
+    outline: none;
+  }
+  .helm-chrome-select option {
+    color: var(--ink-950);
+  }
+
+  .helm-tab {
+    color: var(--ink-500);
+    transition: color var(--duration-fast) var(--ease-standard);
+  }
+  .helm-tab:hover {
+    color: var(--ink-800);
+  }
+  .helm-tab[aria-selected='true'] {
+    color: var(--ink-950);
+  }
+
+  .helm-quiet-link {
+    color: var(--text-muted);
+    transition: color var(--duration-fast) var(--ease-standard);
+  }
+  .helm-quiet-link:hover {
+    color: var(--ink-900);
   }
 }

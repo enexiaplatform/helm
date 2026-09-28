@@ -32,7 +32,7 @@ import { buildDependencyGraph } from '@helm/propagation-engine';
 import type { Scope } from '@helm/shared';
 import { useHelmStore } from '../services/helmStore.ts';
 import { calculations, cloudScope, demoScope, resolveGraphs } from '../services/ontologyGraph.ts';
-import { PanelCard } from '../components/ui.tsx';
+import { PageHeader, PanelCard } from '../components/ui.tsx';
 
 type Loaded = {
   engine: PropagationEngine;
@@ -78,7 +78,7 @@ function confidenceLabel(c: number | null): string {
 function Row({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex items-baseline gap-2 py-0.5">
-      <span className="w-40 shrink-0 text-2xs uppercase tracking-wide text-ink-400">{label}</span>
+      <span className="w-40 shrink-0 text-2xs uppercase tracking-wide text-ink-500">{label}</span>
       <span className={`text-xs text-ink-800 ${mono ? 'font-mono break-all' : ''}`}>{value}</span>
     </div>
   );
@@ -103,7 +103,7 @@ function ExplanationNode({ node, depth = 0 }: { node: Explanation; depth?: numbe
             {node.observationType}
           </span>
           {node.confidence !== null && (
-            <span className="text-2xs text-ink-400">conf {confidenceLabel(node.confidence)}</span>
+            <span className="text-2xs text-ink-500">conf {confidenceLabel(node.confidence)}</span>
           )}
         </div>
         {node.derivation ? (
@@ -224,34 +224,37 @@ export function CalculationsPage() {
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-ink-900">Calculation Explorer</h1>
-          <p className="text-xs text-ink-500">
-            Read-only kernel instrument, except for running the model.{' '}
-            {calculations.active().length} active calculations,{' '}
-            {dependencyOrder?.roots.length ?? 0} source facts.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={busy || !loaded}
-            onClick={() => run(ROOT_METRICS, 'Full model run from source facts')}
-            className="inline-flex items-center gap-1.5 rounded border border-ink-300 bg-white px-2.5 py-1 text-xs font-medium text-ink-800 hover:bg-ink-50 disabled:opacity-40"
-          >
-            <Play className="h-3.5 w-3.5" /> Run the whole model
-          </button>
-          <button
-            type="button"
-            disabled={busy || !loaded}
-            onClick={() => run(['UnitCost'], 'Propagate a unit cost change')}
-            className="inline-flex items-center gap-1.5 rounded border border-ink-300 bg-white px-2.5 py-1 text-xs font-medium text-ink-800 hover:bg-ink-50 disabled:opacity-40"
-          >
-            <ArrowRight className="h-3.5 w-3.5" /> Propagate from Unit Cost
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        register="instrument"
+        icon={Calculator}
+        title="Calculation Explorer"
+        description={
+          <>
+            Read-only kernel instrument, except for running the model. {calculations.active().length} active
+            calculations, {dependencyOrder?.roots.length ?? 0} source facts.
+          </>
+        }
+        actions={
+          <>
+            <button
+              type="button"
+              disabled={busy || !loaded}
+              onClick={() => run(ROOT_METRICS, 'Full model run from source facts')}
+              className="btn-secondary btn-sm"
+            >
+              <Play className="h-3.5 w-3.5" /> Run the whole model
+            </button>
+            <button
+              type="button"
+              disabled={busy || !loaded}
+              onClick={() => run(['UnitCost'], 'Propagate a unit cost change')}
+              className="btn-secondary btn-sm"
+            >
+              <ArrowRight className="h-3.5 w-3.5" /> Propagate from Unit Cost
+            </button>
+          </>
+        }
+      />
 
       {error && (
         <div className="flex items-start gap-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
@@ -275,7 +278,7 @@ export function CalculationsPage() {
                     }`}
                   >
                     <span className="font-medium">{calc.name}</span>
-                    <span className="ml-1.5 font-mono text-2xs text-ink-400">
+                    <span className="ml-1.5 font-mono text-2xs text-ink-500">
                       @{calc.version}
                     </span>
                     <span className="block font-mono text-2xs text-ink-500">{calc.expression}</span>
@@ -290,7 +293,7 @@ export function CalculationsPage() {
               <p className="mb-2 text-2xs text-ink-500">
                 Topological. A step never runs before something it depends on.
               </p>
-              <p className="text-2xs uppercase tracking-wide text-ink-400">
+              <p className="text-2xs uppercase tracking-wide text-ink-500">
                 Source facts — nothing computes these
               </p>
               <ul className="mb-3 mt-1 space-y-0.5">
@@ -301,11 +304,11 @@ export function CalculationsPage() {
                   </li>
                 ))}
               </ul>
-              <p className="text-2xs uppercase tracking-wide text-ink-400">Then, in order</p>
+              <p className="text-2xs uppercase tracking-wide text-ink-500">Then, in order</p>
               <ol className="mt-1 space-y-0.5">
                 {dependencyOrder.order.map((metric, i) => (
                   <li key={metric} className="flex items-baseline gap-2 text-xs">
-                    <span className="w-5 shrink-0 text-right font-mono text-2xs text-ink-400">
+                    <span className="w-5 shrink-0 text-right font-mono text-2xs text-ink-500">
                       {i + 1}
                     </span>
                     <span className="text-ink-900">{metric}</span>
@@ -323,7 +326,7 @@ export function CalculationsPage() {
               title={
                 <span>
                   {selected.name}{' '}
-                  <span className="font-mono text-2xs font-normal text-ink-400">
+                  <span className="font-mono text-2xs font-normal text-ink-500">
                     {selected.key}@{selected.version}
                   </span>
                 </span>
@@ -342,18 +345,18 @@ export function CalculationsPage() {
                 value={`${selected.definitionConfidence} — how well the MODEL represents reality, independent of input quality`}
               />
               <div className="mt-3 rounded border border-ink-100 bg-ink-50 px-3 py-2">
-                <p className="text-2xs uppercase tracking-wide text-ink-400">Why it exists</p>
+                <p className="text-2xs uppercase tracking-wide text-ink-500">Why it exists</p>
                 <p className="mt-1 text-xs leading-relaxed text-ink-700">{selected.rationale}</p>
               </div>
               <div className="mt-3">
-                <p className="text-2xs uppercase tracking-wide text-ink-400">Declared inputs</p>
+                <p className="text-2xs uppercase tracking-wide text-ink-500">Declared inputs</p>
                 <ul className="mt-1 space-y-1.5">
                   {selected.inputs.map((input) => (
                     <li key={input.name} className="text-xs text-ink-700">
                       <span className="font-mono text-ink-900">{input.name}</span>
-                      <span className="text-ink-400"> = </span>
+                      <span className="text-ink-500"> = </span>
                       <span>{input.metricKey}</span>
-                      <span className="ml-1.5 text-2xs text-ink-400">
+                      <span className="ml-1.5 text-2xs text-ink-500">
                         {input.binding.kind === 'RELATED_ENTITY'
                           ? `via ${input.binding.relationshipTypeKey} (${input.binding.direction})`
                           : input.binding.kind === 'SCOPED'
@@ -402,7 +405,7 @@ export function CalculationsPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
-                      <tr className="border-b border-ink-100 text-2xs uppercase tracking-wide text-ink-400">
+                      <tr className="border-b border-ink-100 text-2xs uppercase tracking-wide text-ink-500">
                         <th className="py-1.5 pr-2 font-medium">#</th>
                         <th className="py-1.5 pr-2 font-medium">Calculation</th>
                         <th className="py-1.5 pr-2 font-medium">Value position</th>
@@ -414,12 +417,12 @@ export function CalculationsPage() {
                     <tbody>
                       {steps.map((step) => (
                         <tr key={step.id} className="border-b border-ink-50 align-top">
-                          <td className="py-1.5 pr-2 font-mono text-2xs text-ink-400">
+                          <td className="py-1.5 pr-2 font-mono text-2xs text-ink-500">
                             {step.sequence}
                           </td>
                           <td className="py-1.5 pr-2">
                             <span className="text-ink-900">{step.calculationKey}</span>
-                            <span className="block font-mono text-2xs text-ink-400">
+                            <span className="block font-mono text-2xs text-ink-500">
                               @{step.calculationVersion}
                             </span>
                           </td>
@@ -437,12 +440,12 @@ export function CalculationsPage() {
                             {shorten(step.outputValue)}
                             {step.outputCurrency ? ` ${step.outputCurrency}` : ''}
                             {step.outputValueRaw && (
-                              <span className="block text-2xs text-ink-400">
+                              <span className="block text-2xs text-ink-500">
                                 normalized from {shorten(step.outputValueRaw)}
                               </span>
                             )}
                             {step.renderedExpression && (
-                              <span className="block font-mono text-2xs text-ink-400">
+                              <span className="block font-mono text-2xs text-ink-500">
                                 {step.renderedExpression}
                               </span>
                             )}
@@ -477,7 +480,7 @@ export function CalculationsPage() {
 
                 {result.uncomputable.length > 0 && (
                   <div className="mt-3 rounded border border-ink-100 bg-ink-50 px-3 py-2">
-                    <p className="flex items-center gap-1.5 text-2xs uppercase tracking-wide text-ink-400">
+                    <p className="flex items-center gap-1.5 text-2xs uppercase tracking-wide text-ink-500">
                       <Info className="h-3 w-3" /> Declared uncomputable
                     </p>
                     <p className="mt-1 text-2xs text-ink-500">
@@ -488,7 +491,7 @@ export function CalculationsPage() {
                       {result.uncomputable.map((u: { nodeId: string; metricKey: string; reason: string }) => (
                         <li key={`${u.nodeId}-${u.metricKey}`} className="text-xs text-ink-700">
                           <span className="font-medium">{u.metricKey}</span>
-                          <span className="text-ink-400"> — {u.reason}</span>
+                          <span className="text-ink-500"> — {u.reason}</span>
                         </li>
                       ))}
                     </ul>

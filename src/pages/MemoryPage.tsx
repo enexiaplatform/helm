@@ -18,7 +18,7 @@ import { BookOpen } from 'lucide-react';
 import type { DecisionCommitment, DecisionOutcomeReview } from '@helm/decision-runtime';
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
-import { PanelCard, EmptyState } from '../components/ui.tsx';
+import { PageHeader, PanelCard, EmptyState } from '../components/ui.tsx';
 import { displayInstant, displayValue, readable, resolveDecisionContext } from '../services/decisionRuntime.ts';
 import { loadDecisions, loadWorkspace } from '../services/decisionWorkspace.ts';
 
@@ -87,16 +87,11 @@ export function MemoryPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
-      <header>
-        <h1 className="flex items-center gap-2 text-xl font-semibold">
-          <BookOpen className="h-5 w-5" /> Decision Memory
-        </h1>
-        <p className="mt-1 max-w-3xl text-sm text-ink-600">
-          Every commitment, with what it rested on and how it turned out. HELM keeps the reasoning and the outcome apart
-          on purpose: a careful decision can still go badly, and a careless one can get lucky. Learning from this record
-          is a later phase; preserving it honestly is this one.
-        </p>
-      </header>
+      <PageHeader
+        icon={BookOpen}
+        title="Decision Memory"
+        description="Every commitment, with what it rested on and how it turned out. HELM keeps the reasoning and the outcome apart on purpose: a careful decision can still go badly, and a careless one can get lucky. Learning from this record is a later phase; preserving it honestly is this one."
+      />
 
       {entries.length === 0 ? (
         <EmptyState
@@ -119,7 +114,7 @@ export function MemoryPage() {
                 </Link>
               }
               action={
-                <span className="text-2xs text-ink-400" title={e.commitment.fingerprint}>
+                <span className="text-2xs text-ink-500" title={e.commitment.fingerprint}>
                   {readable(e.commitment.authorship)} · {displayInstant(e.commitment.committedAt)}
                 </span>
               }>
@@ -134,7 +129,7 @@ export function MemoryPage() {
                       <li key={i}>{t.statement}</li>
                     ))}
                     {e.commitment.acceptedTradeOffs.length === 0 && (
-                      <li className="text-ink-400">No trade-off was recorded as accepted.</li>
+                      <li className="text-ink-500">No trade-off was recorded as accepted.</li>
                     )}
                   </ul>
                 </div>
@@ -158,14 +153,14 @@ export function MemoryPage() {
               <div className="mt-3 border-t border-ink-100 pt-2">
                 <p className="text-2xs font-semibold uppercase tracking-wide text-ink-500">How it turned out</p>
                 {e.reviews.length === 0 ? (
-                  <p className="mt-1 text-xs text-ink-400">
+                  <p className="mt-1 text-xs text-ink-500">
                     Not reviewed yet. {e.assumptionsSettled} of {e.assumptionsTotal} assumptions have been settled.
                   </p>
                 ) : (
                   e.reviews.map((r) => (
                     <div key={r.id} className="mt-1">
                       <table className="w-full text-left text-xs">
-                        <thead className="text-2xs text-ink-400">
+                        <thead className="text-2xs text-ink-500">
                           <tr>
                             <th className="py-1">Value</th>
                             <th className="text-right">Expected</th>
@@ -200,7 +195,7 @@ export function MemoryPage() {
                           ))}
                         </ul>
                       )}
-                      <p className="mt-1 text-2xs text-ink-400">
+                      <p className="mt-1 text-2xs text-ink-500">
                         {r.reviewedByLabel} · {displayInstant(r.reviewedAt)} — {r.statement}
                       </p>
                     </div>

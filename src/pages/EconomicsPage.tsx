@@ -1,16 +1,25 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, LineChart } from 'lucide-react';
 import { useHelmStore } from '../services/helmStore.ts';
-import { PageHeader, PanelCard, EmptyState } from '../components/ui.tsx';
+import { PageHeader } from '../components/ui/PageHeader.tsx';
+import { SectionHead } from '../components/ui/SectionHead.tsx';
+import { EmptyState } from '../components/ui/EmptyState.tsx';
+import { Notice } from '../components/ui/Notice.tsx';
+import { Pill } from '../components/ui/Pill.tsx';
 import { buildMarginLadder, buildVariances, type MarginLadder } from '../domain/engines/economics.ts';
 import { formatMoney, formatPercent, periodLabel } from '../domain/format.ts';
 import { costObjectKindLabels } from '../domain/types.ts';
+import { cn } from '../lib/cn.ts';
 
 /**
  * Economics: the margin ladder per cost object. The point of this page is the
  * distinction accountants blur — segment margin (decision-relevant) vs
  * reported net after allocation (misleading) — with the trap flagged.
  */
+
+const NUM = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+const word = (n: number) => NUM[n] ?? String(n);
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+
 export function EconomicsPage() {
   const costObjects = useHelmStore((s) => s.costObjects);
   const economics = useHelmStore((s) => s.economics);
@@ -28,78 +37,83 @@ export function EconomicsPage() {
   );
 
   const variances = useMemo(() => buildVariances(costObjects, economics), [costObjects, economics]);
-  const selected = ladders.find((l) => l.costObjectId === selectedId) ?? null;
+  // The largest cost object opens until someone picks one.
+  const selected = ladders.find((l) => l.costObjectId === selectedId) ?? ladders[0] ?? null;
 
   if (ladders.length === 0) {
     return (
-      <div className="mx-auto max-w-5xl space-y-5">
-        <PageHeader icon={LineChart} title="Economics" />
+      <>
+        <PageHeader kicker="Management · Economics" title="No economics data yet." />
         <EmptyState
-          title="No economics data yet"
+          className="mt-9"
+          title="Nothing to put on the margin ladder"
           detail="Add cost objects (products, customers, business units) and their period economics to see the margin ladder and allocation-trap flags."
         />
-      </div>
+      </>
     );
   }
 
-  return (
-    <div className="mx-auto max-w-6xl space-y-5">
-      <PageHeader
-        icon={LineChart}
-        title="Economics"
-        description="The margin ladder per cost object. Segment margin is the decision line — allocated overhead is shown, not obeyed."
-      />
+  const trapped = ladders.filter((l) => l.allocationTrapped).length;
+  const negative = ladders.filter((l) => l.segmentMargin < 0).length;
+  const headline =
+    [
+      trapped > 0 && `${word(trapped)} ${plural(trapped, 'cost object looks', 'cost objects look')} unprofitable only after allocation.`,
+      negative > 0 && `${word(negative)} ${plural(negative, 'loses', 'lose')} money before any allocation.`,
+    ]
+      .filter(Boolean)
+      .join(' ') || 'Every cost object covers its own costs.';
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <PanelCard className="xl:col-span-2" title="Margin ladder by cost object">
+  const latest = variances.map((x) => x.period).sort().at(-1);
+
+  return (
+    <>
+      <PageHeader
+        kicker="Management · Economics"
+        title={headline}
+        lede="The margin ladder per cost object. Segment margin is the decision line — allocated overhead is shown, not obeyed."
+      />
+      <div className="mt-9 flex flex-wrap items-start gap-10">
+        <section className="min-w-0 flex-[1_1_620px]">
+          <SectionHead title="Margin ladder by cost object" meta={`${ladders.length} cost objects`} caveat="select a row to read its ladder" />
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px] text-sm">
+            <table className="w-full min-w-[680px] border-collapse">
               <thead>
-                <tr className="border-b border-ink-100">
-                  <th className="table-th">Cost object</th>
-                  <th className="table-th text-right">Revenue</th>
-                  <th className="table-th text-right">CM</th>
-                  <th className="table-th text-right">Segment margin</th>
-                  <th className="table-th text-right">Reported net</th>
-                  <th className="table-th" />
+                <tr>
+                  {['Cost object', 'Revenue', 'CM', 'Segment margin', 'Reported net', ''].map((h, i) => (
+                    <th key={i} className={cn('helm-label pb-2 pt-[14px]', i === 0 || i === 5 ? 'text-left' : 'pl-3 text-right')}>
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {ladders.map((l) => (
                   <tr
                     key={l.costObjectId}
-                    className={`cursor-pointer border-b border-ink-50 last:border-0 hover:bg-ink-50/60 ${
-                      selectedId === l.costObjectId ? 'bg-accent-50/50' : ''
-                    }`}
+                    className={cn('cursor-pointer border-t border-ink-200 align-top hover:bg-white/60', selected?.costObjectId === l.costObjectId && 'bg-accent-50 hover:bg-accent-50')}
                     onClick={() => setSelectedId(l.costObjectId)}
                   >
-                    <td className="table-td">
-                      <p className="font-medium">{l.name}</p>
-                      <p className="text-2xs text-ink-500">
+                    <td className="py-3 pl-2">
+                      <span className="block text-ui font-semibold">{l.name}</span>
+                      <span className="helm-meta">
                         {costObjectKindLabels[l.kind]} · {l.periods.map(periodLabel).join(', ')}
-                      </p>
+                      </span>
                     </td>
-                    <td className="table-td text-right tabular-nums">{formatMoney(l.revenue, currency)}</td>
-                    <td className="table-td text-right tabular-nums">
+                    <td className="py-3 pl-3 text-right font-mono text-dense">{formatMoney(l.revenue, currency)}</td>
+                    <td className="py-3 pl-3 text-right font-mono text-dense">
                       {formatMoney(l.contributionMargin, currency)}
-                      {l.contributionMarginRatio !== null && (
-                        <span className="block text-2xs text-ink-500">{formatPercent(l.contributionMarginRatio)}</span>
-                      )}
+                      {l.contributionMarginRatio !== null && <span className="helm-meta block">{formatPercent(l.contributionMarginRatio)}</span>}
                     </td>
-                    <td className={`table-td text-right font-semibold tabular-nums ${l.segmentMargin >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                    <td className={cn('py-3 pl-3 text-right font-mono text-dense font-semibold', l.segmentMargin >= 0 ? 'text-emerald-700' : 'text-red-700')}>
                       {formatMoney(l.segmentMargin, currency)}
                     </td>
-                    <td className={`table-td text-right tabular-nums ${l.reportedNet >= 0 ? '' : 'text-red-700'}`}>
+                    <td className={cn('py-3 pl-3 text-right font-mono text-dense', l.reportedNet < 0 && 'text-red-700')}>
                       {formatMoney(l.reportedNet, currency)}
                     </td>
-                    <td className="table-td">
+                    <td className="py-3 pl-3 pr-2">
                       {l.allocationTrapped && (
-                        <span
-                          className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-2xs font-semibold text-amber-800"
-                          title="Reported net is negative only because of allocated overhead — the segment still funds common costs."
-                        >
-                          <AlertTriangle size={11} />
-                          Allocation trap
+                        <span title="Reported net is negative only because of allocated overhead — the segment still funds common costs.">
+                          <Pill tone="accepted">allocation trap</Pill>
                         </span>
                       )}
                     </td>
@@ -108,45 +122,27 @@ export function EconomicsPage() {
               </tbody>
             </table>
           </div>
-        </PanelCard>
+        </section>
 
-        <div className="space-y-4">
-          {selected ? (
-            <LadderDetail ladder={selected} currency={currency} />
-          ) : (
-            <PanelCard title="Detail">
-              <p className="text-xs text-ink-500">Select a row to see its full ladder.</p>
-            </PanelCard>
-          )}
-
-          <PanelCard title="Budget vs actual (latest)">
-            {variances.length === 0 ? (
-              <p className="text-xs text-ink-500">No budget rows to compare.</p>
-            ) : (
-              <ul className="space-y-1.5 text-xs">
-                {variances
-                  .filter((v) => v.period === variances.map((x) => x.period).sort().at(-1))
-                  .map((v) => (
-                    <li key={`${v.costObjectId}:${v.period}`} className="flex items-center justify-between gap-3">
-                      <span className="min-w-0 truncate text-ink-600">{v.name}</span>
-                      <span
-                        className={`shrink-0 font-medium tabular-nums ${
-                          (v.revenueVariancePct ?? 0) < 0 ? 'text-red-700' : 'text-emerald-700'
-                        }`}
-                      >
-                        {v.revenueVariancePct !== null
-                          ? `${v.revenueVariancePct > 0 ? '+' : ''}${formatPercent(v.revenueVariancePct)}`
-                          : '—'}{' '}
-                        <span className="text-ink-500">vs budget</span>
-                      </span>
-                    </li>
-                  ))}
-              </ul>
-            )}
-          </PanelCard>
-        </div>
+        <aside className="grid max-w-[380px] flex-[1_1_300px] gap-8">
+          {selected && <LadderDetail ladder={selected} currency={currency} />}
+          <div>
+            <h2 className="mb-1 text-panel">Budget against actual</h2>
+            <p className="helm-caveat mb-[10px]">{latest ? `revenue, ${periodLabel(latest)}` : 'no budget rows to compare'}</p>
+            {variances
+              .filter((v) => v.period === latest)
+              .map((v) => (
+                <div key={`${v.costObjectId}:${v.period}`} className="flex items-baseline justify-between gap-3 border-t border-ink-200 py-2">
+                  <span className="min-w-0 truncate text-dense text-ink-700">{v.name}</span>
+                  <span className={cn('shrink-0 font-mono text-dense font-medium', (v.revenueVariancePct ?? 0) < 0 ? 'text-red-700' : 'text-emerald-700')}>
+                    {v.revenueVariancePct !== null ? `${v.revenueVariancePct > 0 ? '+' : ''}${formatPercent(v.revenueVariancePct)}` : '—'}
+                  </span>
+                </div>
+              ))}
+          </div>
+        </aside>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -161,32 +157,33 @@ function LadderDetail({ ladder, currency }: { ladder: MarginLadder; currency: st
     { label: '= Reported net', amount: ladder.reportedNet, muted: true },
   ];
   return (
-    <PanelCard title={ladder.name}>
-      <table className="w-full text-sm">
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.label} className={r.muted ? 'text-ink-500' : ''}>
-              <td className={`py-1 ${r.strong ? 'font-semibold' : ''}`}>{r.label}</td>
-              <td className={`py-1 text-right tabular-nums ${r.strong ? 'font-semibold' : ''} ${r.amount < 0 && r.strong ? 'text-red-700' : ''}`}>
-                {formatMoney(r.amount, currency)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {ladder.allocationTrapped && (
-        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
-          <strong>Allocation trap:</strong> reported net is negative, but this segment covers all its own costs and
-          contributes {formatMoney(ladder.segmentMargin, currency)} toward common overhead. Dropping it would make the
-          company worse off by that amount — the allocated costs would simply land elsewhere.
-        </p>
-      )}
-      {ladder.segmentMargin < 0 && (
-        <p className="mt-3 rounded-md border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">
-          Segment margin is negative before any allocation — this is a real economics problem, worth a keep-vs-drop
-          decision.
-        </p>
-      )}
-    </PanelCard>
+    <section className="rounded-xl border border-ink-200 bg-white">
+      <div className="border-b border-ink-200 px-5 py-[14px]">
+        <h2 className="text-panel">{ladder.name}</h2>
+        <p className="helm-meta">{costObjectKindLabels[ladder.kind]}</p>
+      </div>
+      <div className="px-5 pb-4 pt-[6px]">
+        {rows.map((r, i) => (
+          <div key={r.label} className={cn('flex items-baseline justify-between gap-3 py-2', i < rows.length - 1 && 'border-b border-ink-100', r.muted && 'text-ink-500')}>
+            <span className={cn('text-dense', r.strong && 'font-semibold')}>{r.label}</span>
+            <span className={cn('font-mono text-dense', r.strong && 'font-semibold', r.amount < 0 && r.strong && 'text-red-700')}>
+              {formatMoney(r.amount, currency)}
+            </span>
+          </div>
+        ))}
+        {ladder.allocationTrapped && (
+          <Notice tone="warning" label="Allocation trap" className="mt-3">
+            Reported net is negative, but this segment covers all its own costs and contributes{' '}
+            {formatMoney(ladder.segmentMargin, currency)} toward common overhead. Dropping it would make the company worse
+            off by that amount — the allocated costs would simply land elsewhere.
+          </Notice>
+        )}
+        {ladder.segmentMargin < 0 && (
+          <Notice tone="error" className="mt-3">
+            Segment margin is negative before any allocation — this is a real economics problem, worth a keep-vs-drop decision.
+          </Notice>
+        )}
+      </div>
+    </section>
   );
 }

@@ -10,8 +10,7 @@
  * visibility rules exist.
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, Database, GitBranch, Info, Layers, Network } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Entity, EntityAlias } from '@helm/ontology';
 import type { GraphStore, Neighbor, TraversalResult } from '@helm/graph-store';
 import type { ProvenanceRecord, Scope } from '@helm/shared';
@@ -22,7 +21,12 @@ import {
   registry,
   resolveGraphStore,
 } from '../services/ontologyGraph.ts';
-import { PageHeader, PanelCard } from '../components/ui.tsx';
+import { PageHeader } from '../components/ui/PageHeader.tsx';
+import { SectionHead } from '../components/ui/SectionHead.tsx';
+import { Notice } from '../components/ui/Notice.tsx';
+import { Pill } from '../components/ui/Pill.tsx';
+import { controlSmClass } from '../components/ui/Field.tsx';
+import { cn } from '../lib/cn.ts';
 
 type Loaded = {
   store: GraphStore;
@@ -50,12 +54,17 @@ const categoryOrder = [
   'value',
 ] as const;
 
-function Field({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+/** Label over value, two columns: the instrument's definition list. */
+function Facts({ rows }: { rows: [string, ReactNode, boolean?][] }) {
   return (
-    <div className="flex items-baseline gap-2 py-0.5">
-      <span className="w-40 shrink-0 text-2xs uppercase tracking-wide text-ink-500">{label}</span>
-      <span className={`text-xs text-ink-800 ${mono ? 'font-mono break-all' : ''}`}>{value}</span>
-    </div>
+    <dl className="mt-2 grid grid-cols-[180px_minmax(0,1fr)] gap-x-4">
+      {rows.map(([label, value, mono]) => (
+        <Fragment key={label}>
+          <dt className="border-b border-ink-100 py-[7px] text-meta text-ink-500">{label}</dt>
+          <dd className={cn('min-w-0 break-all border-b border-ink-100 py-[7px] text-dense', mono && 'font-mono')}>{value}</dd>
+        </Fragment>
+      ))}
+    </dl>
   );
 }
 
@@ -171,12 +180,12 @@ export function OntologyPage() {
   const walk = current?.walk ?? null;
 
   const byCategory = useMemo(() => {
-    const counts = new Map<string, number>();
+    const groups = new Map<string, Entity[]>();
     for (const e of entities) {
       const cat = registry.categoryOf(e.entityTypeKey) ?? 'unknown';
-      counts.set(cat, (counts.get(cat) ?? 0) + 1);
+      groups.set(cat, [...(groups.get(cat) ?? []), e]);
     }
-    return counts;
+    return groups;
   }, [entities]);
 
   const typesInUse = useMemo(() => {
@@ -185,353 +194,286 @@ export function OntologyPage() {
     return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [entities]);
 
-  return (
-    <div className="space-y-4">
-      <PageHeader
-        register="instrument"
-        icon={Network}
-        title="Ontology Explorer"
-        description={
-          <>
-            Read-only kernel instrument. {registry.allEntityTypes().length} entity types,{' '}
-            {registry.allRelationshipTypes().length} relationship types registered.
-          </>
-        }
-        actions={
-          <div className="flex items-center gap-2">
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name or canonical key…"
-              className="w-56 rounded border border-ink-200 bg-white px-2 py-1 text-xs"
-            />
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="rounded border border-ink-200 bg-white px-2 py-1 text-xs"
-              aria-label="Filter by entity type"
-            >
-              <option value="">All types</option>
-              {categoryOrder.map((cat) => (
-                <optgroup key={cat} label={cat}>
-                  {registry
-                    .allEntityTypes()
-                    .filter((t) => t.category === cat)
-                    .map((t) => (
-                      <option key={t.key} value={t.key}>
-                        {t.key}
-                      </option>
-                    ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-        }
-      />
+  const categories = [...categoryOrder.filter((c) => byCategory.has(c)), ...(byCategory.has('unknown') ? ['unknown'] : [])];
 
-      {error && (
-        <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-          {error}
+  return (
+    <>
+      <PageHeader kicker="Kernel instrument · Ontology" title="The enterprise, as the kernel knows it" size="instrument" />
+      <p className="mt-2 max-w-[720px] text-read text-ink-600">
+        Read-only. {registry.allEntityTypes().length} entity types and {registry.allRelationshipTypes().length} relationship
+        types registered; every entity carries its provenance and its two clocks.
+      </p>
+
+      <div className="mt-5 flex flex-wrap items-center gap-2">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name or canonical key…"
+          className={cn(controlSmClass, 'w-64')}
+        />
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className={controlSmClass}
+          aria-label="Filter by entity type"
+        >
+          <option value="">All types</option>
+          {categoryOrder.map((cat) => (
+            <optgroup key={cat} label={cat}>
+              {registry
+                .allEntityTypes()
+                .filter((t) => t.category === cat)
+                .map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.key}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
+        </select>
+        <span className="helm-meta ml-1">
+          {entities.length} entities · {categories.map((c) => `${c} ${byCategory.get(c)?.length}`).join(' · ')}
+        </span>
+      </div>
+      {typesInUse.length > 1 && (
+        <div className="mt-3 flex flex-wrap gap-1">
+          {typesInUse.map(([key, n]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTypeFilter(typeFilter === key ? '' : key)}
+              aria-pressed={typeFilter === key}
+              className={cn(
+                'rounded-md px-2 py-[2px] font-mono text-meta',
+                typeFilter === key ? 'bg-accent-800 text-white' : 'bg-ink-100 text-ink-700 hover:bg-ink-200',
+              )}
+            >
+              {key} {n}
+            </button>
+          ))}
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 text-2xs">
-        {categoryOrder
-          .filter((c) => byCategory.has(c))
-          .map((c) => (
-            <span
-              key={c}
-              className="inline-flex items-center gap-1 rounded-full border border-ink-200 bg-ink-50 px-2 py-0.5 text-ink-600"
-            >
-              <Layers className="h-3 w-3" /> {c}: {byCategory.get(c)}
-            </span>
-          ))}
-      </div>
+      {error && (
+        <Notice tone="error" className="mt-5">
+          {error}
+        </Notice>
+      )}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        {/* ---------------- entity list ---------------- */}
-        <PanelCard title={`Entities (${entities.length})`}>
-          <div className="mb-2 flex flex-wrap gap-1">
-            {typesInUse.map(([key, n]) => (
-              <button
-                key={key}
-                onClick={() => setTypeFilter(typeFilter === key ? '' : key)}
-                className={`rounded px-1.5 py-0.5 text-2xs ${
-                  typeFilter === key
-                    ? 'bg-accent-600 text-white'
-                    : 'bg-ink-100 text-ink-600 hover:bg-ink-200'
-                }`}
-              >
-                {key} {n}
-              </button>
-            ))}
-          </div>
-          <ul className="max-h-[32rem] divide-y divide-ink-100 overflow-auto">
-            {entities.map((e) => (
-              <li key={e.id}>
+      <div className="mt-7 flex flex-wrap items-start gap-10">
+        {/* ---------------- entity index ---------------- */}
+        <nav className="grid min-w-[240px] flex-[0_1_320px] gap-[18px]">
+          {categories.map((cat) => (
+            <div key={cat}>
+              <p className="helm-label mb-[6px]">{cat}</p>
+              {byCategory.get(cat)!.map((e) => (
                 <button
+                  key={e.id}
+                  type="button"
                   onClick={() => setSelectedId(e.id)}
-                  className={`flex w-full items-center gap-2 px-1 py-1.5 text-left hover:bg-ink-50 ${
-                    selectedId === e.id ? 'bg-accent-50' : ''
-                  }`}
+                  className={cn(
+                    'grid w-full rounded-lg px-[10px] py-[7px] text-left hover:bg-ink-100',
+                    e.id === selectedId ? 'bg-accent-50' : '',
+                  )}
                 >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-medium text-ink-900">{e.name}</span>
-                    <span className="block truncate font-mono text-2xs text-ink-500">
-                      {e.canonicalKey}
-                    </span>
+                  <span className={cn('truncate text-dense leading-[19px]', e.id === selectedId ? 'font-semibold text-accent-800' : 'text-ink-800')}>
+                    {e.name}
                   </span>
-                  <span className="shrink-0 rounded bg-ink-100 px-1.5 py-0.5 text-2xs text-ink-600">
-                    {e.entityTypeKey}
+                  <span className="truncate font-mono text-meta text-ink-500">
+                    {e.entityTypeKey} · {e.canonicalKey}
                   </span>
-                  <ChevronRight className="h-3 w-3 shrink-0 text-ink-300" />
                 </button>
-              </li>
-            ))}
-            {entities.length === 0 && !error && (
-              <li className="py-6 text-center text-xs text-ink-500">
-                No entities in this organization yet.
-              </li>
-            )}
-          </ul>
-        </PanelCard>
+              ))}
+            </div>
+          ))}
+          {entities.length === 0 && !error && <p className="text-dense text-ink-500">No entities in this organization yet.</p>}
+        </nav>
 
         {/* ---------------- detail ---------------- */}
-        <div className="space-y-4">
-          {!selected && (
-            <PanelCard title="Entity detail">
-              <p className="py-8 text-center text-xs text-ink-500">
-                Select an entity to inspect its attributes, provenance, validity and neighbours.
-              </p>
-            </PanelCard>
-          )}
-
-          {selected && (
+        <div className="min-w-0 flex-[1_1_560px]">
+          {!selected ? (
+            <p className="text-base text-ink-600">
+              Select an entity to inspect its attributes, provenance, validity and neighbours.
+            </p>
+          ) : (
             <>
-              <PanelCard
-                title={
-                  <span className="flex items-center gap-2">
-                    {selected.name}
-                    <span className="rounded bg-ink-100 px-1.5 py-0.5 text-2xs font-normal text-ink-600">
-                      {selected.entityTypeKey}
-                    </span>
-                  </span>
-                }
-              >
-                <Field label="Canonical key" value={selected.canonicalKey} mono />
-                <Field label="Entity id" value={selected.id} mono />
-                <Field
-                  label="Type category"
-                  value={registry.categoryOf(selected.entityTypeKey) ?? '—'}
-                />
-                <Field
-                  label="Type ancestry"
-                  value={registry.ancestry(selected.entityTypeKey).join(' → ')}
-                />
-                <Field label="Status" value={selected.status} />
-                <Field
-                  label="Confidence"
-                  value={selected.confidence === null ? '—' : String(selected.confidence)}
-                />
-                <div className="my-2 border-t border-ink-100" />
-                <p className="mb-1 text-2xs font-semibold uppercase tracking-wide text-ink-500">
-                  Provenance (inline)
-                </p>
-                <Field label="Source system" value={selected.sourceSystem} />
-                <Field label="Source object" value={selected.sourceEntityType ?? '—'} />
-                <Field label="Source id" value={selected.sourceEntityId ?? '—'} mono />
-                <div className="my-2 border-t border-ink-100" />
-                <p className="mb-1 text-2xs font-semibold uppercase tracking-wide text-ink-500">
-                  Temporal state
-                </p>
-                <Field label="Valid from" value={selected.validFrom} mono />
-                <Field label="Valid to" value={selected.validTo ?? 'null (current)'} mono />
-                <Field
-                  label="Observed at (source)"
-                  value={selected.observedAt ?? '—'}
-                  mono
-                />
-                <Field label="Ingested at (HELM)" value={selected.ingestedAt} mono />
-                <Field label="Updated at (HELM)" value={selected.updatedAt} mono />
-                <Field label="Version" value={String(selected.version)} />
-                <div className="my-2 border-t border-ink-100" />
-                <p className="mb-1 text-2xs font-semibold uppercase tracking-wide text-ink-500">
-                  Attributes
-                </p>
-                <pre className="max-h-40 overflow-auto rounded bg-ink-50 p-2 font-mono text-2xs text-ink-700">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <Pill tone="neutral">{selected.entityTypeKey}</Pill>
+                <span className="helm-meta font-medium">{selected.canonicalKey}</span>
+              </div>
+              <h2 className="mt-2 text-[26px] leading-[33px] tracking-[-0.01em]">{selected.name}</h2>
+              <Facts
+                rows={[
+                  ['Entity id', selected.id, true],
+                  ['Type category', registry.categoryOf(selected.entityTypeKey) ?? '—'],
+                  ['Type ancestry', registry.ancestry(selected.entityTypeKey).join(' → '), true],
+                  ['Status', selected.status, true],
+                  ['Confidence', selected.confidence === null ? '—' : String(selected.confidence), true],
+                ]}
+              />
+
+              <div className="mt-8 grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-x-10 gap-y-8">
+                <div>
+                  <SectionHead title="Where it came from" size="section-sm" caveat="inline provenance" className="pb-2" />
+                  <Facts
+                    rows={[
+                      ['Source system', selected.sourceSystem, true],
+                      ['Source object', selected.sourceEntityType ?? '—', true],
+                      ['Source id', selected.sourceEntityId ?? '—', true],
+                    ]}
+                  />
+                </div>
+                <div>
+                  <SectionHead title="When it was true, and known" size="section-sm" className="pb-2" />
+                  <Facts
+                    rows={[
+                      ['Valid from', selected.validFrom, true],
+                      ['Valid to', selected.validTo ?? 'null (current)', true],
+                      ['Observed at (source)', selected.observedAt ?? '—', true],
+                      ['Ingested at (HELM)', selected.ingestedAt, true],
+                      ['Updated at (HELM)', selected.updatedAt, true],
+                      ['Version', String(selected.version), true],
+                    ]}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-8">
+                <SectionHead title="Attributes" size="section-sm" className="pb-2" />
+                <pre className="mt-3 max-h-48 overflow-auto rounded-xl border border-ink-200 bg-ink-50 px-4 py-3 font-mono text-meta text-ink-700">
                   {JSON.stringify(selected.attributes, null, 2)}
                 </pre>
-              </PanelCard>
+              </div>
 
               {aliases.length > 0 && (
-                <PanelCard
-                  title={
-                    <span className="flex items-center gap-1.5">
-                      <Database className="h-3.5 w-3.5" /> External identifiers ({aliases.length})
-                    </span>
-                  }
-                >
-                  <table className="w-full text-2xs">
+                <div className="mt-8">
+                  <SectionHead title="External identifiers" size="section-sm" meta={String(aliases.length)} className="pb-2" />
+                  <table className="w-full border-collapse">
                     <thead>
-                      <tr className="text-left text-ink-500">
-                        <th className="pb-1 font-medium">System</th>
-                        <th className="pb-1 font-medium">Kind</th>
-                        <th className="pb-1 font-medium">Value</th>
-                        <th className="pb-1 font-medium">Match</th>
+                      <tr>
+                        {['System', 'Kind', 'Value', 'Match'].map((h, i) => (
+                          <th key={h} className={cn('helm-label pb-2 pt-[10px] text-left', i > 0 && 'pl-3')}>
+                            {h}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-ink-100">
+                    <tbody>
                       {aliases.map((a) => (
-                        <tr key={a.id}>
-                          <td className="py-1 text-ink-700">{a.system}</td>
-                          <td className="py-1 text-ink-500">{a.aliasKind}</td>
-                          <td className="py-1 font-mono text-ink-800">{a.aliasValue}</td>
-                          <td className="py-1 text-ink-500">{a.matchMethod}</td>
+                        <tr key={a.id} className="border-t border-ink-200">
+                          <td className="py-2 font-mono text-meta">{a.system}</td>
+                          <td className="py-2 pl-3 font-mono text-meta text-ink-600">{a.aliasKind}</td>
+                          <td className="py-2 pl-3 font-mono text-dense font-medium">{a.aliasValue}</td>
+                          <td className="py-2 pl-3 font-mono text-meta text-ink-600">{a.matchMethod}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                  <p className="mt-2 text-2xs text-ink-500">
-                    The same management entity as named by each source system. Resolution is
-                    structural in Phase 1 — see docs/architecture/identity-resolution.md.
+                  <p className="mt-2 text-meta text-ink-500">
+                    The same management entity as named by each source system. Resolution is structural in Phase 1 — see
+                    docs/architecture/identity-resolution.md.
                   </p>
-                </PanelCard>
+                </div>
               )}
 
-              <PanelCard
-                title={
-                  <span className="flex items-center gap-1.5">
-                    <Info className="h-3.5 w-3.5" /> Provenance records ({provenance.length})
-                  </span>
-                }
-              >
-                {provenance.length === 0 && (
-                  <p className="text-xs text-ink-500">No provenance recorded.</p>
-                )}
-                <ul className="space-y-2">
-                  {provenance.map((p) => (
-                    <li key={p.id} className="rounded border border-ink-100 p-2">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="rounded bg-accent-50 px-1.5 py-0.5 text-2xs font-semibold text-accent-800">
-                          {p.method}
-                        </span>
-                        <span className="text-2xs text-ink-600">{p.system}</span>
-                        {p.connector && (
-                          <span className="font-mono text-2xs text-ink-500">{p.connector}</span>
-                        )}
-                      </div>
-                      {p.sourceField && <Field label="Field" value={p.sourceField} />}
-                      {p.sourceObjectId && (
-                        <Field label="Source object" value={`${p.sourceObjectType ?? '?'} / ${p.sourceObjectId}`} mono />
-                      )}
-                      {p.transformation && <Field label="Transformation" value={p.transformation} />}
-                      <Field label="Observed at" value={p.observedAt ?? '—'} mono />
-                      <Field label="Recorded at" value={p.recordedAt} mono />
-                      {p.ingestionEventId && (
-                        <Field label="Ingestion event" value={p.ingestionEventId} mono />
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </PanelCard>
-
-              <PanelCard
-                title={
-                  <span className="flex items-center gap-1.5">
-                    <GitBranch className="h-3.5 w-3.5" /> Relationships ({neighbors.length})
-                  </span>
-                }
-              >
-                <ul className="divide-y divide-ink-100">
-                  {neighbors.map((n) => (
-                    <li key={n.via.id} className="flex items-center gap-2 py-1.5">
-                      <span
-                        className={`shrink-0 rounded px-1.5 py-0.5 text-2xs font-semibold ${
-                          n.direction === 'out'
-                            ? 'bg-emerald-50 text-emerald-800'
-                            : 'bg-violet-50 text-violet-800'
-                        }`}
-                      >
-                        {n.direction === 'out' ? '→' : '←'} {n.via.relationshipTypeKey}
-                      </span>
-                      <button
-                        onClick={() => setSelectedId(n.entity.id)}
-                        className="min-w-0 flex-1 truncate text-left text-xs text-accent-700 hover:underline"
-                      >
-                        {n.entity.name}
-                      </button>
-                      <span className="shrink-0 text-2xs text-ink-500">
-                        {n.via.weight !== null && `w=${n.via.weight} `}
-                        {n.via.confidence !== null && `c=${n.via.confidence}`}
-                      </span>
-                    </li>
-                  ))}
-                  {neighbors.length === 0 && (
-                    <li className="py-3 text-xs text-ink-500">No relationships.</li>
-                  )}
-                </ul>
-              </PanelCard>
-
-              <PanelCard
-                title={`Traversal from here (depth ${depth})`}
-                action={
-                  <div className="flex gap-1">
-                    {[1, 2, 3, 4].map((d) => (
-                      <button
-                        key={d}
-                        onClick={() => setDepth(d)}
-                        className={`rounded px-1.5 py-0.5 text-2xs ${
-                          depth === d ? 'bg-accent-600 text-white' : 'bg-ink-100 text-ink-600'
-                        }`}
-                      >
-                        {d}
-                      </button>
-                    ))}
+              <div className="mt-8">
+                <SectionHead title="Provenance records" size="section-sm" meta={String(provenance.length)} className="pb-2" />
+                {provenance.length === 0 && <p className="mt-3 text-dense text-ink-500">No provenance recorded.</p>}
+                {provenance.map((p) => (
+                  <div key={p.id} className="border-b border-ink-200 py-3">
+                    <p className="flex flex-wrap items-center gap-2">
+                      <Pill tone="forecast">{p.method}</Pill>
+                      <span className="text-dense font-medium">{p.system}</span>
+                      {p.connector && <span className="helm-meta">{p.connector}</span>}
+                    </p>
+                    <p className="helm-meta mt-1 break-all">
+                      {[
+                        p.sourceField && `field ${p.sourceField}`,
+                        p.sourceObjectId && `${p.sourceObjectType ?? '?'} / ${p.sourceObjectId}`,
+                        p.transformation && `transformation ${p.transformation}`,
+                        `observed ${p.observedAt ?? '—'}`,
+                        `recorded ${p.recordedAt}`,
+                        p.ingestionEventId && `ingestion ${p.ingestionEventId}`,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
                   </div>
-                }
-              >
-                {!walk && <p className="text-xs text-ink-500">No traversal result.</p>}
+                ))}
+              </div>
+
+              <div className="mt-8">
+                <SectionHead title="Relationships" size="section-sm" meta={String(neighbors.length)} className="pb-2" />
+                {neighbors.map((n) => (
+                  <button
+                    key={n.via.id}
+                    type="button"
+                    onClick={() => setSelectedId(n.entity.id)}
+                    className="grid w-full gap-[2px] border-b border-ink-200 py-[10px] text-left text-ink-950 hover:text-accent-800"
+                  >
+                    <span className="text-ui font-medium">{n.entity.name}</span>
+                    <span className="helm-meta">
+                      {n.direction === 'out' ? '→' : '←'} {n.via.relationshipTypeKey}
+                      {n.via.weight !== null && ` · weight ${n.via.weight}`}
+                      {n.via.confidence !== null && ` · confidence ${n.via.confidence}`}
+                    </span>
+                  </button>
+                ))}
+                {neighbors.length === 0 && <p className="mt-3 text-dense text-ink-500">No relationships.</p>}
+              </div>
+
+              <div className="mt-8">
+                <SectionHead
+                  title="Traversal from here"
+                  size="section-sm"
+                  meta={walk ? `${walk.nodes.length} entities · ${walk.relationships.length} relationships${walk.truncated ? ' · truncated' : ''}` : undefined}
+                  caveat={
+                    <span className="flex gap-1 not-italic">
+                      {[1, 2, 3, 4].map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setDepth(d)}
+                          aria-pressed={depth === d}
+                          className={cn('rounded-md px-2 font-mono text-meta', depth === d ? 'bg-accent-800 text-white' : 'bg-ink-100 text-ink-700 hover:bg-ink-200')}
+                        >
+                          {d}
+                        </button>
+                      ))}
+                    </span>
+                  }
+                  className="pb-2"
+                />
+                {!walk && <p className="mt-3 text-dense text-ink-500">No traversal result.</p>}
                 {walk && (
                   <>
-                    <p className="mb-2 text-2xs text-ink-500">
-                      {walk.nodes.length} entities, {walk.relationships.length} relationships
-                      {walk.truncated && ' (truncated)'}
-                    </p>
-                    <ul className="max-h-64 space-y-0.5 overflow-auto">
+                    <div className="max-h-80 overflow-auto">
                       {walk.nodes.map((n) => (
-                        <li key={n.entity.id} className="flex items-center gap-2 text-2xs">
-                          <span
-                            className="shrink-0 text-ink-300"
-                            style={{ paddingLeft: `${n.depth * 12}px` }}
-                          >
-                            {n.depth === 0 ? '●' : '└'}
-                          </span>
-                          <button
-                            onClick={() => setSelectedId(n.entity.id)}
-                            className="truncate text-accent-700 hover:underline"
-                          >
+                        <div
+                          key={n.entity.id}
+                          className="flex items-baseline gap-2 border-b border-ink-100 py-[7px]"
+                          style={{ paddingLeft: n.depth * 20 }}
+                        >
+                          <span className="font-mono text-dense text-ink-400">{n.depth === 0 ? '■' : '└'}</span>
+                          <button type="button" onClick={() => setSelectedId(n.entity.id)} className="truncate text-left text-dense font-medium text-accent-700 hover:underline">
                             {n.entity.name}
                           </button>
-                          <span className="shrink-0 rounded bg-ink-100 px-1 text-ink-500">
-                            {n.entity.entityTypeKey}
-                          </span>
-                          <span className="shrink-0 text-ink-500">
-                            conf {n.pathConfidence.toFixed(3)}
-                          </span>
-                        </li>
+                          <span className="helm-meta">{n.entity.entityTypeKey}</span>
+                          <span className="helm-meta ml-auto">conf {n.pathConfidence.toFixed(3)}</span>
+                        </div>
                       ))}
-                    </ul>
-                    <p className="mt-2 text-2xs text-ink-500">
-                      Path confidence is the product of the edge confidences along the route, so a
-                      long chain is never reported as more certain than its weakest link.
+                    </div>
+                    <p className="mt-2 text-meta text-ink-500">
+                      Path confidence is the product of the edge confidences along the route, so a long chain is never
+                      reported as more certain than its weakest link.
                     </p>
                   </>
                 )}
-              </PanelCard>
+              </div>
             </>
           )}
         </div>
       </div>
-    </div>
+    </>
   );
 }

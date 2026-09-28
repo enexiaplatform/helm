@@ -240,17 +240,4 @@
   .helm-label { @apply font-sans text-label font-medium uppercase text-ink-500; }
   .helm-meta { @apply font-mono text-meta text-ink-500; }
   .helm-caveat { @apply font-serif text-[14px] leading-5 italic text-ink-500; }
-
-  /* TEMPORARY bridge for pages not yet rebuilt on v2 — same looks as ui/Button and ui/Field.
-     Remove with the fontSize bridge in tailwind.config.js. */
-  .btn { @apply inline-flex items-center gap-2 rounded-lg px-4 py-[9px] font-sans text-dense transition-colors ease-helm disabled:pointer-events-none disabled:opacity-45; }
-  .btn-primary { @apply btn bg-accent-800 font-semibold text-white hover:bg-accent-900; }
-  .btn-secondary { @apply btn border border-ink-300 bg-white font-medium text-ink-950 hover:border-ink-400 hover:bg-ink-50; }
-  .btn-ghost { @apply btn font-medium text-ink-600 hover:bg-ink-100 hover:text-ink-950; }
-  .btn-danger { @apply btn border border-red-200 bg-white font-medium text-red-700 hover:bg-red-50; }
-  .btn-sm { @apply px-3 py-[6px] text-meta; }
-  .field-label { @apply mb-[6px] block text-meta font-medium text-ink-600; }
-  .field-input { @apply w-full rounded-lg border border-ink-300 bg-white px-3 py-[10px] text-ui text-ink-950 placeholder:text-ink-400 focus-visible:border-accent-500; }
-  .table-th { @apply helm-label px-3 py-2 text-left; }
-  .table-td { @apply px-3 py-2 align-top; }
 }

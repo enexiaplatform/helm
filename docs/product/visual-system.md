@@ -4,7 +4,7 @@ The console reads as an editorial management briefing, not a dashboard: warm
 chart paper, navy chrome, one Prussian accent, brass only for the mark. The
 rules every UI change follows are in the repository's
 [`CLAUDE.md`](../../CLAUDE.md); this page records how the v2 design handoff is
-wired into the app and what is still to adopt.
+wired into the app.
 
 ## Where it lives
 
@@ -20,25 +20,33 @@ wired into the app and what is still to adopt.
 The clock strip shows the scenario workspace's own fork point — the boundary
 every future is computed from — never a time the kernel did not use.
 
-## Adopted so far
+## Adopted
 
-Tokens, fonts, logo, favicon and shell; Attention, Decisions, the Decision
-Workspace, Memory, Auth and Onboarding are rebuilt on the v2 components and
-wired to the real runtimes.
+Every screen is on v2.
 
-Deliberate differences from the handoff, to keep product semantics:
+- **Management register** (1240px, computed serif headline, two columns with an
+  aside): Attention, Decisions, the Decision Workspace, Memory, Economics,
+  Operations.
+- **Instrument register** (full width, 28px title, raw enums): Scenarios, Value
+  Graph, Ontology, Calculations.
+- Settings, Auth and Onboarding follow the same grammar.
 
-- Challenge status and assumption outcomes use the kernel's own enums
-  (`REJECTED`; `CONFIRMED`, `PARTIALLY_CONFIRMED`, `DISPROVED`…).
+The v1 bridge (`ui.tsx`, legacy text sizes, `.btn-*` recipes) is gone.
+`lucide-react` is no longer imported; it can be dropped from `package.json`
+together with its chunk rule in `vite.config.ts`.
+
+## Deliberate differences from the handoff
+
+Kept to preserve product semantics:
+
+- Challenge status, assumption outcomes and constraint status use the kernel's
+  own enums (`REJECTED`; `CONFIRMED`, `PARTIALLY_CONFIRMED`, `DISPROVED`…;
+  `SATISFIED` rather than MET).
 - Outcome variances are set in ink, not brick: HELM does not grade outcomes.
 - Warning signals keep **Dismiss**, which v1 offered on every signal.
-
-## Still to adopt
-
-Scenarios, Value Graph, Ontology, Calculations, Economics, Operations and
-Settings still use the v1 layout. They stay readable through a **temporary
-bridge** — legacy text sizes in `tailwind.config.js` and `.btn-*`, `.field-*`,
-`.table-*` recipes in `src/index.css`, both marked TEMPORARY — together with the
-old `src/components/ui.tsx`. When those pages are rebuilt on the v2 components
-(`ScenarioCompare`, `OverrideList`, `FeasibilityList`, `LineageTree`,
-`NodeIndex`, `NodeDetail`), delete the bridge and `ui.tsx`.
+- Pages the handoff did not draw keep every v1 capability — scenario drafting,
+  overrides, sealing, rebase and replay; value-chain depth; ontology traversal;
+  model runs — recomposed as section heads over hairline rows.
+- Components gained small hooks the app needs: clickable values for lineage in
+  `ScenarioCompare`, a per-row action in `OverrideList`, a `children` slot in
+  `NodeDetail`, and real routes instead of `#` links.

@@ -1,7 +1,11 @@
 import { useState } from 'react';
-import { Plus, Settings } from 'lucide-react';
 import { useHelmStore } from '../services/helmStore.ts';
-import { PageHeader, PanelCard } from '../components/ui.tsx';
+import { PageHeader } from '../components/ui/PageHeader.tsx';
+import { SectionHead } from '../components/ui/SectionHead.tsx';
+import { FactRow } from '../components/ui/FactRow.tsx';
+import { Button } from '../components/ui/Button.tsx';
+import { Pill } from '../components/ui/Pill.tsx';
+import { controlClass } from '../components/ui/Field.tsx';
 import { orgRoles, type OrgRole } from '../domain/types.ts';
 
 export function SettingsPage() {
@@ -21,112 +25,107 @@ export function SettingsPage() {
   if (!org) return null;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
-      <PageHeader
-        icon={Settings}
-        eyebrow="Organization"
-        title="Settings"
-        description={
-          <>
-            {org.name} · base currency {org.baseCurrency} · your role: <span className="font-medium">{myRole}</span>
-          </>
-        }
+    <>
+      <PageHeader kicker="Organization · Settings" title={org.name} size="title" />
+      <FactRow
+        className="mt-5 border-b border-ink-200 pb-[22px]"
+        facts={[
+          { label: 'Base currency', value: org.baseCurrency, mono: true },
+          { label: 'Your role', value: myRole },
+          { label: 'Members', value: String(members.length), mono: true },
+          { label: 'Mode', value: mode === 'demo' ? 'demo · local sample data' : 'cloud' },
+        ]}
       />
 
-      <PanelCard title="Members">
-        <ul className="divide-y divide-ink-50">
+      <div className="mt-10 flex flex-wrap items-start gap-10">
+        <section className="min-w-0 flex-[1_1_460px]">
+          <SectionHead title="Members" meta={String(members.length)} />
           {members.map((m) => (
-            <li key={m.userId} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0 text-sm">
+            <div key={m.userId} className="flex items-center justify-between gap-3 border-b border-ink-200 py-3">
               <div className="min-w-0">
-                <p className="truncate font-medium">{m.displayName}</p>
-                <p className="truncate text-2xs text-ink-500">{m.email}</p>
+                <p className="truncate text-ui font-medium">{m.displayName}</p>
+                <p className="helm-meta truncate">{m.email}</p>
               </div>
-              <span className="rounded-full bg-ink-100 px-2 py-0.5 text-2xs font-semibold text-ink-600">{m.role}</span>
-            </li>
+              <Pill tone="neutral">{m.role}</Pill>
+            </div>
           ))}
-        </ul>
-        {isAdmin && (
-          <form
-            className="mt-3 flex flex-wrap gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void addMemberByEmail(inviteEmail, inviteRole).then((err) => {
-                setInviteMessage(err ?? `Added ${inviteEmail} as ${inviteRole}.`);
-                if (!err) setInviteEmail('');
-              });
-            }}
-          >
-            <input
-              className="field-input flex-1"
-              type="email"
-              required
-              placeholder="teammate@company.com (must already have an account)"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-            />
-            <select className="field-input w-32" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as OrgRole)}>
-              {orgRoles.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-            <button className="btn-primary">
-              <Plus size={14} /> Add member
-            </button>
-            {inviteMessage && <p className="w-full text-xs text-ink-500">{inviteMessage}</p>}
-          </form>
-        )}
-        {mode === 'demo' && <p className="mt-2 text-2xs text-ink-500">Demo mode — membership is read-only.</p>}
-      </PanelCard>
+          {isAdmin && (
+            <form
+              className="mt-4 flex flex-wrap gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void addMemberByEmail(inviteEmail, inviteRole).then((err) => {
+                  setInviteMessage(err ?? `Added ${inviteEmail} as ${inviteRole}.`);
+                  if (!err) setInviteEmail('');
+                });
+              }}
+            >
+              <input
+                className={controlClass + ' min-w-[240px] flex-1'}
+                type="email"
+                required
+                placeholder="teammate@company.com (must already have an account)"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+              />
+              <select className={controlClass + ' w-36'} value={inviteRole} onChange={(e) => setInviteRole(e.target.value as OrgRole)}>
+                {orgRoles.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+              <Button type="submit" variant="primary">
+                Add member
+              </Button>
+              {inviteMessage && <p className="w-full text-dense text-ink-600">{inviteMessage}</p>}
+            </form>
+          )}
+          {mode === 'demo' && <p className="mt-3 text-meta text-ink-500">Demo mode — membership is read-only.</p>}
+        </section>
 
-      <PanelCard title="Organization units">
-        {units.length === 0 ? (
-          <p className="text-xs text-ink-500">No units defined.</p>
-        ) : (
-          <ul className="space-y-1 text-sm">
-            {units
+        <section className="min-w-0 flex-[1_1_360px]">
+          <SectionHead title="Organization units" meta={String(units.length)} />
+          {units.length === 0 ? (
+            <p className="mt-3 text-base text-ink-600">No units defined.</p>
+          ) : (
+            units
               .filter((u) => u.parentId === null)
-              .map((root) => (
-                <UnitNode key={root.id} unitId={root.id} depth={0} />
-              ))}
-          </ul>
-        )}
-      </PanelCard>
+              .map((root) => <UnitNode key={root.id} unitId={root.id} depth={0} />)
+          )}
+        </section>
+      </div>
 
-      <PanelCard
-        title="Decision authority"
-        action="not evaluated in this phase"
-      >
-        <p className="text-xs text-ink-600">
+      <section className="mt-11 max-w-[860px]">
+        <SectionHead title="Decision authority" caveat="not evaluated in this phase" />
+        <p className="mt-3 text-base text-ink-700">
           HELM records what management decided and on what grounds. It does not yet decide who is permitted to decide.
-          Every commitment carries <span className="font-mono text-2xs">authorityStatus: NOT_EVALUATED</span> — in the
+          Every commitment carries <span className="font-mono text-meta">authorityStatus: NOT_EVALUATED</span> — in the
           runtime and in the database — so a later authority model can be added without rewriting the commitments made
           before it existed, and so nothing here can be mistaken for an approval that was never granted.
         </p>
-        <p className="mt-2 text-xs text-ink-600">
+        <p className="mt-3 text-base text-ink-700">
           The pre-kernel threshold rules that used to live here have been retired rather than carried forward: they
           conflated "this decision is large" with "this person may make it". Decision rights, approval authority,
           thresholds and escalation belong to the authority model (see{' '}
-          <span className="font-mono text-2xs">docs/architecture/decision-engine-assessment.md</span>).
+          <span className="font-mono text-meta">docs/architecture/decision-engine-assessment.md</span>).
         </p>
-      </PanelCard>
+      </section>
 
-      <PanelCard title="Memoire connection">
-        <p className="text-xs text-ink-600">
+      <section className="mt-11 max-w-[860px]">
+        <SectionHead title="Memoire connection" caveat="read-only, one way" />
+        <p className="mt-3 text-base text-ink-700">
           HELM shares its database and identity with Memoire. When you sign in with your Memoire account, your
-          opportunities are readable as decision context. The read is one-way: HELM writes nothing back into Memoire.
-          A commitment instead produces action intents naming the system that should act, which a later phase can
-          deliver to Memoire over an explicit contract. HELM never copies Memoire data — a decision stores a reference
-          and its own immutable snapshot of what was true when it was made.
+          opportunities are readable as decision context. The read is one-way: HELM writes nothing back into Memoire. A
+          commitment instead produces action intents naming the system that should act, which a later phase can deliver
+          to Memoire over an explicit contract. HELM never copies Memoire data — a decision stores a reference and its own
+          immutable snapshot of what was true when it was made.
         </p>
         {mode === 'demo' && (
-          <p className="mt-2 text-2xs text-ink-500">
-            In demo mode, sample opportunities stand in for the live Memoire workspace.
-          </p>
+          <p className="mt-2 text-meta text-ink-500">In demo mode, sample opportunities stand in for the live Memoire workspace.</p>
         )}
-      </PanelCard>
-    </div>
+      </section>
+    </>
   );
 }
 
@@ -136,18 +135,15 @@ function UnitNode({ unitId, depth }: { unitId: string; depth: number }) {
   if (!unit) return null;
   const children = units.filter((u) => u.parentId === unitId);
   return (
-    <li>
-      <div className="flex items-center gap-2 py-0.5" style={{ paddingLeft: depth * 16 }}>
-        <span className="font-medium">{unit.name}</span>
-        <span className="rounded bg-ink-100 px-1.5 py-0.5 text-2xs text-ink-500">{unit.unitType.replace(/_/g, ' ')}</span>
+    <>
+      <div className="flex items-baseline gap-2 border-b border-ink-100 py-2" style={{ paddingLeft: depth * 20 }}>
+        {depth > 0 && <span className="font-mono text-dense text-ink-400">└</span>}
+        <span className="text-dense font-medium">{unit.name}</span>
+        <span className="helm-meta">{unit.unitType.replace(/_/g, ' ')}</span>
       </div>
-      {children.length > 0 && (
-        <ul>
-          {children.map((c) => (
-            <UnitNode key={c.id} unitId={c.id} depth={depth + 1} />
-          ))}
-        </ul>
-      )}
-    </li>
+      {children.map((c) => (
+        <UnitNode key={c.id} unitId={c.id} depth={depth + 1} />
+      ))}
+    </>
   );
 }

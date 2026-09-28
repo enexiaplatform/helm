@@ -55,13 +55,6 @@ export default {
       meta: ['12px', { lineHeight: '18px' }],
       label: ['11px', { lineHeight: '16px', letterSpacing: '0.08em' }],       // always uppercase
       tag: ['10px', { lineHeight: '16px', letterSpacing: '0.06em' }],         // mono enum pills
-      // TEMPORARY bridge for pages not yet rebuilt on v2 (Scenarios, Value Graph, Ontology,
-      // Calculations, Economics, Operations, Settings). Remove once they use the named scale.
-      '2xs': ['12px', { lineHeight: '18px' }],
-      xs: ['13px', { lineHeight: '20px' }],
-      sm: ['14px', { lineHeight: '20px' }],
-      lg: ['17px', { lineHeight: '24px' }],
-      xl: ['22px', { lineHeight: '28px' }],
     },
     extend: {
       borderRadius: { md: '6px', lg: '8px', xl: '12px', '2xl': '16px' },

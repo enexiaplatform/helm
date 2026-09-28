@@ -1,6 +1,6 @@
 # HELM — UI rules for Claude Code
 
-It governs every UI change. Wiring, deliberate deviations and what is still to adopt: [docs/product/visual-system.md](docs/product/visual-system.md). Seven pages still run on a TEMPORARY v1 bridge (legacy `text-xs/sm…` sizes and `.btn-*` recipes); don't use it in new code.
+It governs every UI change. How it is wired into this repo, and the deliberate deviations: [docs/product/visual-system.md](docs/product/visual-system.md).
 
 ## Stack
 React 19 + Vite + TypeScript + Tailwind 3. Tokens live ONLY in `tailwind.config.js`; fonts in `src/index.css` (self-hosted from `public/fonts`). No other CSS files, no inline hex, no arbitrary colours (`bg-[#...]`).

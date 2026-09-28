@@ -16,10 +16,9 @@
  * Management surfaces begin at Phase 14, after Phase 6's authority rules exist.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Calculator, CircleAlert, GitBranch, Info, Play } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import type { GraphStore } from '@helm/graph-store';
-import type { ValueGraph, ValueNode, ValueObservation } from '@helm/value-graph';
+import type { ValueGraph, ValueNode } from '@helm/value-graph';
 import type {
   CalculationDefinition,
   CalculationStep,
@@ -32,7 +31,13 @@ import { buildDependencyGraph } from '@helm/propagation-engine';
 import type { Scope } from '@helm/shared';
 import { useHelmStore } from '../services/helmStore.ts';
 import { calculations, cloudScope, demoScope, resolveGraphs } from '../services/ontologyGraph.ts';
-import { PageHeader, PanelCard } from '../components/ui.tsx';
+import { PageHeader } from '../components/ui/PageHeader.tsx';
+import { SectionHead } from '../components/ui/SectionHead.tsx';
+import { Button } from '../components/ui/Button.tsx';
+import { Pill, type PillTone } from '../components/ui/Pill.tsx';
+import { Notice } from '../components/ui/Notice.tsx';
+import { LineageTree, type LineageNode } from '../components/scenario/LineageTree.tsx';
+import { cn } from '../lib/cn.ts';
 
 type Loaded = {
   engine: PropagationEngine;
@@ -49,12 +54,12 @@ const ROOT_METRICS = [
   'AverageSellingPrice',
 ];
 
-const statusTone: Record<StepStatus, string> = {
-  CALCULATED: 'bg-emerald-100 text-emerald-900',
-  UNCHANGED: 'bg-ink-100 text-ink-600',
-  BLOCKED: 'bg-amber-100 text-amber-900',
-  FAILED: 'bg-red-100 text-red-700',
-  SKIPPED: 'bg-ink-100 text-ink-500',
+const STATUS_TONE: Record<StepStatus, PillTone> = {
+  CALCULATED: 'computed',
+  UNCHANGED: 'neutral',
+  BLOCKED: 'accepted',
+  FAILED: 'blocked',
+  SKIPPED: 'neutral',
 };
 
 /**
@@ -75,54 +80,18 @@ function confidenceLabel(c: number | null): string {
   return c.toFixed(2);
 }
 
-function Row({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="flex items-baseline gap-2 py-0.5">
-      <span className="w-40 shrink-0 text-2xs uppercase tracking-wide text-ink-500">{label}</span>
-      <span className={`text-xs text-ink-800 ${mono ? 'font-mono break-all' : ''}`}>{value}</span>
-    </div>
-  );
-}
-
-/** One node of an explanation tree, rendered as an indented derivation. */
-function ExplanationNode({ node, depth = 0 }: { node: Explanation; depth?: number }) {
-  return (
-    <div className={depth === 0 ? '' : 'border-l border-ink-200 pl-3'}>
-      <div className="py-1">
-        <div className="flex flex-wrap items-baseline gap-2">
-          <span className="text-xs font-medium text-ink-900">{node.metricKey}</span>
-          <span className="font-mono text-xs text-ink-700" title={node.value ?? undefined}>
-            {shorten(node.value)}
-            {node.currency ? ` ${node.currency}` : ''}
-          </span>
-          <span
-            className={`rounded px-1.5 py-0.5 text-2xs font-medium ${
-              node.derivation ? 'bg-violet-100 text-violet-900' : 'bg-emerald-100 text-emerald-900'
-            }`}
-          >
-            {node.observationType}
-          </span>
-          {node.confidence !== null && (
-            <span className="text-2xs text-ink-500">conf {confidenceLabel(node.confidence)}</span>
-          )}
-        </div>
-        {node.derivation ? (
-          <p className="mt-0.5 font-mono text-2xs text-ink-500">
-            {node.derivation.calculationKey}@{node.derivation.calculationVersion} ·{' '}
-            {node.derivation.renderedExpression}
-          </p>
-        ) : (
-          <p className="mt-0.5 text-2xs text-ink-500">
-            stated by {node.source?.system ?? 'an unknown source'}
-            {node.source?.method ? ` · ${node.source.method}` : ''}
-          </p>
-        )}
-      </div>
-      {node.inputs.map((input) => (
-        <ExplanationNode key={`${input.observationId}-${input.metricKey}`} node={input} depth={depth + 1} />
-      ))}
-    </div>
-  );
+/** An explanation, as the lineage rows read it: every branch ends in a stated fact. */
+function toLineage(node: Explanation): LineageNode {
+  const conf = node.confidence !== null ? ` · conf ${confidenceLabel(node.confidence)}` : '';
+  return {
+    metricKey: node.metricKey,
+    value: `${shorten(node.value)}${node.currency ? ` ${node.currency}` : ''}`,
+    kind: node.derivation ? 'COMPUTED' : node.observationType,
+    foot: node.derivation
+      ? `${node.derivation.calculationKey}@${node.derivation.calculationVersion} · ${node.derivation.renderedExpression}${conf}`
+      : `stated by ${node.source?.system ?? 'an unknown source'}${node.source?.method ? ` · ${node.source.method}` : ''}${conf}`,
+    inputs: node.inputs.map(toLineage),
+  };
 }
 
 export function CalculationsPage() {
@@ -212,6 +181,7 @@ export function CalculationsPage() {
         return;
       }
       setExplaining(r.value);
+      requestAnimationFrame(() => document.getElementById('why')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     },
     [loaded],
   );
@@ -223,250 +193,197 @@ export function CalculationsPage() {
   const summary = result?.summary;
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        register="instrument"
-        icon={Calculator}
-        title="Calculation Explorer"
-        description={
-          <>
-            Read-only kernel instrument, except for running the model. {calculations.active().length} active
-            calculations, {dependencyOrder?.roots.length ?? 0} source facts.
-          </>
-        }
-        actions={
-          <>
-            <button
-              type="button"
-              disabled={busy || !loaded}
-              onClick={() => run(ROOT_METRICS, 'Full model run from source facts')}
-              className="btn-secondary btn-sm"
-            >
-              <Play className="h-3.5 w-3.5" /> Run the whole model
-            </button>
-            <button
-              type="button"
-              disabled={busy || !loaded}
-              onClick={() => run(['UnitCost'], 'Propagate a unit cost change')}
-              className="btn-secondary btn-sm"
-            >
-              <ArrowRight className="h-3.5 w-3.5" /> Propagate from Unit Cost
-            </button>
-          </>
-        }
-      />
+    <>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <PageHeader
+          kicker="Kernel instrument · Calculations"
+          title={`${calculations.active().length} governed calculations over ${dependencyOrder?.roots.length ?? 0} source facts`}
+          size="instrument"
+        />
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={busy || !loaded} onClick={() => run(['UnitCost'], 'Propagate a unit cost change')}>
+            Propagate from Unit Cost
+          </Button>
+          <Button variant="primary" disabled={busy || !loaded} onClick={() => run(ROOT_METRICS, 'Full model run from source facts')}>
+            Run the whole model
+          </Button>
+        </div>
+      </div>
+      <p className="mt-2 max-w-[760px] text-read text-ink-600">
+        Read-only, except for running the model. A run writes DERIVED observations and an append-only trace; it never
+        overwrites a stated fact.
+      </p>
 
       {error && (
-        <div className="flex items-start gap-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-          <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>{error}</span>
-        </div>
+        <Notice tone="error" className="mt-5" onDismiss={() => setError(null)}>
+          {error}
+        </Notice>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+      <div className="mt-7 flex flex-wrap items-start gap-10">
         {/* ------------------------------------------------ the model itself */}
-        <div className="space-y-4">
-          <PanelCard title={<span className="flex items-center gap-1.5"><Calculator className="h-4 w-4" /> Calculations</span>}>
-            <ul className="space-y-1">
-              {calculations.active().map((calc) => (
-                <li key={calc.key}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCalc(calc.key)}
-                    className={`w-full rounded px-2 py-1.5 text-left text-xs ${
-                      selectedCalc === calc.key ? 'bg-accent-50 text-accent-900' : 'hover:bg-ink-50'
-                    }`}
-                  >
-                    <span className="font-medium">{calc.name}</span>
-                    <span className="ml-1.5 font-mono text-2xs text-ink-500">
-                      @{calc.version}
-                    </span>
-                    <span className="block font-mono text-2xs text-ink-500">{calc.expression}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </PanelCard>
+        <nav className="grid min-w-[240px] flex-[0_1_320px] gap-7">
+          <div>
+            <p className="helm-label mb-[6px]">Calculations</p>
+            {calculations.active().map((calc) => (
+              <button
+                key={calc.key}
+                type="button"
+                onClick={() => setSelectedCalc(calc.key)}
+                className={cn('grid w-full rounded-lg px-[10px] py-[7px] text-left hover:bg-ink-100', selectedCalc === calc.key && 'bg-accent-50')}
+              >
+                <span className={cn('text-dense leading-[19px]', selectedCalc === calc.key ? 'font-semibold text-accent-800' : 'text-ink-800')}>
+                  {calc.name} <span className="font-mono text-meta font-normal text-ink-500">@{calc.version}</span>
+                </span>
+                <span className="break-words font-mono text-meta text-ink-500">{calc.expression}</span>
+              </button>
+            ))}
+          </div>
 
           {dependencyOrder && (
-            <PanelCard title={<span className="flex items-center gap-1.5"><GitBranch className="h-4 w-4" /> Execution order</span>}>
-              <p className="mb-2 text-2xs text-ink-500">
-                Topological. A step never runs before something it depends on.
-              </p>
-              <p className="text-2xs uppercase tracking-wide text-ink-500">
-                Source facts — nothing computes these
-              </p>
-              <ul className="mb-3 mt-1 space-y-0.5">
-                {dependencyOrder.roots.map((metric) => (
-                  <li key={metric} className="flex items-baseline gap-2 text-xs text-ink-500">
-                    <span className="w-5 shrink-0 text-right font-mono text-2xs text-ink-300">·</span>
-                    <span>{metric}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-2xs uppercase tracking-wide text-ink-500">Then, in order</p>
-              <ol className="mt-1 space-y-0.5">
-                {dependencyOrder.order.map((metric, i) => (
-                  <li key={metric} className="flex items-baseline gap-2 text-xs">
-                    <span className="w-5 shrink-0 text-right font-mono text-2xs text-ink-500">
-                      {i + 1}
-                    </span>
-                    <span className="text-ink-900">{metric}</span>
-                  </li>
-                ))}
-              </ol>
-            </PanelCard>
+            <div>
+              <p className="helm-label mb-1">Execution order</p>
+              <p className="helm-caveat mb-2">topological — a step never runs before what it depends on</p>
+              <p className="text-meta text-ink-500">Source facts — nothing computes these</p>
+              {dependencyOrder.roots.map((metric) => (
+                <p key={metric} className="grid grid-cols-[24px_1fr] border-b border-ink-100 py-[5px] font-mono text-meta text-ink-600">
+                  <span className="text-ink-400">·</span>
+                  {metric}
+                </p>
+              ))}
+              <p className="mt-3 text-meta text-ink-500">Then, in order</p>
+              {dependencyOrder.order.map((metric, i) => (
+                <p key={metric} className="grid grid-cols-[24px_1fr] border-b border-ink-100 py-[5px] font-mono text-meta">
+                  <span className="text-ink-500">{i + 1}</span>
+                  {metric}
+                </p>
+              ))}
+            </div>
           )}
-        </div>
+        </nav>
 
         {/* --------------------------------------------- governance and trace */}
-        <div className="space-y-4">
+        <div className="min-w-0 flex-[1_1_560px]">
           {selected && (
-            <PanelCard
-              title={
-                <span>
-                  {selected.name}{' '}
-                  <span className="font-mono text-2xs font-normal text-ink-500">
-                    {selected.key}@{selected.version}
-                  </span>
+            <section>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <Pill tone="computed">{selected.status}</Pill>
+                <span className="helm-meta font-medium">
+                  {selected.key}@{selected.version}
                 </span>
-              }
-            >
-              <Row label="Formula" value={selected.expression} mono />
-              <Row label="Produces" value={`${selected.outputMetricKey} (${selected.outputUnit})`} />
-              <Row label="Owner" value={selected.owner} />
-              <Row label="Status" value={`${selected.status} from ${selected.effectiveFrom}`} />
-              <Row
-                label="Applies to"
-                value={selected.scopeCompatibility?.join(', ') ?? 'any subject'}
-              />
-              <Row
-                label="Model confidence"
-                value={`${selected.definitionConfidence} — how well the MODEL represents reality, independent of input quality`}
-              />
-              <div className="mt-3 rounded border border-ink-100 bg-ink-50 px-3 py-2">
-                <p className="text-2xs uppercase tracking-wide text-ink-500">Why it exists</p>
-                <p className="mt-1 text-xs leading-relaxed text-ink-700">{selected.rationale}</p>
               </div>
-              <div className="mt-3">
-                <p className="text-2xs uppercase tracking-wide text-ink-500">Declared inputs</p>
-                <ul className="mt-1 space-y-1.5">
-                  {selected.inputs.map((input) => (
-                    <li key={input.name} className="text-xs text-ink-700">
-                      <span className="font-mono text-ink-900">{input.name}</span>
-                      <span className="text-ink-500"> = </span>
-                      <span>{input.metricKey}</span>
-                      <span className="ml-1.5 text-2xs text-ink-500">
-                        {input.binding.kind === 'RELATED_ENTITY'
-                          ? `via ${input.binding.relationshipTypeKey} (${input.binding.direction})`
-                          : input.binding.kind === 'SCOPED'
-                            ? `scoped to ${input.binding.scopeKind}`
-                            : 'same subject'}
-                        {input.horizon ? ` · ${input.horizon}` : ''}
-                        {input.preference ? ` · ${input.preference}` : ''}
-                        {input.required ? '' : ' · optional'}
-                      </span>
-                      <span className="block text-2xs text-ink-500">{input.description}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </PanelCard>
+              <h2 className="mt-2 text-[26px] leading-[33px] tracking-[-0.01em]">{selected.name}</h2>
+              <p className="mt-2 font-mono text-read font-medium text-ink-800">{selected.expression}</p>
+              <dl className="mt-4 grid grid-cols-[160px_minmax(0,1fr)] gap-x-4">
+                {(
+                  [
+                    ['Produces', `${selected.outputMetricKey} (${selected.outputUnit})`, true],
+                    ['Owner', selected.owner, false],
+                    ['Status', `${selected.status} from ${selected.effectiveFrom}`, true],
+                    ['Applies to', selected.scopeCompatibility?.join(', ') ?? 'any subject', false],
+                    ['Model confidence', `${selected.definitionConfidence} — how well the model represents reality, independent of input quality`, false],
+                  ] as const
+                ).map(([label, value, mono]) => (
+                  <Fragment key={label}>
+                    <dt className="border-b border-ink-100 py-[7px] text-meta text-ink-500">{label}</dt>
+                    <dd className={cn('border-b border-ink-100 py-[7px] text-dense', mono && 'font-mono')}>{value}</dd>
+                  </Fragment>
+                ))}
+              </dl>
+              <p className="helm-label mb-1 mt-5">Why it exists</p>
+              <p className="max-w-reading font-serif text-read italic leading-[23px] text-ink-800">{selected.rationale}</p>
+              <p className="helm-label mb-1 mt-5">Declared inputs</p>
+              {selected.inputs.map((input) => (
+                <div key={input.name} className="border-b border-ink-200 py-2">
+                  <p className="text-dense">
+                    <span className="font-mono font-semibold">{input.name}</span>
+                    <span className="text-ink-500"> = </span>
+                    <span className="font-mono">{input.metricKey}</span>
+                  </p>
+                  <p className="helm-meta">
+                    {input.binding.kind === 'RELATED_ENTITY'
+                      ? `via ${input.binding.relationshipTypeKey} (${input.binding.direction})`
+                      : input.binding.kind === 'SCOPED'
+                        ? `scoped to ${input.binding.scopeKind}`
+                        : 'same subject'}
+                    {input.horizon ? ` · ${input.horizon}` : ''}
+                    {input.preference ? ` · ${input.preference}` : ''}
+                    {input.required ? '' : ' · optional'}
+                  </p>
+                  <p className="text-meta text-ink-600">{input.description}</p>
+                </div>
+              ))}
+            </section>
           )}
 
-          <PanelCard
-            title="Last run"
-            action={
-              summary && (
-                <span className="flex flex-wrap gap-1.5">
-                  {(Object.keys(summary) as StepStatus[])
-                    .filter((k) => summary[k] > 0)
-                    .map((k) => (
-                      <span key={k} className={`rounded px-1.5 py-0.5 text-2xs font-medium ${statusTone[k]}`}>
-                        {summary[k]} {k.toLowerCase()}
-                      </span>
-                    ))}
-                </span>
-              )
-            }
-          >
+          <section className="mt-10">
+            <SectionHead
+              title="The last run"
+              meta={
+                summary &&
+                (Object.keys(summary) as StepStatus[])
+                  .filter((k) => summary[k] > 0)
+                  .map((k) => `${summary[k]} ${k.toLowerCase()}`)
+                  .join(' · ')
+              }
+            />
             {!result ? (
-              <p className="text-xs text-ink-500">
-                Nothing has been run yet. Running the model writes DERIVED observations and an
-                append-only trace; it never overwrites a stated fact.
+              <p className="mt-3 text-base text-ink-600">
+                Nothing has been run yet. Running the model writes DERIVED observations and an append-only trace; it never
+                overwrites a stated fact.
               </p>
             ) : (
               <>
-                <p className="mb-3 text-2xs text-ink-500">
-                  Run {result.run.id} · modelling {result.run.context.effectiveAsOf} ·
-                  knowledge through {result.run.context.recordedThrough} ·{' '}
-                  {result.run.context.preference} · {result.run.status}
+                <p className="helm-meta mt-3">
+                  run {result.run.id} · modelling {result.run.context.effectiveAsOf} · knowledge through{' '}
+                  {result.run.context.recordedThrough} · {result.run.context.preference} · {result.run.status}
                 </p>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
+                  <table className="w-full min-w-[760px] border-collapse">
                     <thead>
-                      <tr className="border-b border-ink-100 text-2xs uppercase tracking-wide text-ink-500">
-                        <th className="py-1.5 pr-2 font-medium">#</th>
-                        <th className="py-1.5 pr-2 font-medium">Calculation</th>
-                        <th className="py-1.5 pr-2 font-medium">Value position</th>
-                        <th className="py-1.5 pr-2 font-medium">Result</th>
-                        <th className="py-1.5 pr-2 font-medium">Conf</th>
-                        <th className="py-1.5 font-medium">Status</th>
+                      <tr>
+                        {['#', 'Calculation', 'Value position', 'Result', 'Conf.', 'Status'].map((h, i) => (
+                          <th key={h} className={cn('helm-label pb-2 pt-[14px] text-left', i > 0 && 'pl-3', i === 4 && 'text-right')}>
+                            {h}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
                       {steps.map((step) => (
-                        <tr key={step.id} className="border-b border-ink-50 align-top">
-                          <td className="py-1.5 pr-2 font-mono text-2xs text-ink-500">
-                            {step.sequence}
+                        <tr key={step.id} className="border-t border-ink-200 align-top">
+                          <td className="py-3 font-mono text-meta text-ink-500">{step.sequence}</td>
+                          <td className="py-3 pl-3">
+                            <span className="block font-mono text-dense">{step.calculationKey}</span>
+                            <span className="helm-meta">@{step.calculationVersion}</span>
                           </td>
-                          <td className="py-1.5 pr-2">
-                            <span className="text-ink-900">{step.calculationKey}</span>
-                            <span className="block font-mono text-2xs text-ink-500">
-                              @{step.calculationVersion}
-                            </span>
-                          </td>
-                          <td className="py-1.5 pr-2 text-ink-700">
+                          <td className="py-3 pl-3 text-dense text-ink-700">
                             {nodeLabels.get(step.outputNodeId)?.label ?? step.outputMetricKey}
                           </td>
                           <td
-                            className="py-1.5 pr-2 font-mono text-ink-900"
+                            className="py-3 pl-3"
                             title={
                               step.outputValueRaw
                                 ? `stored ${step.outputValue} · computed ${step.outputValueRaw}`
                                 : (step.outputValue ?? undefined)
                             }
                           >
-                            {shorten(step.outputValue)}
-                            {step.outputCurrency ? ` ${step.outputCurrency}` : ''}
-                            {step.outputValueRaw && (
-                              <span className="block text-2xs text-ink-500">
-                                normalized from {shorten(step.outputValueRaw)}
-                              </span>
-                            )}
-                            {step.renderedExpression && (
-                              <span className="block font-mono text-2xs text-ink-500">
-                                {step.renderedExpression}
-                              </span>
-                            )}
-                            {step.errorMessage && (
-                              <span className="block text-2xs text-amber-800">
-                                {step.errorMessage}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-1.5 pr-2 font-mono text-2xs text-ink-500">
-                            {confidenceLabel(step.confidence)}
-                          </td>
-                          <td className="py-1.5">
-                            <span className={`rounded px-1.5 py-0.5 text-2xs font-medium ${statusTone[step.status]}`}>
-                              {step.status}
+                            <span className="block font-mono text-ui font-medium">
+                              {shorten(step.outputValue)}
+                              {step.outputCurrency ? ` ${step.outputCurrency}` : ''}
                             </span>
+                            {step.outputValueRaw && <span className="helm-meta block">normalized from {shorten(step.outputValueRaw)}</span>}
+                            {step.renderedExpression && <span className="helm-meta block break-words">{step.renderedExpression}</span>}
+                            {step.errorMessage && <span className="block text-meta text-amber-800">{step.errorMessage}</span>}
+                          </td>
+                          <td className="py-3 pl-3 text-right font-mono text-dense">{confidenceLabel(step.confidence)}</td>
+                          <td className="py-3 pl-3">
+                            <Pill tone={STATUS_TONE[step.status]}>{step.status}</Pill>
                             {step.outputObservationId && (
                               <button
                                 type="button"
                                 onClick={() => explain(step)}
-                                className="ml-1.5 text-2xs text-accent-700 underline hover:text-accent-900"
+                                className="ml-2 text-meta font-medium text-accent-700 hover:underline"
                               >
                                 why?
                               </button>
@@ -479,53 +396,45 @@ export function CalculationsPage() {
                 </div>
 
                 {result.uncomputable.length > 0 && (
-                  <div className="mt-3 rounded border border-ink-100 bg-ink-50 px-3 py-2">
-                    <p className="flex items-center gap-1.5 text-2xs uppercase tracking-wide text-ink-500">
-                      <Info className="h-3 w-3" /> Declared uncomputable
+                  <div className="mt-6">
+                    <p className="helm-label mb-1">Declared uncomputable</p>
+                    <p className="text-meta text-ink-500">
+                      Value positions the model does not claim to produce. Saying so is the difference between
+                      &ldquo;not applicable&rdquo; and &ldquo;forgotten&rdquo;.
                     </p>
-                    <p className="mt-1 text-2xs text-ink-500">
-                      Value positions the model does not claim to produce. Saying so is the
-                      difference between &ldquo;not applicable&rdquo; and &ldquo;forgotten&rdquo;.
-                    </p>
-                    <ul className="mt-1.5 space-y-0.5">
-                      {result.uncomputable.map((u: { nodeId: string; metricKey: string; reason: string }) => (
-                        <li key={`${u.nodeId}-${u.metricKey}`} className="text-xs text-ink-700">
-                          <span className="font-medium">{u.metricKey}</span>
-                          <span className="text-ink-500"> — {u.reason}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    {result.uncomputable.map((u: { nodeId: string; metricKey: string; reason: string }) => (
+                      <p key={`${u.nodeId}-${u.metricKey}`} className="border-b border-ink-200 py-2 text-dense text-ink-700">
+                        <span className="font-mono font-medium">{u.metricKey}</span>
+                        <span className="text-ink-500"> — {u.reason}</span>
+                      </p>
+                    ))}
                   </div>
                 )}
               </>
             )}
-          </PanelCard>
+          </section>
 
           {explaining && (
-            <PanelCard
-              title="Why is this number what it is?"
-              action={
-                <button
-                  type="button"
-                  onClick={() => setExplaining(null)}
-                  className="text-2xs text-ink-500 underline hover:text-ink-800"
-                >
-                  close
-                </button>
-              }
-            >
-              <p className="mb-2 text-2xs text-ink-500">
-                Every branch ends in a fact a source system asserted or a person assumed. Nothing
-                below is HELM&rsquo;s opinion.
+            <section id="why" className="mt-10 scroll-mt-6">
+              <SectionHead
+                title="Why is this number what it is?"
+                caveat={
+                  <button type="button" onClick={() => setExplaining(null)} className="hover:underline">
+                    close
+                  </button>
+                }
+              />
+              <p className="mt-3 text-dense text-ink-600">
+                Every branch ends in a fact a source system asserted or a person assumed. Nothing below is HELM&rsquo;s
+                opinion.
               </p>
-              <ExplanationNode node={explaining} />
-            </PanelCard>
+              <div className="mt-2">
+                <LineageTree node={toLineage(explaining)} />
+              </div>
+            </section>
           )}
         </div>
       </div>
-    </div>
+    </>
   );
 }
-
-/** Kept for the type import above; the page renders observations only via explain(). */
-export type { ValueObservation };

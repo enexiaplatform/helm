@@ -12,9 +12,8 @@
  * docs/architecture/decision-engine-assessment.md).
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, CircleAlert, History, Lock, MessageSquareWarning, ShieldQuestion } from 'lucide-react';
 import type {
   CriterionEvaluation,
   DecisionAlternative,
@@ -23,7 +22,16 @@ import type {
 } from '@helm/decision-runtime';
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
-import { PanelCard, EmptyState } from '../components/ui.tsx';
+import { SectionHead } from '../components/ui/SectionHead.tsx';
+import { FactRow } from '../components/ui/FactRow.tsx';
+import { Pill, type PillTone } from '../components/ui/Pill.tsx';
+import { Notice } from '../components/ui/Notice.tsx';
+import { EmptyState } from '../components/ui/EmptyState.tsx';
+import { CommitmentBanner } from '../components/decision/CommitmentBanner.tsx';
+import { CriteriaMatrix, type MatrixAlt, type MatrixCell, type MatrixRow } from '../components/decision/CriteriaMatrix.tsx';
+import { AssumptionList } from '../components/decision/AssumptionList.tsx';
+import { ChallengeList } from '../components/decision/ChallengeList.tsx';
+import { cn } from '../lib/cn.ts';
 import {
   displayConfidence,
   displayDate,
@@ -35,45 +43,27 @@ import {
 } from '../services/decisionRuntime.ts';
 import { alternativeOrder, criterionMatrix, loadWorkspace, targetLabel } from '../services/decisionWorkspace.ts';
 
-const stateTone: Record<string, string> = {
-  DRAFT: 'bg-ink-100 text-ink-600',
-  INVESTIGATING: 'bg-accent-100 text-accent-800',
-  MODELLING: 'bg-violet-100 text-violet-800',
-  READY_FOR_DECISION: 'bg-amber-100 text-amber-800',
-  COMMITTED: 'bg-emerald-100 text-emerald-800',
-  EXECUTING: 'bg-accent-100 text-accent-800',
-  COMPLETED: 'bg-ink-100 text-ink-600',
-  REVIEWED: 'bg-ink-100 text-ink-500',
-  CANCELLED: 'bg-ink-100 text-ink-500',
+/** "A — Expedite supply" → mark "A", label "Expedite supply". */
+function splitMark(label: string, index: number): { mark: string; label: string } {
+  const m = /^([A-Z])\s+—\s+(.+)$/.exec(label);
+  return m ? { mark: m[1], label: m[2] } : { mark: String.fromCharCode(65 + index), label };
+}
+
+const OUTCOME_TONE: Record<string, PillTone> = {
+  CONFIRMED: 'actual',
+  PARTIALLY_CONFIRMED: 'accepted',
+  DISPROVED: 'open',
+  UNKNOWN: 'neutral',
 };
 
-const outcomeTone: Record<string, string> = {
-  SATISFIED: 'text-emerald-700',
-  MEETS_TARGET: 'text-emerald-700',
-  VIOLATED: 'text-red-700',
-  MISSES_TARGET: 'text-amber-700',
-  STATED: 'text-ink-700',
-  ASSESSED: 'text-violet-800',
-  NOT_ASSESSED: 'text-ink-500',
-  UNKNOWN: 'text-ink-500',
-};
-
-const ratingTone: Record<string, string> = {
-  STRONG_SUPPORT: 'text-emerald-700',
-  SUPPORT: 'text-emerald-600',
-  NEUTRAL: 'text-ink-500',
-  CONCERN: 'text-amber-700',
-  STRONG_CONCERN: 'text-red-700',
-};
-
-const statusTone: Record<string, string> = {
-  MODELLED: 'bg-emerald-50 text-emerald-800',
-  UNMODELLED: 'bg-amber-50 text-amber-800',
-  WITHDRAWN: 'bg-ink-100 text-ink-500',
-};
-
-function Chip({ tone, children }: { tone: string; children: React.ReactNode }) {
-  return <span className={`rounded px-1.5 py-0.5 text-2xs font-medium ${tone}`}>{children}</span>;
+function toCell(e: CriterionEvaluation | undefined): MatrixCell {
+  if (!e) return { display: '—', outcome: 'NOT_ASSESSED' };
+  const note = [e.confidence !== null ? `c ${displayConfidence(e.confidence)}` : null, e.assessment?.author.label ?? null]
+    .filter(Boolean)
+    .join(' · ');
+  return e.assessment
+    ? { display: readable(e.assessment.rating), judgement: e.assessment.rating, outcome: e.outcome, note, title: e.explanation }
+    : { display: displayValue(e.value, e.unit, e.currency), outcome: e.outcome, note: note || undefined, title: e.explanation };
 }
 
 // ================================================================== page
@@ -136,671 +126,541 @@ export function DecisionDetailPage() {
       <EmptyState
         title="This decision could not be opened"
         detail={error}
-        action={
-          <Link to="/decisions" className="btn-secondary">
-            Back to decisions
-          </Link>
-        }
+        action={<Link to="/decisions">Back to decisions →</Link>}
       />
     );
   }
   if (!ctx || !workspace) {
-    return <p className="p-6 text-sm text-ink-500">Opening the decision…</p>;
+    return <p className="text-ui text-ink-500">Opening the decision…</p>;
   }
 
   const { decision, revision, readiness, commitment } = workspace;
-  const alternatives = alternativeOrder(workspace);
+  const ordered = alternativeOrder(workspace);
+  const modelled = ordered.filter((a) => a.status === 'MODELLED');
+  const offMatrix = ordered.filter((a) => a.status !== 'MODELLED');
+  const chosen = commitment ? workspace.alternatives.find((a) => a.id === commitment.chosenAlternativeId) : undefined;
+
+  const alts: MatrixAlt[] = modelled.map((a) => ({
+    ...splitMark(a.label, ordered.indexOf(a)),
+    chosen: commitment?.chosenAlternativeId === a.id,
+  }));
+  const rows: MatrixRow[] = criterionMatrix(workspace).map(({ criterionId, cells }) => {
+    const c = workspace.criteria.find((x) => x.id === criterionId)!;
+    return {
+      name: c.name,
+      meta: [
+        readable(c.style),
+        c.threshold !== null ? c.threshold : null,
+        c.required ? 'required' : null,
+        c.author.label,
+        c.demoPolicy ? 'demo management policy' : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      cells: modelled.map((a) => toCell(cells[workspace.alternatives.indexOf(a)])),
+    };
+  });
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 pb-16">
-      <Link to="/decisions" className="inline-flex items-center gap-1 text-xs text-ink-500 hover:text-ink-800">
-        <ArrowLeft className="h-3.5 w-3.5" /> Decisions
-      </Link>
+    <>
+      <div className="flex flex-wrap items-center gap-x-[14px] gap-y-2">
+        <Link to="/decisions" className="text-dense font-medium">
+          ← Decisions
+        </Link>
+        <span className="helm-label">Management · Decision</span>
+        <span className="helm-meta">
+          {[decision.scope || decision.title, `r${revision.revisionNumber}`].join(' · ')}
+        </span>
+      </div>
+      <h1 className="mt-3 max-w-[900px] text-title">{decision.managementQuestion}</h1>
+      <FactRow
+        className="mt-5 border-b border-ink-200 pb-[22px]"
+        facts={[
+          { label: 'Owner', value: decision.owner?.label ?? 'nobody yet' },
+          { label: 'State', value: readable(decision.state) },
+          { label: 'Decide by', value: displayDate(decision.horizon.decisionDeadline), mono: true },
+          { label: 'Look again on', value: displayDate(decision.horizon.reviewDate), mono: true },
+          {
+            label: 'Reversibility',
+            value: `${readable(decision.reversibility)}${decision.reversalWindowDays ? ` · ${decision.reversalWindowDays} days` : ''}`,
+          },
+          {
+            label: 'Triggered by',
+            value: decision.triggerRefs.length > 0 ? decision.triggerRefs.map((t) => t.label).join(' · ') : readable(decision.triggerType),
+          },
+          { label: 'Authority', value: `${readable(decision.authorityStatus)} · Phase 6` },
+        ]}
+      />
 
-      {/* -------------------------------------------- the management question */}
-      <header className="rounded-lg border border-ink-200 bg-white px-6 py-5 shadow-panel">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase leading-4 tracking-wide text-ink-500">
-              Management question
-            </p>
-            <h1
-              className="mt-2 tracking-display text-ink-950"
-              style={{ font: 'var(--type-question)', textWrap: 'balance' }}
-            >
-              {decision.managementQuestion}
-            </h1>
-            <p className="mt-1.5 text-xs text-ink-500">
-              {[decision.title, decision.scope].filter((x) => x).join(' · ')}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <Chip tone={stateTone[decision.state] ?? 'bg-ink-100 text-ink-600'}>{readable(decision.state)}</Chip>
-            <span className="text-2xs text-ink-500">
-              authority {readable(decision.authorityStatus)} · Phase 6
-            </span>
-          </div>
+      {commitment && chosen && (
+        <div className="mt-7">
+          <CommitmentBanner
+            chosen={chosen.label}
+            summary={commitment.summary}
+            committedAt={displayInstant(commitment.committedAt)}
+            by={`${commitment.committedByLabel} · ${readable(commitment.authorship)}`}
+            fingerprint={commitment.fingerprint.slice(0, 12)}
+          />
         </div>
-        <ReadinessStrip readiness={readiness} />
-      </header>
+      )}
 
-      {/* ------------------------------------------------- decision context */}
-      <PanelCard title="Context">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2 text-xs text-ink-700">
-            <p>{decision.context}</p>
-            <p className="text-ink-500">{decision.problem}</p>
+      <Readiness readiness={readiness} />
+
+      {/* ------------------------------------------------- why it is on the table */}
+      <section className="mt-10">
+        <SectionHead title="Why this is on the table" meta={`revision r${revision.revisionNumber} · ${readable(revision.state)}`} />
+        <div className="mt-4 flex flex-wrap items-start gap-x-10 gap-y-6">
+          <div className="grid min-w-0 flex-[1_1_480px] gap-3">
+            <p className="max-w-reading text-read text-ink-800">{decision.context}</p>
+            {decision.problem && <p className="max-w-reading text-base text-ink-600">{decision.problem}</p>}
             {decision.objectives.length > 0 && (
-              <ul className="list-disc space-y-0.5 pl-4 text-ink-600">
+              <div>
+                <p className="helm-label mb-1">Objectives</p>
                 {decision.objectives.map((o) => (
-                  <li key={o}>{o}</li>
+                  <p key={o} className="border-t border-ink-200 py-2 text-base text-ink-700">
+                    {o}
+                  </p>
                 ))}
-              </ul>
+              </div>
             )}
           </div>
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-            <Field label="Why now" value={`${readable(decision.triggerType)}`} />
-            <Field label="Owner" value={decision.owner ? `${decision.owner.label}` : 'nobody yet'} />
-            <Field label="Business time" value={displayInstant(decision.fork.effectiveAsOf)} />
-            <Field label="Known through" value={displayInstant(decision.fork.recordedThrough)} />
-            <Field label="Decide by" value={displayDate(decision.horizon.decisionDeadline)} />
-            <Field label="Effective from" value={displayDate(decision.horizon.effectiveFrom)} />
-            <Field label="Outcome by" value={displayDate(decision.horizon.expectedOutcomeHorizon)} />
-            <Field label="Review on" value={displayDate(decision.horizon.reviewDate)} />
-            <Field
-              label="Reversibility"
-              value={`${readable(decision.reversibility)}${
-                decision.reversalWindowDays ? ` · ${decision.reversalWindowDays} days` : ''
-              }`}
-            />
-            <Field label="Revision" value={`r${revision.revisionNumber} · ${readable(revision.state)}`} />
+          <dl className="grid min-w-[260px] flex-[0_1_340px] grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+            {[
+              ['Business time', displayInstant(decision.fork.effectiveAsOf)],
+              ['Known through', displayInstant(decision.fork.recordedThrough)],
+              ['Effective from', displayDate(decision.horizon.effectiveFrom)],
+              ['Outcome by', displayDate(decision.horizon.expectedOutcomeHorizon)],
+            ].map(([label, value]) => (
+              <Fragment key={label}>
+                <dt className="text-meta text-ink-500">{label}</dt>
+                <dd className="text-right font-mono text-dense font-medium">{value}</dd>
+              </Fragment>
+            ))}
           </dl>
         </div>
-        {decision.triggerRefs.length > 0 && (
-          <p className="mt-3 border-t border-ink-100 pt-2 text-2xs text-ink-500">
-            Triggered by {decision.triggerRefs.map((t) => `${t.label}`).join(' · ')}
-          </p>
-        )}
         {workspace.revisions.length > 1 && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-ink-100 pt-2">
-            <span className="text-2xs text-ink-500">Revisions:</span>
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <span className="helm-label mr-1">Revisions</span>
             {workspace.revisions.map((r) => (
               <button
                 key={r.id}
                 type="button"
                 onClick={() => setRevisionId(r.id)}
-                className={`rounded px-1.5 py-0.5 text-2xs ${
-                  r.id === revision.id ? 'bg-ink-900 text-white' : 'bg-ink-100 text-ink-600 hover:bg-ink-200'
-                }`}
-                title={r.reconsiderationReason ?? readable(r.reason)}>
+                title={r.reconsiderationReason ?? readable(r.reason)}
+                className={cn(
+                  'rounded-lg px-[10px] py-1 font-mono text-meta',
+                  r.id === revision.id ? 'bg-accent-800 text-white' : 'bg-ink-100 text-ink-700 hover:bg-ink-200',
+                )}
+              >
                 r{r.revisionNumber} · {readable(r.reason)}
               </button>
             ))}
           </div>
         )}
-      </PanelCard>
+      </section>
 
-      {/* ------------------------- alternatives and the future-state comparison */}
-      <PanelCard
-        title="Alternatives and what each future does"
-        action={
-          <span className="text-2xs text-ink-500">
-            every value read from the alternative&rsquo;s own simulation
-          </span>
-        }>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-xs">
-            <thead>
-              <tr className="border-b border-ink-200 align-bottom">
-                <th className="w-56 py-2 pr-3 text-2xs font-semibold uppercase tracking-wide text-ink-500">
-                  What management said matters
-                </th>
-                {alternatives.map((a) => (
-                  <th key={a.id} className="px-2 py-2">
-                    <span className="block font-semibold text-ink-900">{a.label}</span>
-                    <span className="mt-0.5 flex items-center gap-1">
-                      <Chip tone={statusTone[a.status] ?? 'bg-ink-100 text-ink-500'}>{readable(a.status)}</Chip>
-                      {commitment?.chosenAlternativeId === a.id && (
-                        <Chip tone="bg-emerald-600 text-white">chosen</Chip>
-                      )}
-                    </span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {criterionMatrix(workspace).map(({ criterionId, cells }) => {
-                const criterion = workspace.criteria.find((c) => c.id === criterionId)!;
-                return (
-                  <tr key={criterionId} className="border-b border-ink-100 align-top">
-                    <th scope="row" className="py-2 pr-3 font-normal">
-                      <span className="block font-medium text-ink-900">{criterion.name}</span>
-                      <span className="text-2xs text-ink-500">
-                        {readable(criterion.style)}
-                        {criterion.threshold !== null && ` · ${criterion.threshold}`}
-                        {criterion.required && ' · required'}
-                      </span>
-                      <span className="mt-0.5 block text-2xs text-ink-500">
-                        {criterion.author.label}
-                        {criterion.demoPolicy && ' · demo management policy'}
-                      </span>
-                    </th>
-                    {cells.map((e, i) => (
-                      <td key={alternatives[i].id} className="px-2 py-2">
-                        <CriterionCell evaluation={e} />
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <ul className="mt-3 space-y-1 border-t border-ink-100 pt-2 text-2xs text-ink-500">
-          {alternatives
-            .filter((a) => a.status !== 'MODELLED')
-            .map((a) => (
-              <li key={a.id}>
-                <span className="font-medium text-ink-700">{a.label}:</span> {a.unmodelledReason}
-              </li>
-            ))}
-        </ul>
-      </PanelCard>
+      {/* ------------------------------------------------------ the matrix */}
+      <section className="mt-10">
+        <SectionHead
+          title="What each alternative does, on the criteria management wrote down"
+          caveat="nothing is ranked, weighted or totalled"
+        />
+        {alts.length > 0 ? (
+          <CriteriaMatrix alternatives={alts} rows={rows} />
+        ) : (
+          <p className="mt-4 text-base text-ink-600">No alternative has a computed future yet, so there is nothing to read against the criteria.</p>
+        )}
+        {offMatrix.map((a) => (
+          <p key={a.id} className="mt-3 text-dense text-ink-500">
+            <span className="font-medium text-ink-700">{a.label}</span> is on the table but {readable(a.status)}
+            {a.unmodelledReason ? ` — ${a.unmodelledReason}` : '.'}
+          </p>
+        ))}
+      </section>
 
-      {/* ------------------------------------------------------- trade-offs */}
-      {workspace.tradeOffs && <TradeOffPanel workspace={workspace} />}
+      {workspace.tradeOffs && <TradeOffs workspace={workspace} />}
 
       {/* ---------------------------------------- assumptions and challenges */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <AssumptionsPanel workspace={workspace} />
-        <ChallengesPanel workspace={workspace} />
+      <div className="mt-11 flex flex-wrap items-start gap-10">
+        <section className="min-w-0 flex-[1_1_440px]">
+          <SectionHead title="What this rests on" caveat="who stands behind each" />
+          {workspace.assumptions.length === 0 ? (
+            <p className="mt-3 text-base text-ink-600">No assumptions have been written down.</p>
+          ) : (
+            <AssumptionList
+              items={workspace.assumptions.map((a) => ({
+                id: a.id,
+                statement: a.statement,
+                owner: a.owner?.label ?? null,
+                criticality: a.criticality,
+                confidence: a.confidence,
+                source: a.source || undefined,
+                outcome:
+                  a.outcome === 'PENDING'
+                    ? undefined
+                    : { word: a.outcome.replace('_', ' '), tone: OUTCOME_TONE[a.outcome] ?? 'neutral', note: a.outcomeNote },
+              }))}
+            />
+          )}
+        </section>
+        <section className="min-w-0 flex-[1_1_360px]">
+          <SectionHead title="Who disagreed" caveat="decision evidence" />
+          {workspace.challenges.length === 0 ? (
+            <p className="mt-3 text-base text-ink-600">Nobody has challenged anything here.</p>
+          ) : (
+            <ChallengeList
+              items={workspace.challenges.map((c) => ({
+                id: c.id,
+                author: c.author.label,
+                status: c.status,
+                concern: c.concern,
+                target: targetLabel(workspace, c.targetKind, c.targetId),
+                resolution: c.resolution ?? undefined,
+              }))}
+            />
+          )}
+        </section>
       </div>
 
-      <EvidencePanel workspace={workspace} />
+      <Evidence workspace={workspace} />
 
-      {/* ------------------------------------------------------- commitment */}
       {commitment ? (
-        <CommitmentPanel workspace={workspace} explanation={explanation} />
+        <CommitmentRecord workspace={workspace} explanation={explanation} />
       ) : (
-        <PanelCard title="Commitment">
-          <p className="text-xs text-ink-500">
+        <section className="mt-11">
+          <SectionHead title="Commitment" />
+          <p className="mt-3 max-w-reading text-base text-ink-600">
             Nothing has been committed. HELM shows what each alternative does and how each stands against the criteria
             management wrote down; choosing between them is a management act, recorded here when it happens.
           </p>
-        </PanelCard>
+        </section>
       )}
 
-      <TimelinePanel workspace={workspace} />
-    </div>
-  );
-}
-
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <>
-      <dt className="text-ink-500">{label}</dt>
-      <dd className="text-right font-medium text-ink-800">{value}</dd>
+      <Timeline workspace={workspace} />
     </>
   );
 }
 
 // ============================================================== readiness
 
-function ReadinessStrip({ readiness }: { readiness: DecisionWorkspace['readiness'] }) {
-  const tone =
-    readiness.state === 'READY'
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-      : readiness.state === 'READY_WITH_GAPS'
-        ? 'border-amber-200 bg-amber-50 text-amber-900'
-        : 'border-red-200 bg-red-50 text-red-900';
+function Readiness({ readiness }: { readiness: DecisionWorkspace['readiness'] }) {
+  const tone = readiness.state === 'READY' ? 'text-emerald-700' : readiness.state === 'READY_WITH_GAPS' ? 'text-amber-700' : 'text-red-700';
   return (
-    <div className={`mt-3 rounded-md border px-3 py-2 ${tone}`}>
-      <p className="flex items-center gap-1.5 text-xs font-semibold">
-        <ShieldQuestion className="h-3.5 w-3.5" />
-        {readable(readiness.state)}
-        <span className="font-normal opacity-80">· procedural completeness only, never a judgement of the choice</span>
-      </p>
-      {readiness.gaps.length > 0 && (
-        <ul className="mt-1 space-y-0.5 text-2xs">
-          {readiness.gaps.map((g, i) => (
-            <li key={`${g.code}-${i}`}>
-              <span className="font-mono opacity-70">{g.severity === 'BLOCKING' ? 'blocking' : 'gap'}</span> · {g.message}
-            </li>
-          ))}
-        </ul>
+    <section className="mt-10">
+      <SectionHead
+        title="Is the preparation complete?"
+        meta={<span className={cn('font-medium', tone)}>{readiness.state}</span>}
+        caveat="procedural completeness only, never a judgement of the choice"
+      />
+      {readiness.gaps.length === 0 ? (
+        <p className="mt-3 text-base text-ink-600">{readiness.statement || 'Nothing the procedure asks for is missing.'}</p>
+      ) : (
+        readiness.gaps.map((g, i) => (
+          <div key={`${g.code}-${i}`} className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-4 border-b border-ink-200 py-[10px]">
+            <span className={cn('font-mono text-[11px] font-semibold leading-5 tracking-[0.04em]', g.severity === 'BLOCKING' ? 'text-red-700' : 'text-amber-700')}>
+              {g.severity}
+            </span>
+            <span className="text-dense text-ink-700">{g.message}</span>
+          </div>
+        ))
       )}
-    </div>
-  );
-}
-
-// ========================================================= criterion cell
-
-function CriterionCell({ evaluation }: { evaluation: CriterionEvaluation | undefined }) {
-  if (!evaluation) return <span className="text-ink-300">—</span>;
-  const { outcome, value, unit, currency, confidence, assessment } = evaluation;
-  return (
-    <span className="block" title={evaluation.explanation}>
-      <span className={`font-mono ${outcomeTone[outcome] ?? 'text-ink-700'}`}>
-        {assessment ? (
-          <span className={ratingTone[assessment.rating] ?? 'text-ink-600'}>{readable(assessment.rating)}</span>
-        ) : (
-          displayValue(value, unit, currency)
-        )}
-      </span>
-      <span className={`mt-0.5 block text-2xs ${outcomeTone[outcome] ?? 'text-ink-500'}`}>{readable(outcome)}</span>
-      {confidence !== null && <span className="block text-2xs text-ink-500">c {displayConfidence(confidence)}</span>}
-      {assessment && <span className="block text-2xs text-ink-500">{assessment.author.label}</span>}
-    </span>
+    </section>
   );
 }
 
 // ============================================================= trade-offs
 
-function TradeOffPanel({ workspace }: { workspace: DecisionWorkspace }) {
+type TradeLine = NonNullable<DecisionWorkspace['tradeOffs']>['columns'][number]['gains'][number];
+
+function TradeOffs({ workspace }: { workspace: DecisionWorkspace }) {
   const space = workspace.tradeOffs!;
   const reference = workspace.alternatives.find((a) => a.id === space.referenceAlternativeId);
   const columns = space.columns.filter((c) => c.alternativeId !== space.referenceAlternativeId);
+  const warnings = space.comparability.flatMap((c) => c.warnings.map((w, i) => ({ key: `${c.state.runId}-${i}`, text: `${c.state.label}: ${w}` })));
   return (
-    <PanelCard
-      title="What each alternative gains, and what it gives up"
-      action={`relative to ${reference?.label ?? 'the reference'}`}>
-      <p className="mb-3 rounded-md border border-ink-200 bg-ink-50 px-3 py-2 text-2xs text-ink-600">{space.statement}</p>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+    <section className="mt-11">
+      <SectionHead title="What each alternative gains, and what it gives up" caveat={`relative to ${reference?.label ?? 'the reference'}`} />
+      <p className="mt-3 max-w-reading text-base text-ink-700">{space.statement}</p>
+      <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-x-10 gap-y-7">
         {columns.map((c) => (
-          <div key={c.alternativeId} className="rounded-md border border-ink-200 p-3">
-            <p className="text-xs font-semibold text-ink-900">{c.alternativeLabel}</p>
+          <div key={c.alternativeId}>
+            <p className="border-b border-ink-950 pb-2 font-serif text-panel font-medium">{c.alternativeLabel}</p>
             <Lines title="Gains" tone="text-emerald-700" lines={c.gains} />
-            <Lines title="Gives up" tone="text-amber-800" lines={c.concessions} />
+            <Lines title="Gives up" tone="text-amber-700" lines={c.concessions} />
             <Lines title="Not comparable" tone="text-ink-500" lines={c.unresolved} />
           </div>
         ))}
       </div>
       {space.dominance.length > 0 && (
-        <div className="mt-3 border-t border-ink-100 pt-2">
-          <p className="text-2xs font-semibold uppercase tracking-wide text-ink-500">Facts about the comparable criteria</p>
-          <ul className="mt-1 space-y-1 text-2xs text-ink-600">
-            {space.dominance.map((d, i) => (
-              <li key={i}>{d.statement}</li>
-            ))}
-          </ul>
+        <div className="mt-6">
+          <p className="helm-label mb-1">Facts about the comparable criteria</p>
+          {space.dominance.map((d, i) => (
+            <p key={i} className="border-t border-ink-200 py-2 text-dense text-ink-700">
+              {d.statement}
+            </p>
+          ))}
         </div>
       )}
-      {space.comparability.some((c) => c.warnings.length > 0) && (
-        <ul className="mt-2 space-y-1 text-2xs text-amber-800">
-          {space.comparability.flatMap((c) =>
-            c.warnings.map((w, i) => (
-              <li key={`${c.state.runId}-${i}`} className="flex items-start gap-1">
-                <CircleAlert className="mt-0.5 h-3 w-3 shrink-0" />
-                <span>
-                  {c.state.label}: {w}
-                </span>
-              </li>
-            )),
-          )}
-        </ul>
+      {warnings.length > 0 && (
+        <Notice tone="warning" label="Read with care" className="mt-5">
+          {warnings.map((w) => (
+            <p key={w.key}>{w.text}</p>
+          ))}
+        </Notice>
       )}
-    </PanelCard>
+    </section>
   );
 }
 
-function Lines({
-  title,
-  tone,
-  lines,
-}: {
-  title: string;
-  tone: string;
-  lines: DecisionWorkspace['tradeOffs'] extends null ? never : NonNullable<DecisionWorkspace['tradeOffs']>['columns'][number]['gains'];
-}) {
+function Lines({ title, tone, lines }: { title: string; tone: string; lines: readonly TradeLine[] }) {
   if (lines.length === 0) return null;
   return (
-    <div className="mt-2">
-      <p className={`text-2xs font-semibold uppercase tracking-wide ${tone}`}>{title}</p>
-      <ul className="mt-0.5 space-y-0.5 text-2xs text-ink-600">
-        {lines.map((l, i) => (
-          <li key={`${l.label}-${i}`} title={l.note ?? ''}>
-            {l.label}:{' '}
-            <span className="font-mono">
-              {l.referenceValue ?? '—'} → {l.alternativeValue ?? '—'}
-            </span>
-            {l.delta && <span className="text-ink-500"> ({l.delta})</span>}
-          </li>
-        ))}
-      </ul>
+    <div className="mt-3">
+      <p className={cn('font-sans text-label font-medium uppercase', tone)}>{title}</p>
+      {lines.map((l, i) => (
+        <div key={`${l.label}-${i}`} title={l.note ?? ''} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-b border-ink-100 py-[6px]">
+          <span className="text-dense text-ink-700">{l.label}</span>
+          <span className="text-right font-mono text-meta text-ink-800">
+            {l.referenceValue ?? '—'} → {l.alternativeValue ?? '—'}
+            {l.delta && <span className="block text-ink-500">{l.delta}</span>}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
 
-// ============================================================ assumptions
+// =============================================================== evidence
 
-function AssumptionsPanel({ workspace }: { workspace: DecisionWorkspace }) {
-  return (
-    <PanelCard title="What this rests on" action="who stands behind each">
-      <ul className="space-y-2 text-xs">
-        {workspace.assumptions.map((a) => (
-          <li key={a.id} className="border-b border-ink-100 pb-2 last:border-0 last:pb-0">
-            <p className="text-ink-800">{a.statement}</p>
-            <p className="mt-0.5 text-2xs text-ink-500">
-              {a.owner ? (
-                <span className="text-ink-700">{a.owner.label}</span>
-              ) : (
-                <span className="text-amber-700">nobody stands behind this</span>
-              )}
-              {' · '}
-              {readable(a.criticality)}
-              {a.confidence !== null && ` · confidence ${displayConfidence(a.confidence)}`}
-              {a.source && ` · ${a.source}`}
-            </p>
-            {a.outcome !== 'PENDING' && (
-              <p className="mt-0.5 text-2xs">
-                <Chip tone={a.outcome === 'DISPROVED' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-800'}>
-                  {readable(a.outcome)}
-                </Chip>{' '}
-                <span className="text-ink-500">{a.outcomeNote}</span>
-              </p>
-            )}
-          </li>
-        ))}
-        {workspace.assumptions.length === 0 && <li className="text-ink-500">No assumptions have been written down.</li>}
-      </ul>
-    </PanelCard>
-  );
-}
-
-function ChallengesPanel({ workspace }: { workspace: DecisionWorkspace }) {
-  return (
-    <PanelCard
-      title="Who disagreed"
-      action="decision evidence, not a conversation">
-      <ul className="space-y-2 text-xs">
-        {workspace.challenges.map((c) => (
-          <li key={c.id} className="border-b border-ink-100 pb-2 last:border-0 last:pb-0">
-            <p className="flex items-center gap-1.5">
-              <MessageSquareWarning className="h-3.5 w-3.5 text-amber-600" />
-              <span className="font-medium text-ink-800">{c.author.label}</span>
-              <Chip tone={c.status === 'OPEN' ? 'bg-amber-50 text-amber-800' : 'bg-ink-100 text-ink-600'}>
-                {readable(c.status)}
-              </Chip>
-            </p>
-            <p className="mt-0.5 text-ink-700">{c.concern}</p>
-            <p className="mt-0.5 text-2xs text-ink-500">
-              on {targetLabel(workspace, c.targetKind, c.targetId)}
-              {c.resolution && ` — ${c.resolution}`}
-            </p>
-          </li>
-        ))}
-        {workspace.challenges.length === 0 && <li className="text-ink-500">Nobody has challenged anything here.</li>}
-      </ul>
-    </PanelCard>
-  );
-}
-
-function EvidencePanel({ workspace }: { workspace: DecisionWorkspace }) {
+function Evidence({ workspace }: { workspace: DecisionWorkspace }) {
   if (workspace.evidence.length === 0) return null;
   return (
-    <PanelCard title="Evidence" action="what it bears on, and how">
-      <table className="w-full text-left text-xs">
-        <thead className="text-2xs text-ink-500">
-          <tr>
-            <th className="py-1">Evidence</th>
-            <th>Bears on</th>
-            <th>How</th>
-            <th>Source</th>
-            <th>Known</th>
-            <th>Conf.</th>
-          </tr>
-        </thead>
-        <tbody>
-          {workspace.evidence.map((e) => (
-            <tr key={e.id} className="border-t border-ink-100 align-top">
-              <td className="py-1.5 pr-2">
-                <span className="block text-ink-800">{e.title}</span>
-                <span className="text-2xs text-ink-500">{readable(e.kind)}</span>
-              </td>
-              <td className="pr-2 text-ink-600">{targetLabel(workspace, e.targetKind, e.targetId)}</td>
-              <td className="pr-2">
-                <Chip
-                  tone={
-                    e.relation === 'CHALLENGE' || e.relation === 'INVALIDATE'
-                      ? 'bg-amber-50 text-amber-800'
-                      : 'bg-ink-100 text-ink-600'
-                  }>
-                  {readable(e.relation)}
-                </Chip>
-              </td>
-              <td className="pr-2 text-ink-500">
-                {e.sourceSystem}
-                {e.sourceRef && ` · ${e.sourceRef}`}
-              </td>
-              <td className="pr-2 text-2xs text-ink-500">{displayInstant(e.recordedAt)}</td>
-              <td className="font-mono text-2xs text-ink-500">{displayConfidence(e.confidence)}</td>
+    <section className="mt-11">
+      <SectionHead title="Evidence" caveat="what it bears on, and how" />
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] border-collapse">
+          <thead>
+            <tr>
+              {['Evidence', 'Bears on', 'How', 'Source', 'Known', 'Conf.'].map((h, i) => (
+                <th key={h} className={cn('helm-label pb-2 pt-[14px] text-left', i > 0 && 'pl-3', i === 5 && 'text-right')}>
+                  {h}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </PanelCard>
+          </thead>
+          <tbody>
+            {workspace.evidence.map((e) => (
+              <tr key={e.id} className="border-t border-ink-200 align-top">
+                <td className="py-3 pr-3">
+                  <span className="block text-ui font-medium">{e.title}</span>
+                  <span className="helm-meta">{e.kind}</span>
+                </td>
+                <td className="py-3 pl-3 text-dense text-ink-700">{targetLabel(workspace, e.targetKind, e.targetId)}</td>
+                <td className="py-3 pl-3">
+                  <Pill tone={e.relation === 'CHALLENGE' || e.relation === 'INVALIDATE' ? 'accepted' : 'neutral'}>{e.relation}</Pill>
+                </td>
+                <td className="py-3 pl-3 font-mono text-meta text-ink-600">
+                  {e.sourceSystem}
+                  {e.sourceRef && ` · ${e.sourceRef}`}
+                </td>
+                <td className="py-3 pl-3 font-mono text-meta text-ink-600">{displayInstant(e.recordedAt)}</td>
+                <td className="py-3 pl-3 text-right font-mono text-dense">{displayConfidence(e.confidence)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
 // ============================================================= commitment
 
-function CommitmentPanel({
-  workspace,
-  explanation,
-}: {
-  workspace: DecisionWorkspace;
-  explanation: DecisionExplanation | null;
-}) {
-  const c = workspace.commitment!;
-  const chosen = workspace.alternatives.find((a) => a.id === c.chosenAlternativeId);
-  const fresh = explanation?.evidenceAfterCommitment ?? [];
+function Rows({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <PanelCard
-      title={
-        <span className="flex items-center gap-2">
-          <Lock className="h-4 w-4 text-emerald-700" /> What management committed to
-        </span>
-      }
-      action={
-        <span className="text-2xs text-ink-500" title={c.fingerprint}>
-          {readable(c.authorship)} · {displayInstant(c.committedAt)}
-        </span>
-      }>
-      <p className="text-sm font-medium text-ink-900">{chosen?.label}</p>
-      <p className="mt-1 text-xs text-ink-700">{c.summary}</p>
-      <p className="mt-1 text-2xs text-ink-500">
-        by {c.committedByLabel} · authority {readable(c.authorityStatus)} — whether the actor was permitted is Phase 6&rsquo;s
-        question, not this record&rsquo;s
-      </p>
-
-      <Section title="Why">
-        <ul className="space-y-1 text-xs">
-          {c.rationale.map((r, i) => (
-            <li key={i}>
-              <span className="font-medium text-ink-800">[{r.label}]</span> <span className="text-ink-700">{r.statement}</span>
-            </li>
-          ))}
-        </ul>
-      </Section>
-
-      <Section title="What management accepted by choosing it">
-        <ul className="space-y-1.5 text-xs">
-          {c.acceptedTradeOffs.map((t, i) => (
-            <li key={i} className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-900">
-              <span className="font-medium">{t.label}.</span> {t.statement}
-              {t.givenUp && (
-                <span className="mt-0.5 block text-2xs opacity-80">
-                  gave up {t.givenUp}
-                  {t.inFavourOf && ` in favour of ${t.inFavourOf}`}
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      </Section>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Section title="Expected, from the future state it committed against">
-          <ul className="space-y-1 text-xs">
-            {c.expectedOutcomes.map((e, i) => (
-              <li key={i} className="flex items-baseline justify-between gap-2">
-                <span className="text-ink-600">{e.label}</span>
-                <span className="text-right font-mono text-ink-900">
-                  {e.kind === 'MODELLED' ? displayValue(e.expectedValue, e.unit, e.currency) : e.statement}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-        <Section title="Look again when">
-          <ul className="space-y-1 text-xs text-ink-700">
-            {c.reviewTriggers.map((t) => (
-              <li key={t.key}>{t.description}</li>
-            ))}
-          </ul>
-        </Section>
-      </div>
-
-      {workspace.actionIntents.length > 0 && (
-        <Section title="What is meant to happen next">
-          <ul className="space-y-1 text-xs">
-            {workspace.actionIntents.map((a) => (
-              <li key={a.id} className="flex items-baseline justify-between gap-2">
-                <span className="text-ink-800">{a.title}</span>
-                <span className="shrink-0 text-2xs text-ink-500">
-                  {a.ownerLabel} · {displayDate(a.dueDate)} · {a.targetSystem}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1 text-2xs text-ink-500">
-            HELM records the intent. The system named beside each one does the work.
-          </p>
-        </Section>
-      )}
-
-      {workspace.snapshot && (
-        <Section title="What was on the table, frozen">
-          <p className="text-2xs text-ink-500">
-            <span className="font-mono">{workspace.snapshot.fingerprint}</span> · captured{' '}
-            {displayInstant(workspace.snapshot.capturedAt)} · known through {displayInstant(workspace.snapshot.fork.recordedThrough)}
-          </p>
-          <ul className="mt-1 space-y-0.5 text-2xs text-ink-600">
-            {workspace.snapshot.alternatives.map((a) => (
-              <li key={a.alternativeId}>
-                {a.chosen ? '✓ ' : '· '}
-                {a.label} — {a.scenarioKey ? `${a.scenarioKey} · ${a.scenarioFingerprint}` : readable(a.status)}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1 text-2xs text-ink-500">
-            {workspace.snapshot.criterionIds.length} criteria, {workspace.snapshot.assumptionIds.length} assumptions,{' '}
-            {workspace.snapshot.evidenceIds.length} pieces of evidence, {workspace.snapshot.openChallenges.length} challenge
-            {workspace.snapshot.openChallenges.length === 1 ? '' : 's'} still open when this was decided.
-          </p>
-        </Section>
-      )}
-
-      {fresh.length > 0 && (
-        <div className="mt-3 rounded-md border border-accent-200 bg-accent-50 px-3 py-2">
-          <p className="text-2xs font-semibold text-accent-900">
-            {fresh.length} piece{fresh.length === 1 ? '' : 's'} of evidence arrived after this was decided
-          </p>
-          <ul className="mt-0.5 space-y-0.5 text-2xs text-accent-900">
-            {fresh.map((e) => (
-              <li key={e.id}>
-                {e.title} · {displayInstant(e.recordedAt)}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1 text-2xs text-accent-800 opacity-80">
-            The record above is unchanged. Acting on this means reconsidering, which opens a new revision.
-          </p>
-        </div>
-      )}
-
-      {workspace.outcomeReviews.length > 0 && <OutcomeReviews workspace={workspace} />}
-    </PanelCard>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mt-3 border-t border-ink-100 pt-2">
-      <p className="mb-1 text-2xs font-semibold uppercase tracking-wide text-ink-500">{title}</p>
+    <div>
+      <p className="mb-[6px] text-dense font-semibold">{label}</p>
       {children}
     </div>
   );
 }
 
+function CommitmentRecord({ workspace, explanation }: { workspace: DecisionWorkspace; explanation: DecisionExplanation | null }) {
+  const c = workspace.commitment!;
+  const fresh = explanation?.evidenceAfterCommitment ?? [];
+  const snap = workspace.snapshot;
+  return (
+    <section className="mt-11">
+      <SectionHead
+        title="What management committed to, and why"
+        meta={`${readable(c.authorship)} · ${displayInstant(c.committedAt)}`}
+        caveat={`authority ${readable(c.authorityStatus)} — Phase 6's question, not this record's`}
+      />
+      <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-x-10 gap-y-7">
+        <Rows label="Why">
+          {c.rationale.map((r, i) => (
+            <p key={i} className="border-t border-ink-200 py-2 text-base text-ink-700">
+              <span className="font-medium text-ink-950">{r.label}.</span> {r.statement}
+            </p>
+          ))}
+        </Rows>
+        <Rows label="What management accepted by choosing it">
+          {c.acceptedTradeOffs.map((t, i) => (
+            <div key={i} className="border-t border-ink-200 py-2">
+              <p className="text-base text-ink-700">
+                <span className="font-medium text-amber-800">{t.label}.</span> {t.statement}
+              </p>
+              {t.givenUp && (
+                <p className="text-meta text-ink-500">
+                  gave up {t.givenUp}
+                  {t.inFavourOf && ` in favour of ${t.inFavourOf}`}
+                </p>
+              )}
+            </div>
+          ))}
+        </Rows>
+        <Rows label="Expected, from the future state it committed against">
+          {c.expectedOutcomes.map((e, i) => (
+            <div key={i} className="flex items-baseline justify-between gap-4 border-t border-ink-200 py-2">
+              <span className="text-dense text-ink-600">{e.label}</span>
+              <span className="text-right font-mono text-dense font-medium">
+                {e.kind === 'MODELLED' ? displayValue(e.expectedValue, e.unit, e.currency) : e.statement}
+              </span>
+            </div>
+          ))}
+        </Rows>
+        <Rows label="Look again when">
+          {c.reviewTriggers.map((t) => (
+            <p key={t.key} className="border-t border-ink-200 py-2 text-base text-ink-700">
+              {t.description}
+            </p>
+          ))}
+        </Rows>
+      </div>
+
+      {workspace.actionIntents.length > 0 && (
+        <div className="mt-8">
+          <Rows label="What is meant to happen next">
+            {workspace.actionIntents.map((a) => (
+              <div key={a.id} className="flex flex-wrap items-baseline justify-between gap-x-4 border-t border-ink-200 py-2">
+                <span className="text-base text-ink-800">{a.title}</span>
+                <span className="helm-meta">
+                  {a.ownerLabel} · {displayDate(a.dueDate)} · {a.targetSystem}
+                </span>
+              </div>
+            ))}
+            <p className="mt-2 text-meta text-ink-500">HELM records the intent. The system named beside each one does the work.</p>
+          </Rows>
+        </div>
+      )}
+
+      {snap && (
+        <div className="mt-8">
+          <Rows label="What was on the table, frozen">
+            <p className="helm-meta">
+              {snap.fingerprint} · captured {displayInstant(snap.capturedAt)} · known through {displayInstant(snap.fork.recordedThrough)}
+            </p>
+            <div className="mt-2">
+              {snap.alternatives.map((a) => (
+                <div key={a.alternativeId} className="flex flex-wrap items-baseline justify-between gap-x-4 border-t border-ink-200 py-2">
+                  <span className={cn('text-dense', a.chosen ? 'font-semibold text-ink-950' : 'text-ink-700')}>
+                    {a.label}
+                    {a.chosen && ' ✓'}
+                  </span>
+                  <span className="helm-meta">{a.scenarioKey ? `${a.scenarioKey} · ${a.scenarioFingerprint}` : a.status}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-meta text-ink-500">
+              {snap.criterionIds.length} criteria, {snap.assumptionIds.length} assumptions, {snap.evidenceIds.length} pieces of
+              evidence, {snap.openChallenges.length} challenge{snap.openChallenges.length === 1 ? '' : 's'} still open when
+              this was decided.
+            </p>
+          </Rows>
+        </div>
+      )}
+
+      {fresh.length > 0 && (
+        <Notice tone="after" label="Arrived after the commitment" className="mt-6">
+          {fresh.map((e) => (
+            <p key={e.id}>
+              {e.title} <span className="font-mono text-meta text-accent-700">· {displayInstant(e.recordedAt)}</span>
+            </p>
+          ))}
+          <p className="mt-1 text-meta text-accent-700">
+            The record above is unchanged. Acting on this means reconsidering, which opens a new revision.
+          </p>
+        </Notice>
+      )}
+
+      {workspace.outcomeReviews.length > 0 && <OutcomeReviews workspace={workspace} />}
+    </section>
+  );
+}
+
 function OutcomeReviews({ workspace }: { workspace: DecisionWorkspace }) {
   return (
-    <Section title="Expected against actual">
-      {workspace.outcomeReviews.map((r) => (
-        <div key={r.id} className="mb-2 last:mb-0">
-          <p className="text-2xs text-ink-500">
-            {r.reviewedByLabel} · {displayInstant(r.reviewedAt)}
-          </p>
-          <table className="mt-1 w-full text-left text-xs">
-            <thead className="text-2xs text-ink-500">
-              <tr>
-                <th className="py-1">Value</th>
-                <th className="text-right">Expected</th>
-                <th className="text-right">Actual</th>
-                <th className="text-right">Variance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {r.variances.map((v, i) => (
-                <tr key={i} className="border-t border-ink-100">
-                  <td className="py-1 text-ink-700">{v.label}</td>
-                  <td className="text-right font-mono text-ink-600">{v.expected ?? '—'}</td>
-                  <td className="text-right font-mono text-ink-900">{v.actual ?? '—'}</td>
-                  <td className="text-right font-mono text-ink-700">{v.variance ?? '—'}</td>
+    <div className="mt-8">
+      <Rows label="Expected against actual">
+        {workspace.outcomeReviews.map((r) => (
+          <div key={r.id} className="mb-5 last:mb-0">
+            <p className="helm-meta">
+              {r.reviewedByLabel} · {displayInstant(r.reviewedAt)}
+            </p>
+            <table className="mt-1 w-full border-collapse">
+              <thead>
+                <tr>
+                  {['Value', 'Expected', 'Actual', 'Variance'].map((h, i) => (
+                    <th key={h} className={cn('helm-label pb-2', i ? 'pl-3 text-right' : 'text-left')}>
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {r.assumptionResults.length > 0 && (
-            <ul className="mt-1 space-y-0.5 text-2xs text-ink-600">
-              {r.assumptionResults.map((a) => (
-                <li key={a.assumptionId}>
-                  <Chip tone={a.outcome === 'DISPROVED' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-800'}>
-                    {readable(a.outcome)}
-                  </Chip>{' '}
+              </thead>
+              <tbody>
+                {r.variances.map((v, i) => (
+                  <tr key={i} className="border-t border-ink-200">
+                    <td className="py-[10px] text-dense text-ink-700">{v.label}</td>
+                    <td className="py-[10px] pl-3 text-right font-mono text-dense text-ink-600">{v.expected ?? '—'}</td>
+                    <td className="py-[10px] pl-3 text-right font-mono text-dense font-medium">{v.actual ?? '—'}</td>
+                    <td className="py-[10px] pl-3 text-right font-mono text-dense font-medium">{v.variance ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {r.assumptionResults.map((a) => (
+              <div key={a.assumptionId} className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 border-t border-ink-200 py-2">
+                <Pill tone={OUTCOME_TONE[a.outcome] ?? 'neutral'}>{a.outcome.replace('_', ' ')}</Pill>
+                <span className="font-serif text-base">
                   {a.statement}
-                  {a.note && ` — ${a.note}`}
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="mt-1 text-2xs text-ink-500">{r.statement}</p>
-        </div>
-      ))}
-    </Section>
+                  {a.note && <span className="block font-sans text-meta text-ink-500">{a.note}</span>}
+                </span>
+              </div>
+            ))}
+            <p className="mt-3 font-serif text-read italic leading-[23px] text-ink-800">“{r.statement}”</p>
+          </div>
+        ))}
+      </Rows>
+    </div>
   );
 }
 
 // =============================================================== timeline
 
-function TimelinePanel({ workspace }: { workspace: DecisionWorkspace }) {
+function Timeline({ workspace }: { workspace: DecisionWorkspace }) {
   return (
-    <PanelCard
-      title={
-        <span className="flex items-center gap-2">
-          <History className="h-4 w-4" /> What happened, and when
-        </span>
-      }>
-      <ol className="space-y-1 text-xs">
-        {workspace.timeline.map((e) => (
-          <li key={e.id} className="flex items-baseline gap-2">
-            <span className="w-40 shrink-0 text-2xs text-ink-500">{displayInstant(e.recordedAt)}</span>
-            <span className="font-medium text-ink-800">{readable(e.eventType)}</span>
-            <span className="truncate text-2xs text-ink-500">{summarize(e.payload)}</span>
-          </li>
-        ))}
-      </ol>
-    </PanelCard>
+    <section className="mt-11">
+      <SectionHead title="What happened, and when" meta={`${workspace.timeline.length} events`} />
+      {workspace.timeline.map((e) => (
+        <div key={e.id} className="grid grid-cols-[190px_minmax(0,1fr)] gap-x-4 border-b border-ink-200 py-2 max-sm:grid-cols-1">
+          <span className="font-mono text-meta text-ink-500">{displayInstant(e.recordedAt)}</span>
+          <span className="min-w-0 text-dense">
+            <span className="font-medium text-ink-950">{readable(e.eventType)}</span>
+            <span className="ml-2 break-words text-meta text-ink-500">{summarize(e.payload)}</span>
+          </span>
+        </div>
+      ))}
+    </section>
   );
 }
 

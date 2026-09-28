@@ -42,6 +42,40 @@ export async function loadDecisions(ctx: DecisionWorkspaceContext): Promise<Deci
   return out;
 }
 
+/** What a list row needs to say about a decision without opening it. Read, never computed. */
+export type DecisionSummary = DecisionListItem & {
+  /** The alternative management committed to, if it has. */
+  chosenLabel: string | null;
+  committedAt: string | null;
+  committedByLabel: string | null;
+  /** The latest outcome review, if the decision has been looked at again. */
+  reviewedAt: string | null;
+  openChallenges: number;
+  unownedAssumptions: number;
+};
+
+export async function loadDecisionSummaries(ctx: DecisionWorkspaceContext): Promise<DecisionSummary[]> {
+  const items = await loadDecisions(ctx);
+  const out: DecisionSummary[] = [];
+  for (const item of items) {
+    const { workspace } = await loadWorkspace(ctx, item.decision.id);
+    const commitment = workspace.commitment;
+    const review = workspace.outcomeReviews.at(-1) ?? null;
+    out.push({
+      ...item,
+      chosenLabel: commitment
+        ? (workspace.alternatives.find((a) => a.id === commitment.chosenAlternativeId)?.label ?? null)
+        : null,
+      committedAt: commitment?.committedAt ?? null,
+      committedByLabel: commitment?.committedByLabel ?? null,
+      reviewedAt: review?.reviewedAt ?? null,
+      openChallenges: workspace.challenges.filter((c) => c.status === 'OPEN').length,
+      unownedAssumptions: workspace.assumptions.filter((a) => a.owner === null).length,
+    });
+  }
+  return out;
+}
+
 export type WorkspaceView = {
   workspace: DecisionWorkspace;
   /** Present once something has been committed. */

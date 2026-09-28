@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useHelmStore } from './services/helmStore.ts';
-import { AppShell } from './components/AppShell.tsx';
+import { ConsoleLayout } from './components/shell/ConsoleLayout.tsx';
 import { AuthPage } from './pages/AuthPage.tsx';
 import { OnboardingPage } from './pages/OnboardingPage.tsx';
 import { AttentionPage } from './pages/AttentionPage.tsx';
@@ -28,7 +28,7 @@ export default function App() {
 
   if (!authReady) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-ink-500">
+      <div className="flex min-h-screen items-center justify-center text-ui text-ink-500">
         Loading HELM…
       </div>
     );
@@ -46,7 +46,7 @@ export default function App() {
         element={needsOnboarding ? <OnboardingPage /> : <Navigate to={inApp ? '/' : '/auth'} replace />}
       />
       {inApp ? (
-        <Route element={<AppShell />}>
+        <Route element={<ConsoleLayout />}>
           <Route index element={<AttentionPage />} />
           <Route path="decisions" element={<DecisionsPage />} />
           <Route path="decisions/:id" element={<DecisionDetailPage />} />

@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useHelmStore } from '../services/helmStore.ts';
-import { Field } from '../components/ui.tsx';
+import { HelmLockup } from '../components/brand/HelmLogo.tsx';
+import { Button } from '../components/ui/Button.tsx';
+import { Field, controlClass } from '../components/ui/Field.tsx';
+import { TextField } from '../components/ui/TextField.tsx';
 
 /**
  * First-run for a signed-in user with no organization yet: create the org
@@ -34,23 +37,23 @@ export function OnboardingPage() {
   ];
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <div className="w-full max-w-md">
-        <h1 className="mb-2 tracking-display text-ink-950" style={{ font: 'var(--type-instrument-title)' }}>
-          Set up your organization
-        </h1>
-        <p className="mb-6 text-sm text-ink-600">
-          The organization is HELM's tenant boundary: decisions, economics, and signals live inside it, and
-          teammates you invite see only what their role allows.
-        </p>
-        <form onSubmit={submit} className="space-y-4 rounded-lg border border-ink-200 bg-white p-6 shadow-panel">
-          <Field label="Organization name">
-            <input className="field-input" required maxLength={200} value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
+    <div className="flex min-h-screen items-center justify-center px-10 py-12">
+      <div className="grid w-full max-w-[440px] gap-6">
+        <HelmLockup height={30} tone="light" />
+        <header>
+          <p className="helm-label">First run · Organization</p>
+          <h1 className="mt-[10px] text-instrument">Set up your organization</h1>
+          <p className="mt-3 text-read text-ink-600">
+            The organization is HELM's tenant boundary: decisions, economics, and signals live inside it, and teammates
+            you invite see only what their role allows.
+          </p>
+        </header>
+        <form onSubmit={submit} className="grid gap-[14px] rounded-2xl border border-ink-200 bg-white p-8">
+          <TextField label="Organization name" required maxLength={200} value={name} onChange={(e) => setName(e.target.value)} />
           <div className="grid grid-cols-2 gap-3">
             <Field label="Base currency" hint="ISO code, e.g. VND, USD, SGD">
               <input
-                className="field-input uppercase"
+                className={controlClass + ' font-mono uppercase'}
                 required
                 pattern="[A-Za-z]{3}"
                 maxLength={3}
@@ -59,7 +62,7 @@ export function OnboardingPage() {
               />
             </Field>
             <Field label="Fiscal year starts">
-              <select className="field-input" value={fyStart} onChange={(e) => setFyStart(Number(e.target.value))}>
+              <select className={controlClass} value={fyStart} onChange={(e) => setFyStart(Number(e.target.value))}>
                 {months.map((m, i) => (
                   <option key={m} value={i + 1}>
                     {m}
@@ -68,13 +71,14 @@ export function OnboardingPage() {
               </select>
             </Field>
           </div>
-          {error && <p className="text-xs text-red-600">{error}</p>}
-          <button className="btn-primary w-full justify-center" disabled={busy}>
+          {error && <p className="text-dense text-red-700">{error}</p>}
+          <Button type="submit" variant="primary" disabled={busy} className="mt-1 justify-center py-[11px] text-ui">
             {busy ? 'Creating…' : 'Create organization'}
-          </button>
+          </Button>
         </form>
         <button
-          className="helm-quiet-link mt-3 w-full text-center text-xs"
+          type="button"
+          className="text-dense font-medium text-accent-700 hover:underline"
           onClick={() => {
             enterDemo();
             navigate('/');

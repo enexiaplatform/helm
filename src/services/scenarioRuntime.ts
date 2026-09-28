@@ -203,3 +203,9 @@ export const displayInstant = (iso: string): string =>
   new Date(iso).toLocaleString('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
   }) + ' UTC';
+
+/** The short form the console's clock strip uses: "19 Sep 12:00 UTC". */
+export const displayClock = (iso: string): string =>
+  new Date(iso).toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
+  }).replace(',', '') + ' UTC';

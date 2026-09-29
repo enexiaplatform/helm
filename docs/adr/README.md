@@ -59,3 +59,6 @@ a new one, so the reasoning history stays readable.
 | [0020](0020-period-identity.md) | Period identity — a period is a value, not "the furthest-out forecast" | accepted | 4 |
 | [0021](0021-decision-runtime.md) | The Decision Runtime — what management decided, and what it decided against | accepted | 5 |
 | [0022](0022-decision-authority-graph.md) | The Decision Authority Graph — who may commit what, over which scope, under which consequences | accepted | 6 |
+| [0023](0023-management-digital-twin.md) | The Management Digital Twin — versioned management state, referenced, not copied | accepted | 7 |
+| [0024](0024-trusted-authority-runtime.md) | The trusted authority runtime — verdicts are computed where the client cannot reach | accepted, amends 0022 | 7 |
+| [0025](0025-sensitivity-and-scenario-visibility.md) | Sensitivity classes, scenario visibility, private helpers and decision-type tenancy | accepted, amends 0022 | 7 |

@@ -968,6 +968,30 @@ export function createDecisionRuntime(opts: DecisionRuntimeOptions): DecisionRun
       return review;
     },
 
+    async setActionIntentStatus(scope, commitmentId, actionIntentId, status, note) {
+      const commitment = await store.getCommitment(scope, commitmentId);
+      if (!commitment.ok) return commitment;
+      if (!commitment.value) return fail(DecisionErrors.NOT_FOUND, `Commitment ${commitmentId} not found.`);
+      const intents = await store.listActionIntents(scope, commitmentId);
+      if (!intents.ok) return intents;
+      const before = intents.value.find((i) => i.id === actionIntentId);
+      if (!before) return fail(DecisionErrors.NOT_FOUND, `Action intent ${actionIntentId} is not part of that commitment.`);
+      if (before.status === status) return ok(before);
+      if (before.status === 'DONE' || before.status === 'CANCELLED') {
+        return fail(DecisionErrors.INVALID_TRANSITION, `The action intent is already ${before.status}; its history is not rewritten.`);
+      }
+      const moved = await store.setActionIntentStatus(scope, actionIntentId, status);
+      if (!moved.ok) return moved;
+      await event(scope, commitment.value.decisionId, 'ACTION_INTENT_STATUS_CHANGED', {
+        actionIntentId,
+        commitmentId,
+        from: before.status,
+        to: status,
+        note: note ?? null,
+      });
+      return moved;
+    },
+
     // ------------------------------------------------------------ read side
     async getCommitmentSnapshot(scope, commitmentId) {
       const c = await store.getCommitment(scope, commitmentId);

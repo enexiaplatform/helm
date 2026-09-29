@@ -10,9 +10,11 @@
  *   the Q1 call-off           AUTHORIZED — inside the Commercial Director's line
  *   the alternative analyzer  REQUIRES_APPROVAL, pending — Country GM, then Finance
  *
- * Cloud mode uses the Postgres stores with RLS doing the isolation; the
- * approver of an act is always the signed-in user, and the database checks
- * their seat again.
+ * Evaluations and approval acts go through the TRUSTED authority service
+ * (ADR-0024) and nothing else: in the cloud, the `helm-authority` edge
+ * function — the only writer the database accepts, with the caller's identity
+ * from their verified token — and in the demo, the same service in-process,
+ * its verdicts labelled as such. The app sends identifiers, never facts.
  */
 
 import {
@@ -21,12 +23,16 @@ import {
   MERIDIAN_DEMO_USERS,
   buildCallOffScenario,
   buildProofDecision,
+  canSeeDecision,
   createAuthorityRuntime,
+  createTrustedAuthorityService,
   readableAmount,
   scopeAs,
   type AuthorityRuntime,
   type OrgUnit,
+  type TrustedResponse,
 } from '@helm/authority-runtime';
+import { calculations } from './ontologyGraph.ts';
 import { createPostgresAuthorityStore } from '@helm/authority-runtime/postgres';
 import { systemClock, type Scope, type UserId } from '@helm/shared';
 import { supabaseClient } from '../lib/supabaseClient.ts';
@@ -35,8 +41,18 @@ import type { ApprovalRequestView, GovernanceView } from '../components/decision
 
 export type DemoIdentity = { readonly userId: UserId; readonly label: string; readonly seat: string };
 
+/** What the trusted authority service answered, in the app's terms. */
+export type TrustedOutcome = { readonly ok: true; readonly body: Readonly<Record<string, unknown>> } | { readonly ok: false; readonly message: string };
+
+export type ApprovalDecisionKind = 'APPROVE' | 'REJECT' | 'RETURN_FOR_RECONSIDERATION';
+
 export type GovernanceContext = {
+  /** Reads only. Every verdict and act goes through `evaluate` / `act` below. */
   runtime: AuthorityRuntime;
+  /** Ask the trusted service to evaluate a commitment. The app sends its id, nothing else. */
+  evaluate: (callerUserId: UserId, commitmentId: string) => Promise<TrustedOutcome>;
+  /** Ask the trusted service to record an approval act by the (verified) caller. */
+  act: (callerUserId: UserId, requiredApprovalId: string, decision: ApprovalDecisionKind, comments: string) => Promise<TrustedOutcome>;
   decisions: DecisionWorkspaceContext;
   scope: Scope;
   mode: 'demo' | 'cloud';
@@ -47,6 +63,22 @@ export type GovernanceContext = {
 };
 
 let demoGovernance: Promise<GovernanceContext> | null = null;
+
+const OP: Readonly<Record<ApprovalDecisionKind, 'approve' | 'reject' | 'return'>> = {
+  APPROVE: 'approve',
+  REJECT: 'reject',
+  RETURN_FOR_RECONSIDERATION: 'return',
+};
+
+/** Demo only: which demo units each fictional seat-holder belongs to. */
+const DEMO_MEMBERSHIP: Readonly<Record<string, readonly string[]>> = {
+  [MERIDIAN_DEMO_USERS.countryGM]: ['unit-vn'],
+  [MERIDIAN_DEMO_USERS.commercialDirector]: ['unit-vn-commercial'],
+  [MERIDIAN_DEMO_USERS.financeDirector]: ['unit-vn-finance'],
+  [MERIDIAN_DEMO_USERS.regionalMD]: ['unit-sea'],
+  [MERIDIAN_DEMO_USERS.pharmaAnalyst]: ['unit-vn-pharma'],
+  [MERIDIAN_DEMO_USERS.industrialHead]: ['unit-vn-industrial'],
+};
 
 const SEATS: Readonly<Record<keyof typeof MERIDIAN_DEMO_USERS, string>> = {
   countryGM: 'Country GM Vietnam',
@@ -70,7 +102,46 @@ function getDemoGovernance(scope: Scope): Promise<GovernanceContext> {
     // The structure (roles, occupancies, DOA-2026-04) was recorded by the
     // decision service before it committed anything; reuse that runtime.
     const runtime = decisions.demoAuthority;
-    if (!runtime) throw new Error('the demo authority runtime was not seeded');
+    const store = decisions.demoAuthorityStore;
+    if (!runtime || !store) throw new Error('the demo authority runtime was not seeded');
+    const graphs = decisions.scenarios.graphs;
+    // The trusted service, in-process: the same code the helm-authority edge
+    // function runs, over the demo's stores. Its verdicts say where they ran.
+    const trusted = createTrustedAuthorityService({
+      runtime: createAuthorityRuntime({
+        store,
+        decisions: decisions.store,
+        scenarios: decisions.scenarios.runtime,
+        graph: graphs.graphStore,
+        clock: systemClock,
+        evaluator: { kind: 'TRUSTED_SERVICE', host: 'in-process (demo)' },
+      }),
+      store,
+      decisions: decisions.store,
+      scenarios: decisions.scenarios.runtime,
+      engine: graphs.engine,
+      registry: calculations,
+      valueGraph: graphs.valueGraph,
+      membershipOf: async (userId) => ({ ok: true, value: { orgRole: userId === scope.actorId ? 'admin' : 'member', memberUnitIds: [] } }),
+      callerCanSeeDecision: async (s, decisionId) => {
+        const d = await decisions.store.getDecision(s, decisionId);
+        const grants = await runtime.listVisibility(s, decisionId);
+        if (!d.ok || !d.value || !grants.ok) return { ok: true, value: false };
+        return {
+          ok: true,
+          value: canSeeDecision(
+            { userId: String(s.actorId), orgRole: s.role, memberUnitIds: DEMO_MEMBERSHIP[String(s.actorId)] ?? [] },
+            { createdBy: d.value.createdBy, grantedUnitIds: grants.value.map((g) => g.orgUnitId) },
+            MERIDIAN_DEMO_UNITS,
+          ).visible || String(s.actorId) === String(scope.actorId),
+        };
+      },
+    });
+    const outcome = (r: TrustedResponse): TrustedOutcome =>
+      r.status === 200 ? { ok: true, body: r.body } : { ok: false, message: String((r.body.error as { message?: string } | undefined)?.message ?? `refused (${r.status})`) };
+    const evaluate = async (caller: UserId, commitmentId: string) => outcome(await trusted.handle({ userId: caller }, { op: 'evaluate', orgId: scope.orgId, commitmentId }));
+    const act = async (caller: UserId, requiredApprovalId: string, decision: ApprovalDecisionKind, comments: string) =>
+      outcome(await trusted.handle({ userId: caller }, { op: OP[decision], orgId: scope.orgId, requiredApprovalId, comments }));
 
     const cd = scopeAs(scope, MERIDIAN_DEMO_USERS.commercialDirector);
     const unit = (id: string) => MERIDIAN_DEMO_UNITS.find((u) => u.id === id)!;
@@ -88,15 +159,18 @@ function getDemoGovernance(scope: Scope): Promise<GovernanceContext> {
       const commitments = must(await decisions.store.listCommitments(scope, id), 'commitments');
       const commitment = commitments[commitments.length - 1];
       if (commitment) {
-        const { required } = must(await runtime.evaluate(scope, commitment.id), 'evaluate the Rohto commitment');
+        const evaluated = await evaluate(MERIDIAN_DEMO_USERS.countryGM, commitment.id);
+        if (!evaluated.ok) throw new Error(`evaluate the Rohto commitment: ${evaluated.message}`);
+        const required = evaluated.body.required as { id: string; roleLabel: string }[];
         const gm = required.find((r) => r.roleLabel === SEATS.countryGM);
         if (gm) {
-          must(
-            await runtime.recordApproval(scopeAs(scope, MERIDIAN_DEMO_USERS.countryGM), gm.id, {
-              comments: 'Approved within Country GM authority. The distributor-buffer risk is accepted for the quarter.',
-            }),
-            'Country GM approval',
+          const approved = await act(
+            MERIDIAN_DEMO_USERS.countryGM,
+            gm.id,
+            'APPROVE',
+            'Approved within Country GM authority. The distributor-buffer risk is accepted for the quarter.',
           );
+          if (!approved.ok) throw new Error(`Country GM approval: ${approved.message}`);
         }
       }
     }
@@ -118,7 +192,10 @@ function getDemoGovernance(scope: Scope): Promise<GovernanceContext> {
     );
     must(await runtime.declareGovernanceProfile(cd, small.decision.id, { decisionTypeKey: 'INVENTORY_ALLOCATION' }), 'classify call-off');
     await share(small.decision.id, ['unit-vn-pharma']);
-    if (small.commitment) must(await runtime.evaluate(scope, small.commitment.id), 'evaluate the call-off');
+    if (small.commitment) {
+      const r = await evaluate(MERIDIAN_DEMO_USERS.commercialDirector, small.commitment.id);
+      if (!r.ok) throw new Error(`evaluate the call-off: ${r.message}`);
+    }
 
     // 3. One left pending: beyond both the Commercial Director and the Finance line.
     const alt = decisions.scenarios.scenarioIdsByKey['alternative-product'];
@@ -135,11 +212,16 @@ function getDemoGovernance(scope: Scope): Promise<GovernanceContext> {
       );
       must(await runtime.declareGovernanceProfile(cd, pending.decision.id, { decisionTypeKey: 'INVENTORY_ALLOCATION' }), 'classify alternative');
       await share(pending.decision.id, ['unit-vn-pharma', 'unit-vn-finance']);
-      if (pending.commitment) must(await runtime.evaluate(scope, pending.commitment.id), 'evaluate the alternative');
+      if (pending.commitment) {
+        const r = await evaluate(MERIDIAN_DEMO_USERS.commercialDirector, pending.commitment.id);
+        if (!r.ok) throw new Error(`evaluate the alternative: ${r.message}`);
+      }
     }
 
     return {
       runtime,
+      evaluate,
+      act,
       decisions,
       scope,
       mode: 'demo' as const,
@@ -171,7 +253,25 @@ async function getCloudGovernance(scope: Scope): Promise<GovernanceContext | nul
     label: u.name,
     unitType: u.unit_type,
   }));
-  return { runtime, decisions, scope, mode: 'cloud', demoIdentities: [], units };
+  // The helm-authority edge function is the only writer of authority records the
+  // database accepts. The caller's identity travels as their session token.
+  const call = async (body: Record<string, unknown>): Promise<TrustedOutcome> => {
+    if (!supabaseClient) return { ok: false, message: 'Not connected.' };
+    const { data, error } = await supabaseClient.functions.invoke('helm-authority', { body: { ...body, orgId: scope.orgId } });
+    if (error) return { ok: false, message: error.message };
+    const answer = data as { ok?: boolean; error?: { message?: string } } | null;
+    return answer?.ok ? { ok: true, body: answer as Record<string, unknown> } : { ok: false, message: answer?.error?.message ?? 'The authority service refused the request.' };
+  };
+  return {
+    runtime,
+    evaluate: (_caller, commitmentId) => call({ op: 'evaluate', commitmentId }),
+    act: (_caller, requiredApprovalId, decision, comments) => call({ op: OP[decision], requiredApprovalId, comments }),
+    decisions,
+    scope,
+    mode: 'cloud',
+    demoIdentities: [],
+    units,
+  };
 }
 
 export async function resolveGovernanceContext(mode: 'demo' | 'cloud', scope: Scope): Promise<GovernanceContext | null> {
@@ -231,6 +331,10 @@ export async function loadGovernanceView(ctx: GovernanceContext, commitmentId: s
     actor: `${e.actorLabel} · ${e.actorRoles.map((r) => r.roleLabel).join(', ') || 'no role'}`,
     fingerprint: e.fingerprint,
     evaluatedAt: dayTime(e.evaluatedAt),
+    evaluator:
+      e.evaluator.kind === 'TRUSTED_SERVICE'
+        ? `trusted service · ${e.evaluator.host}${e.evaluator.consequenceCheck.status === 'TRACE_VERIFIED' ? ` · ${e.evaluator.consequenceCheck.checkedSteps} steps re-derived` : ''}`
+        : 'client runtime · not a trusted verdict',
     consequences: e.consequences
       .filter((c) => c.value !== null)
       .map((c) => ({ label: c.label, value: readableAmount(c.value!, c.unit, c.currency) })),

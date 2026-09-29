@@ -756,12 +756,13 @@ export function createPostgresGraphStore(opts: PostgresGraphStoreOptions): Graph
         return fail(ErrorCodes.GRAPH_READ_FAILED, `Relationship query failed: ${error.message}`);
       }
 
-      let rows = ((data ?? []) as RelationshipRow[]).filter((r) => validAt(r, query.asOf));
+      let rows = (data ?? []) as RelationshipRow[];
+      if (!(query.includeClosed && query.asOf === undefined)) rows = rows.filter((r) => validAt(r, query.asOf));
       if (query.minConfidence !== undefined) {
         rows = rows.filter((r) => (num(r.confidence) ?? 1) >= query.minConfidence!);
       }
       const mapped = rows.map(toRelationship);
-      mapped.sort((a, b) => a.relationshipTypeKey.localeCompare(b.relationshipTypeKey));
+      mapped.sort((a, b) => a.relationshipTypeKey.localeCompare(b.relationshipTypeKey) || a.id.localeCompare(b.id));
       const offset = query.offset ?? 0;
       const limit = query.limit ?? 500;
       return ok(mapped.slice(offset, offset + limit));

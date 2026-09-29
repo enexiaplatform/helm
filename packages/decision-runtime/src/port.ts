@@ -363,6 +363,19 @@ export interface DecisionRuntime {
     },
   ): Promise<Result<DecisionOutcomeReview>>;
 
+  /**
+   * Moves an action intent along INTENDED → IN_PROGRESS → DONE (or CANCELLED)
+   * and appends ACTION_INTENT_STATUS_CHANGED, so the status an intent had at
+   * any record time can be reconstructed — the store keeps only the latest.
+   */
+  setActionIntentStatus(
+    scope: Scope,
+    commitmentId: string,
+    actionIntentId: string,
+    status: ActionIntent['status'],
+    note?: string,
+  ): Promise<Result<ActionIntent>>;
+
   getCommitmentSnapshot(scope: Scope, commitmentId: string): Promise<Result<CommitmentSnapshot>>;
   /** "Why did management choose this?" — all the way down to source provenance. */
   explainDecision(scope: Scope, decisionId: string): Promise<Result<DecisionExplanation>>;

@@ -901,6 +901,7 @@ export const decisionEventTypes = [
   'REVISION_SEALED',
   'COMMITTED',
   'ACTION_INTENT_ADDED',
+  'ACTION_INTENT_STATUS_CHANGED',
   'RECONSIDERED',
   'OUTCOME_REVIEWED',
 ] as const;

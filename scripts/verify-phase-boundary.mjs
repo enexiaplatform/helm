@@ -1,14 +1,16 @@
 /**
- * verify:phase-boundary — Phase 6 does what Phase 6 does, and no more.
+ * verify:phase-boundary — Phase 7 does what Phase 7 does, and no more.
  *
  * Every phase ships a verifier that asserts the ABSENCE of the next phase's
  * work, because the most expensive mistake in a layered build is a layer that
  * quietly starts doing the next one's job. Phase 3's verifier forbade scenario
  * comparison; Phase 4 took comparison and forbade decisions; Phase 5 took
- * decisions and forbade authority; Phase 6 now owns decision authority — but
- * ONLY in @helm/authority-runtime and the governance surfaces. Scanned across
- * the propagation engine, the scenario, decision and authority runtimes and
- * the explorers:
+ * decisions and forbade authority; Phase 6 took decision authority and forbade
+ * a digital twin; Phase 7 now owns the Management Digital Twin — but ONLY in
+ * @helm/twin-runtime and the twin surfaces, reading every layer below it and
+ * writing none of them. Scanned across the propagation engine, the scenario,
+ * decision, authority and twin runtimes, the trusted authority host and the
+ * explorers:
  *
  *   1. No automatic recommendation, ranking or scoring — of a scenario OR of a
  *      decision alternative. HELM shows the trade-off space and evaluates
@@ -27,7 +29,9 @@
  *      the Intelligence Runtime is Phase 11.
  *   6. No Management Genome: outcome review records variance and assumption
  *      outcomes; it does not learn patterns or score decision quality.
- *   7. No management surfaces beyond the technical explorers.
+ *   7. No management surfaces beyond the technical explorers: no GM cockpit.
+ *   7b. The twin composes; it never writes a kernel layer below it, and its
+ *       attention is conditions — never an AI priority or a score.
  *   8. No eval, no executable code in the database, no formula in a trigger.
  *   9. The additive discipline: nothing outside helm_*.
  *
@@ -49,6 +53,8 @@ const ENGINE_SRC = join(root, 'packages', 'propagation-engine', 'src');
 const SCENARIO_SRC = join(root, 'packages', 'scenario-runtime', 'src');
 const DECISION_SRC = join(root, 'packages', 'decision-runtime', 'src');
 const AUTHORITY_SRC = join(root, 'packages', 'authority-runtime', 'src');
+const TWIN_SRC = join(root, 'packages', 'twin-runtime', 'src');
+const PHASE7_MIGRATION = join(root, 'supabase', 'migrations', '20260929090000_helm_management_twin.sql');
 const MIGRATION = join(root, 'supabase', 'migrations', '20260920090000_helm_propagation.sql');
 const PHASE4_MIGRATION = join(root, 'supabase', 'migrations', '20260922090100_helm_scenario_runtime.sql');
 const PHASE5_MIGRATION = join(root, 'supabase', 'migrations', '20260923100000_helm_decision_runtime.sql');
@@ -61,6 +67,13 @@ const KERNEL_APP = [
   join(root, 'src', 'services', 'decisionRuntime.ts'),
   join(root, 'src', 'services', 'decisionWorkspace.ts'),
 ];
+/** The Phase 7 surfaces: where the twin may be SHOWN, and the trusted host. */
+const TWIN_APP = [
+  join(root, 'src', 'pages', 'TwinPage.tsx'),
+  join(root, 'src', 'services', 'twinRuntime.ts'),
+];
+const TRUSTED_HOST = [join(root, 'server', 'authority', 'host.ts')];
+const rel = (p) => p.slice(root.length + 1).replaceAll('\\', '/');
 /** The Phase 6 surfaces: where authority may be SHOWN. */
 const GOVERNANCE_APP = [
   join(root, 'src', 'pages', 'GovernancePage.tsx'),
@@ -86,6 +99,7 @@ const engineFiles = tsFiles(ENGINE_SRC);
 const scenarioFiles = tsFiles(SCENARIO_SRC);
 const decisionFiles = tsFiles(DECISION_SRC);
 const authorityFiles = tsFiles(AUTHORITY_SRC);
+const twinFiles = tsFiles(TWIN_SRC);
 const engineCode = new Map(engineFiles.map((f) => [f, stripNonCode(readFileSync(join(ENGINE_SRC, f), 'utf8'))]));
 
 /** Every file the phase boundary is checked against, by readable path. */
@@ -103,7 +117,11 @@ const scanned = new Map([
     `packages/authority-runtime/src/${f}`,
     stripNonCode(readFileSync(join(AUTHORITY_SRC, f), 'utf8')),
   ]),
-  ...[...KERNEL_APP, ...GOVERNANCE_APP].filter(existsSync).map((p) => [
+  ...twinFiles.map((f) => [
+    `packages/twin-runtime/src/${f}`,
+    stripNonCode(readFileSync(join(TWIN_SRC, f), 'utf8')),
+  ]),
+  ...[...KERNEL_APP, ...GOVERNANCE_APP, ...TWIN_APP, ...TRUSTED_HOST].filter(existsSync).map((p) => [
     p.slice(root.length + 1).replaceAll('\\', '/'),
     stripNonCode(readFileSync(p, 'utf8')),
   ]),
@@ -112,6 +130,7 @@ const scanned = new Map([
 /** Where decision authority is allowed to exist at all. */
 const authorityHome = (file) =>
   file.startsWith('packages/authority-runtime/') ||
+  file === 'server/authority/host.ts' ||
   GOVERNANCE_APP.some((p) => p.slice(root.length + 1).replaceAll('\\', '/') === file) ||
   file === 'src/pages/DecisionDetailPage.tsx';
 
@@ -176,10 +195,19 @@ const NOT_YET = [
     phase: 'a later phase — Phase 6 stores governance state; delivery integrations come later',
   },
   {
-    rule: 'no-digital-twin',
-    patterns: [/\bdigitalTwin\w*/i, /\btwinState\w*/i, /\bmanagementTwin\w*/i],
-    why: 'a management digital twin',
-    phase: 'Phase 7 — Digital Twin',
+    rule: 'twin-in-its-home',
+    // The twin is Phase 7's, and it lives in ONE place: the layers below
+    // compose into it; none of them composes a twin of its own.
+    skip: (file) => file.startsWith('packages/twin-runtime/') || TWIN_APP.some((p) => rel(p) === file),
+    patterns: [/\bdigitalTwin\w*/i, /\btwinState\w*/i, /\bmanagementTwin\w*/i, /\bTwinSnapshot\b/, /\bcomposeSnapshot\b/],
+    why: 'a management digital twin outside @helm/twin-runtime',
+    phase: 'the twin runtime — one composition of management state, over layers it never changes',
+  },
+  {
+    rule: 'no-ai-prioritization',
+    patterns: [/\battentionScore\w*/i, /\bpriorityScore\w*/i, /\bprioriti[sz]e\w*\s*\(/i, /\burgencyScore\w*/i],
+    why: 'a priority or attention score',
+    phase: 'never in Phase 7 — attention is a named condition with a cause, not a ranking',
   },
   {
     rule: 'no-causal-inference',
@@ -223,9 +251,9 @@ const NOT_YET = [
   },
   {
     rule: 'no-management-surface',
-    patterns: [/\bdashboard\b/i, /\bbriefing\b/i, /\bexecutiveSummary\b/],
+    patterns: [/\bdashboard\b/i, /\bbriefing\b/i, /\bexecutiveSummary\b/, /\bcockpit\w*/i],
     why: 'a management surface',
-    phase: 'Phase 14 — Management Surfaces',
+    phase: 'Phase 14 — the Country GM Cockpit and management surfaces',
   },
 ];
 
@@ -288,7 +316,24 @@ const LAYERS = [
       '@helm/decision-runtime',
     ],
     self: '@helm/authority-runtime',
-    note: 'the authority runtime is the top of the kernel',
+    note: 'the authority runtime sits below the twin runtime, and knows nothing of it',
+  },
+  {
+    dir: TWIN_SRC,
+    files: twinFiles,
+    label: 'packages/twin-runtime/src',
+    allowed: [
+      '@helm/shared',
+      '@helm/ontology',
+      '@helm/graph-store',
+      '@helm/value-graph',
+      '@helm/propagation-engine',
+      '@helm/scenario-runtime',
+      '@helm/decision-runtime',
+      '@helm/authority-runtime',
+    ],
+    self: '@helm/twin-runtime',
+    note: 'the twin runtime is the top of the kernel',
   },
 ];
 for (const { dir, files, label, allowed, self, note } of LAYERS) {
@@ -325,6 +370,7 @@ const MIGRATIONS = [
   { path: PHASE4_MIGRATION, phase: 'Phase 4' },
   { path: PHASE5_MIGRATION, phase: 'Phase 5' },
   { path: PHASE6_MIGRATION, phase: 'Phase 6' },
+  { path: PHASE7_MIGRATION, phase: 'Phase 7' },
 ];
 for (const { path, phase } of MIGRATIONS) {
   if (!existsSync(path)) {
@@ -345,7 +391,9 @@ for (const { path, phase } of MIGRATIONS) {
   const bodies = [...sql.matchAll(/AS\s+\$fn\$([\s\S]*?)\$fn\$/g)].map((m) => m[1]);
   check('no-formula-in-trigger', bodies.length > 0, `no ${phase} trigger bodies were found, so this check proved nothing`);
   for (const body of bodies) {
-    check('no-formula-in-trigger', !/\bNEW\.[a-z_]+\s*:=/i.test(body),
+    // Stamping the record time of a change (`NEW.ended_at := now()`) is not a
+    // formula: it says WHEN HELM learned something, which is what record time is.
+    check('no-formula-in-trigger', !/\bNEW\.[a-z_]+\s*:=(?!\s*now\(\);)/i.test(body),
       `a ${phase} trigger assigns to a NEW column. Business formulas in triggers are invisible to tests, ` +
         'impossible to version and impossible to explain (§28)');
     check('no-formula-in-trigger', !/\b(SUM|AVG|MIN|MAX)\s*\(/i.test(body),
@@ -383,6 +431,37 @@ for (const [file, code] of scanned) {
   check('authority-never-mutates', !m, `${file} calls ${m?.[1]} on the decision layer — the authority runtime judges commitments, it does not change them`);
   const model = /\b(?:scenarios|engine)\.(execute|addOverride|createScenario|rebase|createRevision)\s*\(/.exec(code);
   check('authority-never-mutates', !model, `${file} calls ${model?.[1]} — the authority runtime reads consequences, it does not compute them`);
+}
+
+// The twin composes; it writes nothing below itself. meridianTwin.ts is demo
+// SEED data — it lives the story through the kernels as management would — so
+// it is the one file exempt.
+for (const [file, code] of scanned) {
+  if (!file.startsWith('packages/twin-runtime/') || file.endsWith('meridianTwin.ts')) continue;
+  const writes = /\.(createCommitment|commit|recordApproval|recordRejection|evaluate|recordObservation|createEntity|updateEntity|createRelationship|removeRelationship|execute|executeBaseline|addOverride|recordPolicy|recordOccupancy|endOccupancy|createDelegation|setActionIntentStatus|recordOutcomeReview|appendEvent|setDecisionState)\s*\(/.exec(code);
+  check('twin-never-writes-below', !writes, `${file} calls ${writes?.[1]} — the twin reads the kernel, it does not change it`);
+}
+const trusted = scanned.get('packages/authority-runtime/src/trusted.ts') ?? '';
+check('phase-artifacts', /verifyCalculationTrace\s*\(/.test(trusted), 'the trusted authority service does not re-derive the chosen run before believing it');
+check('phase-artifacts', existsSync(join(root, 'supabase', 'functions', 'helm-authority', 'index.ts')), 'the helm-authority edge function is missing');
+for (const { file, why } of [
+  { file: 'compose.ts', why: 'the snapshot composer' },
+  { file: 'structure.ts', why: 'time-aware enterprise structure' },
+  { file: 'values.ts', why: 'layered value readings' },
+  { file: 'management.ts', why: 'decision and governance state as of a boundary' },
+  { file: 'attention.ts', why: 'rule-based attention' },
+  { file: 'delta.ts', why: 'the twin delta' },
+  { file: 'explain.ts', why: 'item lineage and dependency attribution' },
+  { file: 'trajectory.ts', why: 'current state against committed future' },
+  { file: 'fingerprint.ts', why: 'the snapshot fingerprint' },
+  { file: 'sensitivity.ts', why: 'sensitivity and visibility' },
+  { file: 'runtime.ts', why: 'the twin runtime' },
+  { file: 'postgres.ts', why: 'the production twin store' },
+  { file: 'conformance.ts', why: 'the twin store contract' },
+  { file: 'managementApi.ts', why: 'the management API foundation' },
+  { file: 'meridianTwin.ts', why: 'the canonical twin story' },
+]) {
+  check('phase-artifacts', twinFiles.includes(file), `${why} (packages/twin-runtime/src/${file}) is missing`);
 }
 
 // ------------------- what Phase 5 MUST have: the absence checks cut both ways
@@ -466,9 +545,9 @@ check('phase-artifacts', /appendStep/.test(engineSrc), 'the engine never appends
 
 if (failures.length === 0) {
   console.log(
-    `verify:phase-boundary — ok (${scanned.size} files: authority runtime present and confined to its package; no ` +
-      'recommendation, automated act, governance simulation, notification platform, digital twin, causal inference, ' +
-      'optimization, agent debate or pattern learning)',
+    `verify:phase-boundary — ok (${scanned.size} files: twin runtime present, confined to its package and writing nothing ` +
+      'below it; authority confined to its package; no recommendation, automated act, attention score, governance ' +
+      'simulation, notification platform, cockpit, causal inference, optimization, agent debate or pattern learning)',
   );
   process.exit(0);
 }

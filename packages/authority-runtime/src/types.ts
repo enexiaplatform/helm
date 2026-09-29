@@ -65,23 +65,35 @@ export type DecisionTypeDefinition = {
   readonly key: string;
   readonly name: string;
   readonly description: string;
+  /**
+   * null = a HELM system type, available to every organization. Otherwise the
+   * organization that extended the registry with it (ADR-0025 §5): its key is
+   * unique within that organization, never shadows a system key, and is
+   * invisible to every other organization.
+   */
+  readonly orgId: string | null;
 };
+
+export const DECISION_TYPE_KEY = /^[A-Z][A-Z_]{1,62}$/;
 
 export const SEEDED_DECISION_TYPES: readonly DecisionTypeDefinition[] = [
   {
     key: 'INVENTORY_ALLOCATION',
     name: 'Inventory allocation',
     description: 'Which demand a constrained stock position serves, and from where it is drawn.',
+    orgId: null,
   },
   {
     key: 'PRICING',
     name: 'Pricing',
     description: 'A realised price, discount or price structure departing from the list.',
+    orgId: null,
   },
   {
     key: 'CUSTOMER_TERMS',
     name: 'Customer terms',
     description: 'Delivery, payment or service terms agreed with a named customer.',
+    orgId: null,
   },
 ];
 
@@ -274,6 +286,13 @@ export type RoleOccupancy = {
   readonly basis: string;
   readonly recordedAt: string;
   readonly recordedBy: UserId | null;
+  /**
+   * RECORD time of the ending — when HELM learned that `validTo` was set.
+   * Ending an occupancy writes `validTo` onto the row, so without this a reader
+   * reconstructing an earlier knowledge boundary (the digital twin) could not
+   * tell a role holder who had left from one HELM only later learned had left.
+   */
+  readonly endedAt: string | null;
 };
 
 // ------------------------------------------------------------ delegation
@@ -544,7 +563,36 @@ export type AuthorityEvaluation = {
   readonly explanation: readonly string[];
   readonly fingerprint: string;
   readonly supersedesEvaluationId: string | null;
+  /** Which code path produced the verdict, and whether it checked the consequences it read. */
+  readonly evaluator: EvaluatorIdentity;
 };
+
+/**
+ *   TRUSTED_SERVICE  the server-side authority runtime (ADR-0024): identity from a
+ *                    verified token, every fact loaded from HELM's own records,
+ *                    the chosen run's trace re-derived before it is believed
+ *   CLIENT_RUNTIME   the same kernel running in a client — demo mode, tests, or a
+ *                    tool. Its verdict is a computation, not a trusted record: the
+ *                    database accepts evaluations only from the trusted service.
+ */
+export const evaluatorKinds = ['TRUSTED_SERVICE', 'CLIENT_RUNTIME'] as const;
+export type EvaluatorKind = (typeof evaluatorKinds)[number];
+
+export type ConsequenceCheck = {
+  readonly status: 'TRACE_VERIFIED' | 'NOT_CHECKED';
+  readonly runIds: readonly string[];
+  readonly checkedSteps: number;
+  readonly checkedInputs: number;
+};
+
+export type EvaluatorIdentity = {
+  readonly kind: EvaluatorKind;
+  /** Where it ran: 'edge:helm-authority', 'in-process', … */
+  readonly host: string;
+  readonly consequenceCheck: ConsequenceCheck;
+};
+
+export const NOT_CHECKED: ConsequenceCheck = { status: 'NOT_CHECKED', runIds: [], checkedSteps: 0, checkedInputs: 0 };
 
 // ---------------------------------------------------------------- approval
 

@@ -149,9 +149,25 @@ export function runAuthorityStoreConformanceSuite(api: AuthorityTestApi, harness
         explanation: ['conformance'],
         fingerprint: `aev_conformance_${result}`,
         supersedesEvaluationId: null,
+        evaluator: { kind: 'TRUSTED_SERVICE', host: 'conformance', consequenceCheck: { status: 'NOT_CHECKED', runIds: [], checkedSteps: 0, checkedInputs: 0 } },
       });
       return { ...h, f, at, policy, rule, evaluation };
     };
+
+    it("an organization extends the decision-type registry, never redefines it, and never sees other organizations' types", async () => {
+      const h = await setup();
+      const key = `CONFORMANCE_${h.at().replace(/[^0-9]/g, '').slice(-9).replace(/[0-9]/g, (d) => 'ABCDEFGHIJ'[Number(d)])}`;
+      const own = expectOk(await h.store.registerDecisionType(h.scopeA, { key, name: 'Conformance type', description: 'org extension' }), 'register');
+      assert.equal(own.orgId, h.scopeA.orgId);
+      const listA = expectOk(await h.store.listDecisionTypes(h.scopeA), 'list A');
+      assert.ok(listA.some((t) => t.key === 'INVENTORY_ALLOCATION' && t.orgId === null), 'system types are listed');
+      assert.ok(listA.some((t) => t.key === key && t.orgId === h.scopeA.orgId), 'the extension is listed');
+      assert.ok(!expectOk(await h.store.listDecisionTypes(h.scopeB), 'list B').some((t) => t.key === key), 'another organization never sees it');
+      assert.equal((await h.store.registerDecisionType(h.scopeA, { key: 'PRICING', name: 'Pricing, our way', description: '' })).ok, false, 'a system type was redefined');
+      assert.equal((await h.store.registerDecisionType(h.scopeA, { key, name: 'Again', description: '' })).ok, false, 'an extension was registered twice');
+      assert.equal((await h.store.registerDecisionType(h.scopeA, { key: 'lower_case', name: 'Bad key', description: '' })).ok, false, 'a malformed key');
+      await h.cleanup?.();
+    });
 
     it('a policy version is recorded once; recording it again is refused', async () => {
       const h = await setup();
@@ -196,6 +212,8 @@ export function runAuthorityStoreConformanceSuite(api: AuthorityTestApi, harness
       assert.equal(early.ok, false, 'an occupancy ended before it began');
       const ended = expectOk(await h.store.endOccupancy(h.scopeA, o.id, '2026-06-01T00:00:00.000Z'), 'end');
       assert.equal(ended.validTo, '2026-06-01T00:00:00.000Z');
+      assert.ok(ended.endedAt !== null, 'the ending carries the record time HELM learned it');
+      assert.equal(o.endedAt, null, 'an occupancy is recorded unended');
       const twice = await h.store.endOccupancy(h.scopeA, o.id, '2026-07-01T00:00:00.000Z');
       assert.equal(twice.ok, false, 'an ended occupancy was rewritten');
       await h.cleanup?.();

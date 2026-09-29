@@ -79,6 +79,29 @@ for (const t of ['helm_authority_evaluations', 'helm_required_approvals', 'helm_
     `${t} is not visible exactly where its decision is`);
 }
 
+// 4b. Phase 7 moved the helpers into helm_private and re-pointed every policy.
+// The EFFECTIVE definitions are those, so they must say the same thing.
+const sql7 = readFileSync(join(root, 'supabase', 'migrations', '20260929090000_helm_management_twin.sql'), 'utf8').replace(/--[^\n]*/g, ' ');
+const fn7 = (name) => new RegExp(`FUNCTION\\s+helm_private\\.${name}\\s*\\([^)]*\\)[\\s\\S]*?AS\\s+\\$fn\\$([\\s\\S]*?)\\$fn\\$`, 'i').exec(sql7)?.[1] ?? '';
+const units7 = fn7('visible_org_units');
+check('sql7', /WITH\s+RECURSIVE/i.test(units7) && /u\.parent_id\s*=\s*r\.id/i.test(units7) && /m\.user_id\s*=\s*auth\.uid\(\)/i.test(units7),
+  'helm_private.visible_org_units is not the caller\'s subtree-inclusive memberships');
+const see7 = fn7('can_see_decision');
+check('sql7', /has_org_role\(d\.org_id,\s*'admin'\)/i.test(see7) && /d\.created_by\s*=\s*auth\.uid\(\)/i.test(see7) && /helm_private\.visible_org_units/i.test(see7),
+  'helm_private.can_see_decision does not implement admin ∨ creator ∨ granted unit');
+for (const t of [
+  'helm_decision_alternatives', 'helm_decision_assumptions', 'helm_actions', 'helm_decision_revisions', 'helm_decision_criteria',
+  'helm_decision_challenges', 'helm_decision_evidence', 'helm_decision_commitments', 'helm_decision_commitment_snapshots',
+  'helm_decision_outcome_reviews',
+]) {
+  const scoped = [...sql7.matchAll(/FOREACH\s+t\s+IN\s+ARRAY\s+ARRAY\[([\s\S]*?)\]\s+LOOP([\s\S]*?)END\s+LOOP/gi)].some(
+    (m) => m[1].includes(`'${t}'`) && /"Scoped read %s"[\s\S]*?FOR\s+SELECT[\s\S]*?helm_private\.can_see_decision\(decision_id\)/i.test(m[2]),
+  );
+  check('sql7', scoped, `${t} is not re-pointed at helm_private.can_see_decision`);
+}
+check('sql7', /"Scoped read helm_decisions"[\s\S]{0,200}helm_private\.can_see_decision\(id\)/i.test(sql7), 'helm_decisions is not re-pointed');
+check('sql7', /DROP\s+FUNCTION\s+IF\s+EXISTS\s+public\.helm_can_see_decision\(uuid\)/i.test(sql7), 'the exposed public helper was not dropped');
+
 // 5. visibility is not authority
 const src = (f) => readFileSync(join(root, 'packages', 'authority-runtime', 'src', f), 'utf8');
 check('separate', !/from\s+'\.\/engine\.ts'/.test(src('visibility.ts')), 'the visibility module imports the authority engine');
@@ -98,7 +121,7 @@ check('separate', !/visib/i.test(/export type EvaluationInput = \{([\s\S]*?)\n\}
 if (failures.length === 0) {
   console.log(
     'verify:decision-visibility — ok (Pharma member ✗ Industrial, Industrial member ✗ Pharma, Country GM ✓ both; shared not copied; ' +
-      'deny by default; SQL helper subtree-inclusive on every decision table; visibility and authority never import each other)',
+      'deny by default; SQL helper subtree-inclusive on every decision table, now in helm_private; visibility and authority never import each other)',
   );
   process.exit(0);
 }

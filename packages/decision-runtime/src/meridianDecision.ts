@@ -71,6 +71,12 @@ export async function buildMeridianDecision(
      * scope's actor; Phase 6 governance reads that, never this text.
      */
     committedByLabel?: string;
+    /**
+     * Called once the decision is READY_FOR_DECISION and before anything is
+     * committed — the moment a digital twin takes its "before" snapshot. A
+     * failure stops the build; nothing is committed.
+     */
+    beforeCommit?: (prepared: { decisionId: string; revisionId: string }) => Promise<Result<unknown>>;
   } = {},
 ): Promise<Result<MeridianDecisionResult>> {
   const created = await runtime.createDecision(scope, {
@@ -506,6 +512,11 @@ export async function buildMeridianDecision(
       evidence,
       commitment: null,
     });
+  }
+
+  if (options.beforeCommit) {
+    const paused = await options.beforeCommit({ decisionId: decision.id, revisionId });
+    if (!paused.ok) return paused;
   }
 
   // ------------------------------------------------------------ commitment

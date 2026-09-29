@@ -71,6 +71,12 @@ export type RelationshipQuery = {
   /** Matches either endpoint — the usual "everything touching X" question. */
   eitherEndpoint?: EntityId;
   asOf?: Date | string;
+  /**
+   * Return every relationship ever recorded, closed ones included, and apply no
+   * valid-time filter. For readers that reconstruct the graph under their own
+   * two-time lens (the digital twin); ignored when `asOf` is set.
+   */
+  includeClosed?: boolean;
   minConfidence?: Confidence;
   limit?: number;
   offset?: number;

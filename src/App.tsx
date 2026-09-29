@@ -16,6 +16,7 @@ import { OntologyPage } from './pages/OntologyPage.tsx';
 import { ValueGraphPage } from './pages/ValueGraphPage.tsx';
 import { CalculationsPage } from './pages/CalculationsPage.tsx';
 import { GovernancePage } from './pages/GovernancePage.tsx';
+import { TwinPage } from './pages/TwinPage.tsx';
 
 export default function App() {
   const authReady = useHelmStore((s) => s.authReady);
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="value-graph" element={<ValueGraphPage />} />
           <Route path="calculations" element={<CalculationsPage />} />
           <Route path="governance" element={<GovernancePage />} />
+          <Route path="twin" element={<TwinPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

@@ -474,7 +474,10 @@ export function createInMemoryGraphStore(opts: InMemoryGraphStoreOptions): Graph
       const next: Relationship = {
         ...rel,
         validTo: asValidTime(when),
-        updatedAt: asRecordTime(when),
+        // RECORD time of the closure — when HELM learned it — not the valid
+        // time it takes effect. They differ whenever an end is back- or
+        // forward-dated, and the twin's knowledge boundary reads this.
+        updatedAt: asRecordTime(toIso(clock.now())),
       };
       db.relationships.set(id, next);
       return ok(next);
@@ -503,8 +506,8 @@ export function createInMemoryGraphStore(opts: InMemoryGraphStoreOptions): Graph
       if (query.minConfidence !== undefined) {
         rows = rows.filter((r) => (r.confidence ?? 1) >= query.minConfidence!);
       }
-      rows = rows.filter((r) => validAt(r, query.asOf));
-      rows.sort((a, b) => a.relationshipTypeKey.localeCompare(b.relationshipTypeKey));
+      if (!(query.includeClosed && query.asOf === undefined)) rows = rows.filter((r) => validAt(r, query.asOf));
+      rows.sort((a, b) => a.relationshipTypeKey.localeCompare(b.relationshipTypeKey) || a.id.localeCompare(b.id));
       const offset = query.offset ?? 0;
       const limit = query.limit ?? 500;
       return ok(rows.slice(offset, offset + limit));

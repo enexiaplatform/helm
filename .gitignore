@@ -50,3 +50,6 @@ coverage
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated edge-function bundle (npm run build:authority-function)
+supabase/functions/helm-authority/kernel.mjs

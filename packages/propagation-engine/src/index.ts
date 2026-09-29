@@ -35,3 +35,5 @@ export {
   type Lens,
   type TruthLayerReading,
 } from './selection.ts';
+export { verifyCalculationTrace } from './verify.ts';
+export type { TraceVerification, TraceVerificationInput } from './verify.ts';

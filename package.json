@@ -17,7 +17,7 @@
     "verify:ontology": "node scripts/verify-ontology.mjs",
     "verify:graph": "node scripts/verify-graph.mjs",
     "verify:memoire-boundary": "node scripts/verify-memoire-boundary.mjs",
-    "verify": "npm run verify:architecture && npm run verify:schema && npm run verify:ontology && npm run verify:graph && npm run verify:memoire-boundary && npm run verify:value-schema && npm run verify:value-metrics && npm run verify:value-graph && npm run verify:value-observations && npm run verify:calculations && npm run verify:calculation-graph && npm run verify:propagation && npm run verify:lineage && npm run verify:scenario-schema && npm run verify:scenario-runtime && npm run verify:scenario-isolation && npm run verify:scenario-time && npm run verify:scenario-lineage && npm run verify:decision-schema && npm run verify:decision-runtime && npm run verify:decision-lineage && npm run verify:decision-immutability && npm run verify:decision-scenario-binding && npm run verify:authority-schema && npm run verify:authority-runtime && npm run verify:authority-scope && npm run verify:authority-threshold && npm run verify:authority-delegation && npm run verify:approval-lineage && npm run verify:decision-visibility && npm run verify:phase-boundary && npm run verify:docs",
+    "verify": "npm run verify:architecture && npm run verify:schema && npm run verify:ontology && npm run verify:graph && npm run verify:memoire-boundary && npm run verify:value-schema && npm run verify:value-metrics && npm run verify:value-graph && npm run verify:value-observations && npm run verify:calculations && npm run verify:calculation-graph && npm run verify:propagation && npm run verify:lineage && npm run verify:scenario-schema && npm run verify:scenario-runtime && npm run verify:scenario-isolation && npm run verify:scenario-time && npm run verify:scenario-lineage && npm run verify:decision-schema && npm run verify:decision-runtime && npm run verify:decision-lineage && npm run verify:decision-immutability && npm run verify:decision-scenario-binding && npm run verify:authority-schema && npm run verify:authority-runtime && npm run verify:authority-scope && npm run verify:authority-threshold && npm run verify:authority-delegation && npm run verify:approval-lineage && npm run verify:decision-visibility && npm run verify:authority-server && npm run verify:twin-schema && npm run verify:twin-snapshot && npm run verify:twin-temporality && npm run verify:twin-diff && npm run verify:twin-lineage && npm run verify:twin-security && npm run verify:phase-boundary && npm run verify:docs",
     "check": "npm run typecheck && npm run lint && npm run test && npm run verify",
     "verify:value-schema": "node scripts/verify-value-schema.mjs",
     "verify:value-metrics": "node scripts/verify-value-metrics.mjs",
@@ -47,7 +47,15 @@
     "verify:authority-threshold": "node scripts/verify-authority-threshold.mjs",
     "verify:authority-delegation": "node scripts/verify-authority-delegation.mjs",
     "verify:approval-lineage": "node scripts/verify-approval-lineage.mjs",
-    "verify:decision-visibility": "node scripts/verify-decision-visibility.mjs"
+    "verify:decision-visibility": "node scripts/verify-decision-visibility.mjs",
+    "verify:authority-server": "node scripts/verify-authority-server.mjs",
+    "verify:twin-schema": "node scripts/verify-twin-schema.mjs",
+    "verify:twin-snapshot": "node scripts/verify-twin-snapshot.mjs",
+    "verify:twin-temporality": "node scripts/verify-twin-temporality.mjs",
+    "verify:twin-diff": "node scripts/verify-twin-diff.mjs",
+    "verify:twin-lineage": "node scripts/verify-twin-lineage.mjs",
+    "verify:twin-security": "node scripts/verify-twin-security.mjs",
+    "build:authority-function": "node scripts/build-authority-function.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.3",
@@ -64,7 +72,8 @@
     "@helm/propagation-engine": "0.1.0",
     "@helm/scenario-runtime": "0.1.0",
     "@helm/decision-runtime": "0.1.0",
-    "@helm/authority-runtime": "0.1.0"
+    "@helm/authority-runtime": "0.1.0",
+    "@helm/twin-runtime": "0.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

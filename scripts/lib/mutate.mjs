@@ -1,5 +1,5 @@
 /**
- * A mutation harness for the Phase 5 and Phase 6 verification contracts.
+ * A mutation harness for the Phase 5, 6 and 7 verification contracts.
  *
  * A verifier that passes proves nothing on its own: it might assert nothing at
  * all, or assert something that cannot fail. So each contract is also run
@@ -22,6 +22,8 @@ const K = 'packages/decision-runtime/src';
 const A = 'packages/authority-runtime/src';
 const MIGRATION = 'supabase/migrations/20260923100000_helm_decision_runtime.sql';
 const MIGRATION6 = 'supabase/migrations/20260928100000_helm_decision_authority.sql';
+const MIGRATION7 = 'supabase/migrations/20260929090000_helm_management_twin.sql';
+const T = 'packages/twin-runtime/src';
 
 /**
  * Each mutation: which contract must catch it, which invariant it attacks, and
@@ -342,6 +344,190 @@ const MUTATIONS = [
     file: `${K}/index.ts`,
     from: "export type { MeridianDecisionResult } from './meridianDecision.ts';",
     to: "export type { MeridianDecisionResult } from './meridianDecision.ts';\nexport type { AuthorityEvaluation } from '@helm/authority-runtime';",
+  },
+  // ===================================================== Phase 7
+  // -------------------------------------------------- verify:twin-schema
+  {
+    verifier: 'verify-twin-schema.mjs',
+    invariant: 'a snapshot cannot know what was recorded after it was built',
+    file: MIGRATION7,
+    from: '  CHECK (recorded_through <= created_at),',
+    to: '  CHECK (true),',
+  },
+  {
+    verifier: 'verify-twin-schema.mjs',
+    invariant: 'every twin item names a kernel object',
+    file: MIGRATION7,
+    from: "  refs jsonb NOT NULL CHECK (jsonb_typeof(refs) = 'array' AND jsonb_array_length(refs) > 0),",
+    to: '  refs jsonb NOT NULL,',
+  },
+  {
+    verifier: 'verify-twin-schema.mjs',
+    invariant: 'an item is read only where its class is cleared',
+    file: MIGRATION7,
+    from: '    AND helm_private.has_clearance(org_id, sensitivity)\n  );',
+    to: '  );',
+  },
+  {
+    verifier: 'verify-twin-schema.mjs',
+    invariant: 'the database classifies metrics exactly as the kernel does',
+    file: `${T}/sensitivity.ts`,
+    from: "  Opex: 'FINANCIAL_SENSITIVE',",
+    to: "  Opex: 'GENERAL_MANAGEMENT',",
+  },
+  {
+    verifier: 'verify-twin-schema.mjs',
+    invariant: 'binding a scenario to a decision captures it',
+    file: MIGRATION7,
+    from: "          s.visibility = 'ORG_WIDE'\n          AND NOT EXISTS (SELECT 1 FROM public.helm_decision_alternatives a WHERE a.scenario_id = s.id)",
+    to: "          s.visibility = 'ORG_WIDE'",
+  },
+  // ------------------------------------------------ verify:twin-snapshot
+  {
+    verifier: 'verify-twin-snapshot.mjs',
+    invariant: 'the committed future is read from the frozen run',
+    file: `${T}/compose.ts`,
+    from: '    if (!enterprise && !(v.subjectEntityId && view.inScope.has(v.subjectEntityId))) continue;',
+    to: '    continue;',
+  },
+  {
+    verifier: 'verify-twin-snapshot.mjs',
+    invariant: 'a committed decision reads as committed',
+    file: `${T}/management.ts`,
+    from: "    else if (e.eventType === 'COMMITTED' || e.eventType === 'RECONSIDERED') state = 'COMMITTED';",
+    to: "    else if (e.eventType === 'RECONSIDERED') state = 'COMMITTED';",
+  },
+  // --------------------------------------------- verify:twin-temporality
+  {
+    verifier: 'verify-twin-temporality.mjs',
+    invariant: 'an entity is read as it was believed at the knowledge boundary',
+    file: `${T}/structure.ts`,
+    from: '    if (ms(current.updatedAt) > T) {',
+    to: '    if (false) {',
+  },
+  {
+    verifier: 'verify-twin-temporality.mjs',
+    invariant: 'an occupancy end learned later is not applied to an earlier boundary',
+    file: `${T}/management.ts`,
+    from: '(o.endedAt === null || known(o.endedAt, Tknow))',
+    to: '(true)',
+  },
+  {
+    verifier: 'verify-twin-temporality.mjs',
+    invariant: 'an act after the business instant is not part of it',
+    file: `${T}/management.ts`,
+    from: '  const T = Math.min(ms(lens.recordedThrough), E);',
+    to: '  const T = ms(lens.recordedThrough);',
+  },
+  {
+    verifier: 'verify-twin-temporality.mjs',
+    invariant: 'the same business instant known later differs only in knowledge',
+    file: `${T}/delta.ts`,
+    from: '  if (ms(from.snapshot.spec.lens.effectiveAsOf) === ms(to.snapshot.spec.lens.effectiveAsOf)) return true;',
+    to: '',
+  },
+  // ---------------------------------------------------- verify:twin-diff
+  {
+    verifier: 'verify-twin-diff.mjs',
+    invariant: 'a change of role holder is structural',
+    file: `${T}/delta.ts`,
+    from: "  ROLE_OCCUPANCY: 'STRUCTURAL_CHANGE',",
+    to: "  ROLE_OCCUPANCY: 'GOVERNANCE_CHANGE',",
+  },
+  {
+    verifier: 'verify-twin-diff.mjs',
+    invariant: 'after the committed period it is expected against actual, before it distance to intent',
+    file: `${T}/trajectory.ts`,
+    from: 'horizonMs <= E ?',
+    to: 'horizonMs > E ?',
+  },
+  {
+    verifier: 'verify-twin-diff.mjs',
+    invariant: 'a committed future off track by the stated line is raised',
+    file: `${T}/attention.ts`,
+    from: "    if (isMaterial(delta, s(cf, 'unit') as string | null) !== true) continue;",
+    to: '    continue;',
+  },
+  // ------------------------------------------------- verify:twin-lineage
+  {
+    verifier: 'verify-twin-lineage.mjs',
+    invariant: 'attribution walks the trace down to the input that moved',
+    file: `${T}/explain.ts`,
+    from: '        if (sa && sb) because = attribute(sa, ca, sb, cb, depth + 1);',
+    to: '        if (sa && sb) because = [];',
+  },
+  {
+    verifier: 'verify-twin-lineage.mjs',
+    invariant: 'attention reaches a kernel object through its cause',
+    file: `${T}/attention.ts`,
+    from: "...c.refs.filter((r) => r.kind !== 'TWIN_ITEM').slice(0, 1)",
+    to: '...c.refs.slice(0, 0)',
+  },
+  // ------------------------------------------------ verify:twin-security
+  {
+    verifier: 'verify-twin-security.mjs',
+    invariant: 'a restricted class needs a clearance',
+    file: `${T}/sensitivity.ts`,
+    from: "  if (viewer.orgRole === 'admin') return true;",
+    to: '  return true;',
+  },
+  {
+    verifier: 'verify-twin-security.mjs',
+    invariant: 'a scenario bound to a decision is captured by it',
+    file: `${T}/sensitivity.ts`,
+    from: "  if (facts.boundDecisions.length === 0 && facts.visibility === 'ORG_WIDE') {",
+    to: "  if (facts.visibility === 'ORG_WIDE') {",
+  },
+  {
+    verifier: 'verify-twin-security.mjs',
+    invariant: 'the twin does not rely on a client-computed verdict',
+    file: `${T}/management.ts`,
+    from: "      if (e.evaluator.kind !== 'TRUSTED_SERVICE') {",
+    to: '      if (false) {',
+  },
+  // --------------------------------------------- verify:authority-server
+  {
+    verifier: 'verify-authority-server.mjs',
+    invariant: 'a request supplying a fact is refused',
+    file: `${A}/trusted.ts`,
+    from: '      if (supplied.length > 0) {',
+    to: '      if (false) {',
+  },
+  {
+    verifier: 'verify-authority-server.mjs',
+    invariant: 'an unverified future gets no verdict',
+    file: `${A}/trusted.ts`,
+    from: '          if (!verified.value.verified) {',
+    to: '          if (false) {',
+  },
+  {
+    verifier: 'verify-authority-server.mjs',
+    invariant: 'a recorded output must re-derive from its inputs',
+    file: 'packages/propagation-engine/src/verify.ts',
+    from: '    if (!same(normalized.normalizedText, step.outputValue)) {',
+    to: '    if (false) {',
+  },
+  {
+    verifier: 'verify-authority-server.mjs',
+    invariant: 'the database stores only trusted verdicts',
+    file: MIGRATION7,
+    from: "    CHECK (evaluator->>'kind' = 'TRUSTED_SERVICE');",
+    to: "    CHECK (evaluator->>'kind' IN ('TRUSTED_SERVICE', 'CLIENT_RUNTIME'));",
+  },
+  // ------------------------------------------ verify:phase-boundary (Phase 7)
+  {
+    verifier: 'verify-phase-boundary.mjs',
+    invariant: 'the twin writes nothing below itself',
+    file: `${T}/runtime.ts`,
+    from: 'export function createTwinRuntime(opts: TwinRuntimeOptions): TwinRuntime {',
+    to: 'export function createTwinRuntime(opts: TwinRuntimeOptions): TwinRuntime {\n  void opts.sources.valueGraph.recordObservation(null as never, null as never);',
+  },
+  {
+    verifier: 'verify-phase-boundary.mjs',
+    invariant: 'attention is never scored',
+    file: `${T}/attention.ts`,
+    from: 'export const ATTENTION_RULES_VERSION',
+    to: 'export const attentionScore = 0;\nexport const ATTENTION_RULES_VERSION',
   },
 ];
 

@@ -14,6 +14,7 @@ export const HELM_NAV: NavItem[] = [
   { key: 'value-graph', label: 'Value Graph' },
   { key: 'calculations', label: 'Calculations' },
   { key: 'governance', label: 'Governance' },
+  { key: 'twin', label: 'Twin' },
 ];
 
 interface Props {

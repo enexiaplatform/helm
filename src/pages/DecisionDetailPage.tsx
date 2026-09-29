@@ -414,9 +414,9 @@ function Governance({ scope, mode, commitmentId, onChanged }: { scope: Scope; mo
       onOpenRequest={(id) => void loadApprovalRequest(gov, id).then(setRequest).catch((e) => setRefusal(String(e)))}
       onEvaluate={() => {
         setBusy(true);
-        void gov.runtime.evaluate(gov.scope, commitmentId).then(async (r) => {
+        void gov.evaluate(asUserId(String(gov.scope.actorId)), commitmentId).then(async (r) => {
           setBusy(false);
-          if (!r.ok) setRefusal(r.error.message);
+          if (!r.ok) setRefusal(r.message);
           await refresh(gov);
           onChanged();
         });
@@ -425,16 +425,9 @@ function Governance({ scope, mode, commitmentId, onChanged }: { scope: Scope; mo
         setBusy(true);
         setRefusal(null);
         const as = actingScope(gov, asUserId_ ? asUserId(asUserId_) : null);
-        const input = { comments };
-        const call =
-          decision === 'APPROVE'
-            ? gov.runtime.recordApproval(as, requirementId, input)
-            : decision === 'REJECT'
-              ? gov.runtime.recordRejection(as, requirementId, input)
-              : gov.runtime.returnForReconsideration(as, requirementId, input);
-        void call.then(async (r) => {
+        void gov.act(asUserId(String(as.actorId)), requirementId, decision, comments).then(async (r) => {
           setBusy(false);
-          if (!r.ok) setRefusal(r.error.message);
+          if (!r.ok) setRefusal(r.message);
           else setRequest(null);
           await refresh(gov);
           onChanged();

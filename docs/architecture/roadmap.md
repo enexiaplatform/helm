@@ -1,7 +1,7 @@
 # Implementation Roadmap
 
 Sixteen phases, in order, with what already exists credited and the gates that
-make each phase complete. Status as of **2026-09-28** (Phases 0–6 delivered).
+make each phase complete. Status as of **2026-09-29** (Phases 0–6 delivered; Phase 7 delivered in the kernel).
 
 ## 1. Sequencing principle
 
@@ -42,14 +42,14 @@ flowchart LR
 | 4 | Scenario Runtime | **✅ done** | 7 canonical futures over one pinned baseline | [phase-4-implemented.md](phase-4-implemented.md) |
 | 5 | Decision Intelligence | **✅ done** | question, alternatives bound to runs, criteria, commitment | [phase-5-implemented.md](phase-5-implemented.md) |
 | 6 | Authority Graph | **✅ done** | roles, DOA versions, consequence-based rules, delegation, approval acts, scoped decision RLS | [phase-6-implemented.md](phase-6-implemented.md) |
-| 7 | Digital Twin | planned | nothing | versioned snapshots; current / scenario / expected-future |
+| 7 | Management Digital Twin | **✅ done in the kernel** (cloud path: pilot blockers) | versioned snapshots in five kinds, two-time lens, twin delta, trajectory, lineage, sensitivity, trusted authority service | [phase-7-implemented.md](phase-7-implemented.md) |
 | 8 | Causal Graph | planned | nothing | hypotheses with evidence both ways; correlation kept distinct |
 | 9 | Management Genome | planned | commitments + outcome reviews as substrate; no learner | structured `find_similar_*`, not embeddings-only |
 | 10 | Counterfactual | planned | nothing | actual vs expected vs alternative with confidence |
 | 11 | AI Intelligence Runtime | planned | none by design | provider port; citation validation rejects ungrounded ids |
 | 12 | Multi-Agent | planned | nothing | 6 function agents + debate → synthesis |
 | 13 | Memoire Connector | ♻ formalize | working bridge, no contract | `SourceConnector` + pure `translate()` + fixtures |
-| 14 | Country GM Cockpit | **blocked on 6, 7** | signal inbox | attention-first; every card traces to kernel objects |
+| 14 | Country GM Cockpit | **blocked on the [deployment gate](trusted-runtime-deployment-gate.md)** | signal inbox; twin attention rules | attention-first; every card traces to kernel objects |
 | 15 | Management Review Loop | planned | nothing | W/M/Q reviews generated from the model |
 
 ## 3. Phase 1 — Enterprise Ontology (delivered)
@@ -165,10 +165,37 @@ It gates Phase 14: a cockpit exists to present cross-functional data to a scoped
 role, so shipping it while any org member can read every country's margins would
 be a defect, not a feature.
 
-## 6. Phases 7–10 — state, causality, learning
+## 6. Phase 7 — Management Digital Twin (delivered in the kernel)
 
-7 gives versioned enterprise state, so "current vs scenario vs expected future"
-is a comparison of snapshots. 8 separates correlation from management causal
+The enterprise as a versioned management state: immutable snapshots that
+reference the kernel records they were read from, under a two-time lens
+(business time and knowledge time), replayable to the same fingerprint.
+"Current vs committed future" is a comparison of snapshots — distance to intent
+before the period ends, expected against actual after. The phase also closed
+three Phase 6 debts: verdicts are computed by a trusted server-side service
+([ADR-0024](../adr/0024-trusted-authority-runtime.md)); scenarios and values
+follow decision visibility and sensitivity classes, and the helpers moved to
+`helm_private` ([ADR-0025](../adr/0025-sensitivity-and-scenario-visibility.md)).
+Record: [phase-7-implemented.md](phase-7-implemented.md) ·
+[ADR-0023](../adr/0023-management-digital-twin.md).
+
+| Layer | State |
+| --- | --- |
+| Kernel | Phase 7 complete |
+| Shared database schema | Phase 7 migration applied and verified |
+| Trusted authority implementation | built and contract-tested |
+| Trusted authority deployment | **NOT DEPLOYED** |
+| Postgres conformance | **7 suites SKIPPED** (no isolated credentials) |
+| Cloud end-to-end readiness | **NOT YET PROVEN** |
+| Production / pilot readiness | **BLOCKED** by the [trusted runtime deployment gate](trusted-runtime-deployment-gate.md) |
+
+Blocker A (runtime not deployed, cloud path unproven) and Blocker B (Postgres
+conformance never run in an isolated authenticated environment) gate pilot
+use, production governance and Phase 14.
+
+## 6a. Phases 8–10 — causality, learning
+
+8 separates correlation from management causal
 hypothesis, with evidence for *and against* and a confidence that moves. 9 turns
 the existing pattern detection into retrieval over structured situation patterns.
 10 delivers counterfactuals as scenario comparison, behind an interface that

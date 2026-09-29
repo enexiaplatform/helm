@@ -137,6 +137,8 @@ export async function buildGovernanceStack({ orgs = [ORG_A], policy = true } = {
     clock,
     graph,
     valueGraph,
+    engine,
+    registry,
     scenarios,
     decisions,
     decisionStore,

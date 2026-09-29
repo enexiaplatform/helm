@@ -33,7 +33,7 @@ React 19 + Vite + TypeScript + Tailwind 3. Tokens live ONLY in `tailwind.config.
 
 ## Registers
 - Management pages: 1240px cap, kicker "Management · …", headline = computed sentence (serif 44).
-- Instrument pages (Scenarios, Value Graph, Ontology, Calculations, Governance): `AppShell wide`, kicker "Kernel instrument · …", serif 28 title naming the object, raw enums, runs and fingerprints visible.
+- Instrument pages (Scenarios, Value Graph, Ontology, Calculations, Governance, Twin): `AppShell wide`, kicker "Kernel instrument · …", serif 28 title naming the object, raw enums, runs and fingerprints visible.
 - Brand graphics (chart grid, brass heading line) appear only on Auth.
 
 ## Logo

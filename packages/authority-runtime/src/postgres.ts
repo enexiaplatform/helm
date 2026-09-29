@@ -48,7 +48,7 @@ const RULE_COLS =
   'id, org_id, policy_id, key, holder_kind, holder_role_id, holder_user_id, holder_label, effect, decision_types, acts, scope, ' +
   'conditions, escalation_role_id, escalation_role_label, approval_independence, approval_sequence, rationale, recorded_at';
 const OCCUPANCY_COLS =
-  'id, org_id, role_id, role_label, user_id, person_entity_id, person_label, kind, valid_from, valid_to, basis, recorded_at, recorded_by';
+  'id, org_id, role_id, role_label, user_id, person_entity_id, person_label, kind, valid_from, valid_to, basis, recorded_at, recorded_by, ended_at';
 const DELEGATION_COLS =
   'id, org_id, delegator_user_id, delegator_label, delegator_role_id, delegator_role_label, delegate_user_id, delegate_label, ' +
   'decision_types, acts, scope, conditions, valid_from, valid_to, reason, recorded_at, revoked_at, revoked_reason';
@@ -58,7 +58,7 @@ const EVALUATION_COLS =
   'id, org_id, decision_id, commitment_id, commitment_fingerprint, act, actor_user_id, actor_label, actor_roles, act_at, ' +
   'evaluated_at, evaluated_by, decision_type_key, profile_id, policies, scope, consequences, rules, delegations, basis_rule_id, ' +
   'basis_delegation_id, result, required_authorities, escalation_chain, authorities_in_scope, gaps, governability, explanation, ' +
-  'fingerprint, supersedes_evaluation_id';
+  'fingerprint, supersedes_evaluation_id, evaluator';
 const REQUIRED_COLS =
   'id, org_id, evaluation_id, decision_id, commitment_id, commitment_fingerprint, role_id, role_label, basis_rule_id, kind, ' +
   'reason, sequence, independent_of_user_id, created_at';
@@ -122,6 +122,7 @@ const toOccupancy = (r: Row): RoleOccupancy => ({
   basis: String(r.basis),
   recordedAt: isoReq(r.recorded_at),
   recordedBy: uid(r.recorded_by),
+  endedAt: iso(r.ended_at),
 });
 
 const toDelegation = (r: Row): Delegation => ({
@@ -198,6 +199,7 @@ const toEvaluation = (r: Row): AuthorityEvaluation => ({
   explanation: arr<string>(r.explanation),
   fingerprint: String(r.fingerprint),
   supersedesEvaluationId: (r.supersedes_evaluation_id as string | null) ?? null,
+  evaluator: obj(r.evaluator, { kind: 'CLIENT_RUNTIME', host: 'unknown', consequenceCheck: { status: 'NOT_CHECKED', runIds: [], checkedSteps: 0, checkedInputs: 0 } }),
 });
 
 const toRequired = (r: Row): RequiredApproval => ({
@@ -264,10 +266,32 @@ export function createPostgresAuthorityStore(opts: PostgresAuthorityStoreOptions
   };
 
   return {
-    async listDecisionTypes() {
-      const { data, error } = await client.from('helm_decision_types').select('key, name, description').order('key');
+    async listDecisionTypes(scope) {
+      const { data, error } = await client
+        .from('helm_decision_types')
+        .select('key, name, description, org_id')
+        .or(`org_id.is.null,org_id.eq.${scope.orgId}`)
+        .order('key');
       if (error) return fail(AuthorityErrors.READ_FAILED, error.message);
-      return ok(((data as Row[] | null) ?? []).map((r): DecisionTypeDefinition => ({ key: String(r.key), name: String(r.name), description: String(r.description ?? '') })));
+      return ok(
+        ((data as Row[] | null) ?? []).map((r): DecisionTypeDefinition => ({
+          key: String(r.key),
+          name: String(r.name),
+          description: String(r.description ?? ''),
+          orgId: (r.org_id as string | null) ?? null,
+        })),
+      );
+    },
+    async registerDecisionType(scope, input) {
+      // The registry guard refuses a system key and the unique index a repeat.
+      const { data, error } = await client
+        .from('helm_decision_types')
+        .insert({ key: input.key, name: input.name, description: input.description, org_id: scope.orgId })
+        .select('key, name, description, org_id')
+        .single();
+      if (error) return fail(AuthorityErrors.WRITE_FAILED, error.message);
+      const r = data as Row;
+      return ok({ key: String(r.key), name: String(r.name), description: String(r.description ?? ''), orgId: String(r.org_id) });
     },
 
     async recordPolicy(scope, input) {
@@ -361,6 +385,7 @@ export function createPostgresAuthorityStore(opts: PostgresAuthorityStoreOptions
     async endOccupancy(scope, id, validTo) {
       const { data, error } = await client
         .from('helm_role_occupancies')
+        // ended_at is stamped by the database (the record time of the ending).
         .update({ valid_to: validTo })
         .eq('org_id', scope.orgId)
         .eq('id', id)
@@ -496,6 +521,7 @@ export function createPostgresAuthorityStore(opts: PostgresAuthorityStoreOptions
           explanation: input.explanation,
           fingerprint: input.fingerprint,
           supersedes_evaluation_id: input.supersedesEvaluationId,
+          evaluator: input.evaluator,
         },
         EVALUATION_COLS,
         toEvaluation,

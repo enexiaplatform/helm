@@ -121,6 +121,7 @@ export async function buildDecisionStack({ orgs = [ORG_A] } = {}) {
     graphStore,
     valueGraph,
     engine,
+    registry,
     scenarios,
     decisions,
     fork,

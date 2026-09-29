@@ -75,6 +75,7 @@ export type EvaluationDraft = Omit<
   | 'profileId'
   | 'fingerprint'
   | 'supersedesEvaluationId'
+  | 'evaluator'
 >;
 
 const MAX_ESCALATION_STEPS = 6;

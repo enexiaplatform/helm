@@ -15,6 +15,7 @@
 
 import type { Result, Scope, UserId } from '@helm/shared';
 import type { DelegationValidation } from './delegation.ts';
+import type { ConsequenceCheck } from './types.ts';
 import type {
   ApprovalAct,
   ApprovalLineage,
@@ -42,7 +43,7 @@ import type {
 
 export type NewPolicy = Omit<AuthorityPolicy, 'id' | 'orgId'>;
 export type NewRule = Omit<AuthorityRule, 'id' | 'orgId'>;
-export type NewOccupancy = Omit<RoleOccupancy, 'id' | 'orgId'>;
+export type NewOccupancy = Omit<RoleOccupancy, 'id' | 'orgId' | 'endedAt'>;
 export type NewDelegation = Omit<Delegation, 'id' | 'orgId'>;
 export type NewProfile = Omit<DecisionGovernanceProfile, 'id' | 'orgId'>;
 export type NewVisibilityGrant = Omit<DecisionVisibilityGrant, 'id' | 'orgId'>;
@@ -50,8 +51,13 @@ export type NewEvaluation = Omit<AuthorityEvaluation, 'id' | 'orgId'>;
 export type NewRequiredApproval = Omit<RequiredApproval, 'id' | 'orgId'>;
 export type NewApprovalAct = Omit<ApprovalAct, 'id' | 'orgId'>;
 
+export type NewDecisionType = { key: string; name: string; description: string };
+
 export interface AuthorityStore {
+  /** The system types and this organization's own — never another organization's. */
   listDecisionTypes(scope: Scope): Promise<Result<readonly DecisionTypeDefinition[]>>;
+  /** An organization extension. Refused when it would redefine a system type or repeat one of its own. */
+  registerDecisionType(scope: Scope, input: NewDecisionType): Promise<Result<DecisionTypeDefinition>>;
 
   recordPolicy(scope: Scope, input: NewPolicy): Promise<Result<AuthorityPolicy>>;
   getPolicy(scope: Scope, id: string): Promise<Result<AuthorityPolicy | null>>;
@@ -165,6 +171,8 @@ export type ApprovalInput = {
 
 export interface AuthorityRuntime {
   listDecisionTypes(scope: Scope): Promise<Result<readonly DecisionTypeDefinition[]>>;
+  /** Admin only. Extends the registry for this organization; never redefines a HELM type. */
+  registerDecisionType(scope: Scope, input: NewDecisionType): Promise<Result<DecisionTypeDefinition>>;
 
   /** A DOA version and its rules. Versions are added, never edited. */
   recordPolicy(scope: Scope, input: RecordPolicyInput): Promise<Result<{ policy: AuthorityPolicy; rules: readonly AuthorityRule[] }>>;
@@ -189,7 +197,11 @@ export interface AuthorityRuntime {
   ): Promise<Result<DecisionVisibilityGrant>>;
 
   /** Evaluates the COMMIT act of one commitment, records it, and generates its required approvals. */
-  evaluate(scope: Scope, commitmentId: string): Promise<Result<{ evaluation: AuthorityEvaluation; required: readonly RequiredApproval[] }>>;
+  evaluate(
+    scope: Scope,
+    commitmentId: string,
+    options?: { consequenceCheck?: ConsequenceCheck },
+  ): Promise<Result<{ evaluation: AuthorityEvaluation; required: readonly RequiredApproval[] }>>;
   explain(scope: Scope, evaluationId: string): Promise<Result<{ evaluation: AuthorityEvaluation; why: readonly string[] }>>;
   findAuthorities(scope: Scope, commitmentId: string, act: AuthorityAct): Promise<Result<readonly AuthorityHolding[]>>;
   resolveRequiredApprovals(scope: Scope, evaluationId: string): Promise<Result<readonly RequiredApproval[]>>;

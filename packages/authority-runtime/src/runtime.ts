@@ -54,7 +54,9 @@ import {
   type ConsequenceValue,
   type DecisionGovernanceProfile,
   type Delegation,
+  type EvaluatorKind,
   type MaterialChange,
+  NOT_CHECKED,
   type RoleOccupancy,
 } from './types.ts';
 import type { ApprovalInput, AuthorityRuntime, AuthorityStore, CreateDelegationInput } from './port.ts';
@@ -71,6 +73,12 @@ export type AuthorityRuntimeOptions = {
   scenarios: ScenarioRuntime;
   graph: GraphStore;
   clock: Clock;
+  /**
+   * Which code path this runtime is. Defaults to CLIENT_RUNTIME; only the
+   * trusted service (trusted.ts) constructs itself as TRUSTED_SERVICE, and in
+   * the cloud only its writes are accepted (ADR-0024).
+   */
+  evaluator?: { kind: EvaluatorKind; host: string };
 };
 
 /** Everything the engine needs about one commitment, assembled from existing records. */
@@ -96,6 +104,7 @@ const samePeriod = (a: FutureStateValue['period'], b: FutureStateValue['period']
 
 export function createAuthorityRuntime(opts: AuthorityRuntimeOptions): AuthorityRuntime {
   const { store, decisions, scenarios, graph, clock } = opts;
+  const evaluatorBase = opts.evaluator ?? { kind: 'CLIENT_RUNTIME' as const, host: 'in-process' };
   const now = () => clock.now().toISOString();
 
   const event = async (scope: Scope, decisionId: string, eventType: string, payload: Record<string, unknown>) => {
@@ -490,6 +499,12 @@ export function createAuthorityRuntime(opts: AuthorityRuntimeOptions): Authority
       return store.listDecisionTypes(scope);
     },
 
+    async registerDecisionType(scope, input) {
+      const allowed = needAdmin(scope, 'extend the decision-type registry');
+      if (!allowed.ok) return allowed;
+      return store.registerDecisionType(scope, input);
+    },
+
     async recordPolicy(scope, input) {
       const allowed = needAdmin(scope, 'record an authority policy');
       if (!allowed.ok) return allowed;
@@ -664,7 +679,7 @@ export function createAuthorityRuntime(opts: AuthorityRuntimeOptions): Authority
     },
 
     // ------------------------------------------------------------ evaluation
-    async evaluate(scope, commitmentId) {
+    async evaluate(scope, commitmentId, options) {
       const ctx = await assemble(scope, commitmentId);
       if (!ctx.ok) return ctx;
       const c = ctx.value;
@@ -698,6 +713,7 @@ export function createAuthorityRuntime(opts: AuthorityRuntimeOptions): Authority
         profileId: c.profile?.id ?? null,
         fingerprint: evaluationFingerprint({ commitmentFingerprint: c.commitment.fingerprint, ...draft }),
         supersedesEvaluationId: latest?.id ?? null,
+        evaluator: { ...evaluatorBase, consequenceCheck: options?.consequenceCheck ?? NOT_CHECKED },
       });
       if (!evaluation.ok) return evaluation;
 

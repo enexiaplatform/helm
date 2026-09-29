@@ -62,15 +62,17 @@ Stated plainly, because an undocumented gap is the dangerous kind.
 | Gap | Impact today | Closes in |
 | --- | --- | --- |
 | ~~No unit-level RLS on decisions.~~ **Closed in Phase 6** for every decision table: a decision is readable by org admins, its creator, and members of a unit it is shared with or of any unit above it (`helm_can_see_decision`, subtree-inclusive over `org_unit_memberships`). Proven server-side with users in two BUs and a country GM. | — | ✅ Phase 6 |
-| **Scenarios, value graph and calculations are still org-visible.** Unit scoping reaches decisions and everything hanging off them, not the model underneath. | A member can read a scenario bound to a decision they cannot see | Phase 7 (with sensitivity classes) |
+| ~~Scenarios, value graph and calculations are still org-visible.~~ **Closed in Phase 7** ([ADR-0025](../adr/0025-sensitivity-and-scenario-visibility.md)): a scenario bound to a decision is captured by it; runs, values and steps follow the scenario and their class. Proven server-side. | — | ✅ Phase 7 |
 | **Functional visibility is by unit only.** A function is modelled as an org unit (`department`) and a cross-functional decision gets one grant per unit; there is no per-field or per-metric function rule. | Coarse, but not over-broad for decisions | Phase 7 |
-| **No sensitivity classes.** Compensation-grade and margin-grade data would sit in one tier. | Blocks HR data entirely | Phase 7 |
+| ~~No sensitivity classes.~~ **Closed in Phase 7**: five compartments on metrics and value nodes, admin-granted time-bounded clearances, per-item enforcement in RLS and in the twin, withheld items stated. HR classes are reserved; no HR data exists. | — | ✅ Phase 7 |
 | ~~There is no authority model.~~ **Closed in Phase 6** ([ADR-0022](../adr/0022-decision-authority-graph.md)): role occupancy, versioned DOA policies, consequence-based rules, delegation, evaluations bound to the commitment fingerprint, approval acts tied to identity and seat. `helm_approval_rules` is RETIRED. | — | ✅ Phase 6 |
-| **Authority verdicts are computed in the client.** The database enforces identity, immutability, fingerprint coherence, committer identity and that an `AUTHORIZED` basis was held; it cannot re-derive a threshold. | A tampered client could record a wrong verdict with a real basis rule | server-side authority runtime, before real onboarding |
-| **No field-level redaction.** Access is row-shaped. | Cannot share a decision while hiding its amount | Phase 7 |
+| ~~Authority verdicts are computed in the client.~~ **Closed in Phase 7** ([ADR-0024](../adr/0024-trusted-authority-runtime.md)): only the trusted service writes evaluations, requirements and approval acts; it refuses client-supplied facts and re-derives the consequences' calculation trace. | — | ✅ Phase 7 (kernel and schema) |
+| **The trusted service is not deployed.** The `helm-authority` edge function is built but not deployed; client writes are revoked, so the cloud decision page cannot record a verdict until it is. | Cloud governance flow unavailable | **pilot blocker** — [deployment gate](trusted-runtime-deployment-gate.md) |
+| **SECURITY DEFINER helpers in `public`.** ~~Phase 6's three helpers were callable over RPC.~~ Moved to `helm_private` in Phase 7, `EXECUTE` revoked from `PUBLIC` and `anon`. The five shared-core helpers remain in `public` (Memoire's). | shared-core helpers only | ✅ Phase 7 for HELM's |
+| **Field-level redaction is per twin item only.** Twin items and value observations are redacted by class; decision rows are still row-shaped. | Cannot share a decision while hiding its amount | later |
 | **No AI access controls.** Nothing to control — there is no AI. Must exist before Phase 11. | none yet | Phase 11 |
 
-**Phase 6 is therefore a security phase as much as a governance phase.** The
+**Phases 6 and 7 are therefore security phases as much as governance and state phases.** The
 Country GM Cockpit (Phase 14) must not ship before it, because a cockpit's whole
 purpose is presenting cross-functional data to a scoped role.
 
@@ -110,6 +112,14 @@ Every entity type and value metric carries a class:
 Enforced at the graph-store adapter, so a traversal cannot leak a node the actor
 may not see — even through a path they are otherwise allowed to walk. Filtering
 in the UI would be theatre.
+
+**As implemented in Phase 7** ([ADR-0025](../adr/0025-sensitivity-and-scenario-visibility.md)):
+the classes are `GENERAL_MANAGEMENT`, `FINANCIAL_SENSITIVE`,
+`COMMERCIAL_CONFIDENTIAL`, `HR_RESTRICTED`, `STRATEGIC_RESTRICTED`, held as
+compartments (not levels) on value metrics and nodes, enforced in RLS on
+observations, calculation steps and twin items (`helm_private.has_clearance`),
+and in the twin's projection, which states what was withheld. Entity-type
+classes are not yet modelled.
 
 ### 4.3 Authority as data
 

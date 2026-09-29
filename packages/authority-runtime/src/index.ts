@@ -57,3 +57,5 @@ export {
   scopeAs,
 } from './meridianGovernance.ts';
 export type { MeridianGovernanceGraph } from './meridianGovernance.ts';
+export { createTrustedAuthorityService, verifyScenarioRun, TrustedErrors, TRUSTED_HOST_EDGE } from './trusted.ts';
+export type { TrustedAuthorityDeps, TrustedAuthorityService, TrustedResponse, VerifiedIdentity, Membership } from './trusted.ts';

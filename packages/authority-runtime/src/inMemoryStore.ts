@@ -14,6 +14,8 @@ import { fail, ok, type Clock, type IdGen, type Result, type Scope } from '@helm
 import {
   AuthorityErrors,
   SEEDED_DECISION_TYPES,
+  DECISION_TYPE_KEY,
+  type DecisionTypeDefinition,
   type ApprovalAct,
   type AuthorityEvaluation,
   type AuthorityPolicy,
@@ -68,7 +70,8 @@ export function checkRule(input: Omit<AuthorityRule, 'id' | 'orgId'>): Result<tr
 }
 
 export function createInMemoryAuthorityStore(opts: InMemoryAuthorityStoreOptions): AuthorityStore {
-  const { idGen } = opts;
+  const { idGen, clock } = opts;
+  const orgTypes = new Map<string, DecisionTypeDefinition>();
   const policies = new Map<string, AuthorityPolicy>();
   const rules = new Map<string, AuthorityRule>();
   const occupancies = new Map<string, RoleOccupancy>();
@@ -89,8 +92,22 @@ export function createInMemoryAuthorityStore(opts: InMemoryAuthorityStoreOptions
   };
 
   return {
-    async listDecisionTypes() {
-      return ok(SEEDED_DECISION_TYPES);
+    async listDecisionTypes(scope) {
+      return ok([...SEEDED_DECISION_TYPES, ...[...orgTypes.values()].filter((t) => t.orgId === scope.orgId)]);
+    },
+    async registerDecisionType(scope, input) {
+      if (!DECISION_TYPE_KEY.test(input.key)) {
+        return fail(AuthorityErrors.INVALID_INPUT, `Decision type key "${input.key}" must be UPPER_SNAKE_CASE.`);
+      }
+      if (input.name.trim().length === 0) return fail(AuthorityErrors.INVALID_INPUT, 'A decision type has a name.');
+      if (SEEDED_DECISION_TYPES.some((t) => t.key === input.key)) {
+        return fail(AuthorityErrors.INVALID_INPUT, `${input.key} is a HELM system type; an organization extends the registry, it does not redefine it.`);
+      }
+      const id = `${scope.orgId}|${input.key}`;
+      if (orgTypes.has(id)) return fail(AuthorityErrors.IMMUTABLE, `${input.key} is already registered for this organization.`);
+      const t: DecisionTypeDefinition = deepFreeze({ key: input.key, name: input.name, description: input.description, orgId: scope.orgId });
+      orgTypes.set(id, t);
+      return ok(t);
     },
 
     // ------------------------------------------------------------- policies
@@ -148,7 +165,7 @@ export function createInMemoryAuthorityStore(opts: InMemoryAuthorityStoreOptions
         return fail(AuthorityErrors.INVALID_INPUT, 'An occupancy must end after it starts.');
       }
       if (input.basis.trim().length < 4) return fail(AuthorityErrors.INVALID_INPUT, 'An occupancy needs a basis.');
-      return put(occupancies, { ...input, id: idGen.next(), orgId: scope.orgId });
+      return put(occupancies, { ...input, id: idGen.next(), orgId: scope.orgId, endedAt: null });
     },
     async endOccupancy(scope, id, validTo) {
       const o = mine(scope, occupancies.get(id));
@@ -157,7 +174,7 @@ export function createInMemoryAuthorityStore(opts: InMemoryAuthorityStoreOptions
         return fail(AuthorityErrors.IMMUTABLE, 'That occupancy has already ended; its history is not rewritten.');
       }
       if (!later(validTo, o.validFrom)) return fail(AuthorityErrors.INVALID_INPUT, 'An occupancy must end after it starts.');
-      return put(occupancies, { ...o, validTo });
+      return put(occupancies, { ...o, validTo, endedAt: clock.now().toISOString() });
     },
     async listOccupancies(scope) {
       return ok(all(scope, occupancies).sort((a, b) => a.validFrom.localeCompare(b.validFrom) || a.id.localeCompare(b.id)));

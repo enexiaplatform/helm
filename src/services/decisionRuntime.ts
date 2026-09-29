@@ -28,6 +28,7 @@ import {
   recordMeridianDoaV1,
   recordMeridianOccupancies,
   type AuthorityRuntime,
+  type AuthorityStore,
 } from '@helm/authority-runtime';
 import { systemClock, uuidIdGen, type Scope } from '@helm/shared';
 import type { ScenarioRuntime } from '@helm/scenario-runtime';
@@ -49,6 +50,8 @@ export type DecisionWorkspaceContext = {
    * granted retroactively, so a commitment made first would be INDETERMINATE.
    */
   demoAuthority: AuthorityRuntime | null;
+  /** Demo only: the store behind it, which the in-process trusted service writes through. */
+  demoAuthorityStore: AuthorityStore | null;
 };
 
 let demoContext: Promise<DecisionWorkspaceContext> | null = null;
@@ -68,8 +71,9 @@ function getDemoContext(scope: Scope): Promise<DecisionWorkspaceContext> {
     // Committed by the demo Commercial Director — by identity, which is what
     // Phase 6 governance reads — so the demo shows a commitment that needs
     // the Country GM's approval.
+    const authorityStore = createInMemoryAuthorityStore({ clock: systemClock, idGen: uuidIdGen });
     const authority = createAuthorityRuntime({
-      store: createInMemoryAuthorityStore({ clock: systemClock, idGen: uuidIdGen }),
+      store: authorityStore,
       decisions: store,
       scenarios: scenarios.runtime,
       graph: scenarios.graphs.graphStore,
@@ -94,6 +98,7 @@ function getDemoContext(scope: Scope): Promise<DecisionWorkspaceContext> {
       mode: 'demo' as const,
       canonicalDecisionId: built.value.decision.id,
       demoAuthority: authority,
+      demoAuthorityStore: authorityStore,
     };
   })();
   return demoContext;
@@ -112,6 +117,7 @@ async function getCloudContext(scope: Scope): Promise<DecisionWorkspaceContext |
     mode: 'cloud',
     canonicalDecisionId: null,
     demoAuthority: null,
+    demoAuthorityStore: null,
   };
 }
 

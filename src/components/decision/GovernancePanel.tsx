@@ -38,6 +38,8 @@ export interface GovernanceView {
   actor: string;
   fingerprint: string;
   evaluatedAt: string;
+  /** Which code path produced the verdict, and whether it re-derived the chosen future first. */
+  evaluator: string;
   consequences: { label: string; value: string }[];
   why: string[];
   requirements: GovernanceRequirementView[];
@@ -107,6 +109,7 @@ export function GovernancePanel({ view, identities, request, onOpenRequest, onEv
           ['Authority in force', view.basis],
           ['Committed by', view.actor],
           ['Evaluated', view.evaluatedAt],
+          ['Evaluated by', view.evaluator],
         ].map(([k, v]) => (
           <div key={k} className="grid">
             <dt className="text-meta text-ink-500">{k}</dt>

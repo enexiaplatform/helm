@@ -62,3 +62,5 @@ a new one, so the reasoning history stays readable.
 | [0023](0023-management-digital-twin.md) | The Management Digital Twin — versioned management state, referenced, not copied | accepted | 7 |
 | [0024](0024-trusted-authority-runtime.md) | The trusted authority runtime — verdicts are computed where the client cannot reach | accepted, amends 0022 | 7 |
 | [0025](0025-sensitivity-and-scenario-visibility.md) | Sensitivity classes, scenario visibility, private helpers and decision-type tenancy | accepted, amends 0022 | 7 |
+| [0026](0026-enterprise-causal-graph.md) | The Enterprise Causal Graph — evidence-backed causal claims, kept apart from dependency, correlation and coincidence | accepted | 8 |
+| [0027](0027-causal-evidence-policy.md) | The causal evidence policy — a hierarchy with ceilings, count never decides | accepted | 8 |

@@ -1,5 +1,5 @@
 /**
- * A mutation harness for the Phase 5, 6 and 7 verification contracts.
+ * A mutation harness for the Phase 5, 6, 7 and 8 verification contracts.
  *
  * A verifier that passes proves nothing on its own: it might assert nothing at
  * all, or assert something that cannot fail. So each contract is also run
@@ -24,6 +24,8 @@ const MIGRATION = 'supabase/migrations/20260923100000_helm_decision_runtime.sql'
 const MIGRATION6 = 'supabase/migrations/20260928100000_helm_decision_authority.sql';
 const MIGRATION7 = 'supabase/migrations/20260929090000_helm_management_twin.sql';
 const T = 'packages/twin-runtime/src';
+const MIGRATION8 = 'supabase/migrations/20260930090000_helm_causal_graph.sql';
+const C8 = 'packages/causal-runtime/src';
 
 /**
  * Each mutation: which contract must catch it, which invariant it attacks, and
@@ -528,6 +530,239 @@ const MUTATIONS = [
     file: `${T}/attention.ts`,
     from: 'export const ATTENTION_RULES_VERSION',
     to: 'export const attentionScore = 0;\nexport const ATTENTION_RULES_VERSION',
+  },
+  // ------------------------------------------------ verify:causal-schema (Phase 8)
+  {
+    verifier: "verify-causal-schema.mjs",
+    invariant: "the database stamps the record time of causal knowledge",
+    file: MIGRATION8,
+    from: "  NEW.recorded_at := now();\n  RETURN NEW;\nEND;\n$fn$;\n\nCREATE OR REPLACE FUNCTION public.helm_causal_claims_guard()",
+    to: "  RETURN NEW;\nEND;\n$fn$;\n\nCREATE OR REPLACE FUNCTION public.helm_causal_claims_guard()",
+  },
+  {
+    verifier: "verify-causal-schema.mjs",
+    invariant: "there is no unconditional CAUSES",
+    file: MIGRATION8,
+    from: "'MEDIATES', 'MODERATES')),\n  target_claim_id",
+    to: "'MEDIATES', 'MODERATES', 'CAUSES')),\n  target_claim_id",
+  },
+  {
+    verifier: "verify-causal-schema.mjs",
+    invariant: "a claim is never unscoped",
+    file: MIGRATION8,
+    from: "jsonb_array_length(scope->'anchors') >= 1)",
+    to: "jsonb_array_length(scope->'anchors') >= 0)",
+  },
+  {
+    verifier: "verify-causal-schema.mjs",
+    invariant: "judgement is labelled as judgement",
+    file: MIGRATION8,
+    from: "CONSTRAINT helm_causal_evidence_judgement_labelled CHECK ((type = 'MANAGEMENT_EXPERTISE') = (provenance->>'method' = 'JUDGEMENT')),",
+    to: "CONSTRAINT helm_causal_evidence_judgement_labelled CHECK (true),",
+  },
+  {
+    verifier: "verify-causal-schema.mjs",
+    invariant: "a claim is readable only with clearance for every class it carries",
+    file: MIGRATION8,
+    from: "          WHERE e.id IN (SELECT helm_private.causal_claim_evidence(p_claim)) AND NOT helm_private.has_clearance(p_org, e.sensitivity)\n",
+    to: "          WHERE false\n",
+  },
+  {
+    verifier: "verify-causal-schema.mjs",
+    invariant: "a claim is withheld from whoever cannot see its decision",
+    file: MIGRATION8,
+    from: "        AND NOT EXISTS (SELECT 1 FROM helm_private.causal_claim_decisions(p_claim) d WHERE NOT helm_private.can_see_decision(d))\n",
+    to: "        AND true\n",
+  },
+  {
+    verifier: "verify-causal-schema.mjs",
+    invariant: "a contradictory case never supports",
+    file: MIGRATION8,
+    from: "  IF ev.type = 'CONTRADICTORY_CASE' AND NEW.stance = 'SUPPORTS' THEN",
+    to: "  IF false THEN",
+  },
+  // ------------------------------------------------ verify:causal-runtime (Phase 8)
+  {
+    verifier: "verify-causal-runtime.mjs",
+    invariant: "HELM never proposes a cause",
+    file: `${C8}/runtime.ts`,
+    from: "if (v.claim.effectKey !== question.target.variableKey || candidates.some(",
+    to: "if (candidates.some(",
+  },
+  {
+    verifier: "verify-causal-runtime.mjs",
+    invariant: "traversal is bounded",
+    file: `${C8}/runtime.ts`,
+    from: "if (!Number.isInteger(input.maxDepth) || input.maxDepth < 1 || input.maxDepth > MAX_DEPTH) {",
+    to: "if (false) {",
+  },
+  {
+    verifier: "verify-causal-runtime.mjs",
+    invariant: "a path is as supported as its weakest claim",
+    file: `${C8}/runtime.ts`,
+    from: "STATUS_ORDER.indexOf(a) - STATUS_ORDER.indexOf(b))[0];",
+    to: "STATUS_ORDER.indexOf(b) - STATUS_ORDER.indexOf(a))[0];",
+  },
+  // ------------------------------------------------ verify:causal-evidence (Phase 8)
+  {
+    verifier: "verify-causal-evidence.mjs",
+    invariant: "judgement is capped at LOW",
+    file: `${C8}/policy.ts`,
+    from: "  MANAGEMENT_EXPERTISE: 'LOW',\n};",
+    to: "  MANAGEMENT_EXPERTISE: 'MEDIUM',\n};",
+  },
+  {
+    verifier: "verify-causal-evidence.mjs",
+    invariant: "count never decides",
+    file: `${C8}/policy.ts`,
+    from: "if (maxSupport === 'HIGH' || mediumTypes.size >= 2) {",
+    to: "if (maxSupport === 'HIGH' || supports.length >= 2) {",
+  },
+  {
+    verifier: "verify-causal-evidence.mjs",
+    invariant: "a cause after its effect counts against the claim",
+    file: `${C8}/policy.ts`,
+    from: "if (temporal === 'TEMPORAL_CONFLICT' && countedAs === 'SUPPORT') {",
+    to: "if (false) {",
+  },
+  {
+    verifier: "verify-causal-evidence.mjs",
+    invariant: "a correlation cited as evidence is LOW",
+    file: `${C8}/policy.ts`,
+    from: "if (e.correlationFindingId !== null && ceiling !== 'LOW') {",
+    to: "if (false) {",
+  },
+  {
+    verifier: "verify-causal-evidence.mjs",
+    invariant: "a credible contradiction is not outvoted",
+    file: `${C8}/policy.ts`,
+    from: "if (materialAgainst && materialSupport) {",
+    to: "if (materialAgainst && materialSupport && against.length >= supports.length) {",
+  },
+  {
+    verifier: "verify-causal-evidence.mjs",
+    invariant: "a correction supersedes",
+    file: `${C8}/runtime.ts`,
+    from: "    const next = evidenceAtT.find((x) => x.supersedesId === head.id);",
+    to: "    const next = undefined as CausalEvidence | undefined;",
+  },
+  // ------------------------------------------------ verify:causal-temporality (Phase 8)
+  {
+    verifier: "verify-causal-temporality.mjs",
+    invariant: "evidence learned later never rewrites earlier belief",
+    file: `${C8}/runtime.ts`,
+    from: "  const links = known(r.links, T)\n",
+    to: "  const links = [...r.links]\n",
+  },
+  {
+    verifier: "verify-causal-temporality.mjs",
+    invariant: "no knowledge from the future",
+    file: `${C8}/runtime.ts`,
+    from: "if (ms(l.recordedThrough) > clock.now().getTime()) {",
+    to: "if (false) {",
+  },
+  {
+    verifier: "verify-causal-temporality.mjs",
+    invariant: "a claim does not exist before it was recorded",
+    file: `${C8}/runtime.ts`,
+    from: "    if (ms(claim.recordedAt) > T) {\n      return fail(CausalErrors.NOT_KNOWN_AT_LENS",
+    to: "    if (false) {\n      return fail(CausalErrors.NOT_KNOWN_AT_LENS",
+  },
+  // ------------------------------------------------ verify:causal-scope (Phase 8)
+  {
+    verifier: "verify-causal-scope.mjs",
+    invariant: "a claim does not generalize sideways",
+    file: `${C8}/scope.ts`,
+    from: "    else conflicts.push(a.label);",
+    to: "    else silent.push(a.label);",
+  },
+  {
+    verifier: "verify-causal-scope.mjs",
+    invariant: "nothing is global by default",
+    file: `${C8}/runtime.ts`,
+    from: "if (!Array.isArray(s.anchors) || s.anchors.length === 0) {",
+    to: "if (!Array.isArray(s.anchors)) {",
+  },
+  // ------------------------------------------------ verify:causal-vs-calculation (Phase 8)
+  {
+    verifier: "verify-causal-vs-calculation.mjs",
+    invariant: "a calculation dependency is never evidence",
+    file: `${C8}/runtime.ts`,
+    from: "    return ok({ claim, revision: revs[revs.length - 1], cause, effect, evaluation: evaluateAt(claim, r, lens) });",
+    to: "    const ev0 = evaluateAt(claim, r, lens);\n    return ok({ claim, revision: revs[revs.length - 1], cause, effect, evaluation: modelDependencyOf(cause, effect) && ev0.assessments.length === 0 ? { ...ev0, status: 'SUPPORTED' as const } : ev0 });",
+  },
+  {
+    verifier: "verify-causal-vs-calculation.mjs",
+    invariant: "a causal claim never writes the model",
+    file: `${C8}/runtime.ts`,
+    from: "      const s = await checkScope(scope, input.scope);\n      if (!s.ok) return s;\n      const period",
+    to: "      const s = await checkScope(scope, input.scope);\n      if (!s.ok) return s;\n      if (input.statement === 'never') await opts.graph.upsertEntity(scope, {} as never);\n      const period",
+  },
+  // ------------------------------------------------ verify:causal-lineage (Phase 8)
+  {
+    verifier: "verify-causal-lineage.mjs",
+    invariant: "a claim's lineage reaches its evidence's sources",
+    file: `${C8}/runtime.ts`,
+    from: "        ...a.flatMap((x) => x.evidence.refs),\n",
+    to: "",
+  },
+  {
+    verifier: "verify-causal-lineage.mjs",
+    invariant: "demo evidence is labelled demo",
+    file: `${C8}/meridianCausal.ts`,
+    from: "const demo = (ref: string) => `${DEMO_CAUSAL_LABEL} · ${ref}`;",
+    to: "const demo = (ref: string) => ref;",
+  },
+  // ------------------------------------------------ verify:causal-security (Phase 8)
+  {
+    verifier: "verify-causal-security.mjs",
+    invariant: "evidence restricts the claim it supports",
+    file: `${C8}/runtime.ts`,
+    from: "  for (const e of evidenceChain(v.claim.id, r)) out.add(e.sensitivity);\n",
+    to: "",
+  },
+  {
+    verifier: "verify-causal-security.mjs",
+    invariant: "a claim resting on an invisible decision is withheld",
+    file: `${C8}/runtime.ts`,
+    from: "const decisionsOk = viewer.orgRole === 'admin' || decisions.every((d) => facts.decisionVisible(d));",
+    to: "const decisionsOk = viewer.orgRole === 'admin' || decisions.length >= 0;",
+  },
+  {
+    verifier: "verify-causal-security.mjs",
+    invariant: "a restricted claim stays with its units",
+    file: `${C8}/runtime.ts`,
+    from: "          v.claim.visibility === 'ORG_WIDE' ||\n",
+    to: "          true ||\n",
+  },
+  // ------------------------------------------------ verify:phase-boundary (Phase 8)
+  {
+    verifier: "verify-phase-boundary.mjs",
+    invariant: "the twin knows nothing of the causal graph",
+    file: "packages/twin-runtime/src/types.ts",
+    from: "import type { OrgId, UserId } from '@helm/shared';",
+    to: "import type { OrgId, UserId } from '@helm/shared';\nimport type { CausalClaim } from '@helm/causal-runtime';\nexport type CausalItem = CausalClaim;",
+  },
+  {
+    verifier: "verify-phase-boundary.mjs",
+    invariant: "no path probability, no causal score",
+    file: `${C8}/policy.ts`,
+    from: "export const CAUSAL_EVIDENCE_POLICY",
+    to: "export const pathProbability = 0;\nexport const CAUSAL_EVIDENCE_POLICY",
+  },
+  {
+    verifier: 'verify-causal-schema.mjs',
+    invariant: "a read policy never re-reads its own row by id (INSERT … RETURNING)",
+    file: MIGRATION8,
+    from: "  USING (public.is_org_member(org_id) AND helm_private.causal_claim_row_visible(org_id, id, visibility, authored_by, granted_unit_ids, sensitivity, cause_key, effect_key));",
+    to: "  USING (public.is_org_member(org_id) AND helm_private.can_see_causal_claim(id));",
+  },
+  {
+    verifier: 'verify-causal-schema.mjs',
+    invariant: "signed-in clients hold no UPDATE or DELETE on causal tables",
+    file: MIGRATION8,
+    from: "REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE",
+    to: "REVOKE REFERENCES, TRIGGER ON TABLE",
   },
 ];
 

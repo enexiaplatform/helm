@@ -1,0 +1,28 @@
+{
+  "name": "@helm/causal-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "HELM Enterprise Causal Graph: scoped, evidence-backed causal claims with an explicit evidence hierarchy, append-only revisions and evidence, two-time reconstruction of what management believed, bounded traversal over feedback loops, and a hard separation from calculation dependency, correlation and coincidence.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./postgres": "./src/postgres.ts",
+    "./conformance": "./src/conformance.ts"
+  },
+  "helm": {
+    "layer": "kernel",
+    "pure": false,
+    "ioBoundary": "src/postgres.ts"
+  },
+  "dependencies": {
+    "@helm/shared": "0.1.0",
+    "@helm/ontology": "0.1.0",
+    "@helm/graph-store": "0.1.0",
+    "@helm/value-graph": "0.1.0",
+    "@helm/propagation-engine": "0.1.0",
+    "@helm/scenario-runtime": "0.1.0",
+    "@helm/decision-runtime": "0.1.0",
+    "@helm/authority-runtime": "0.1.0",
+    "@helm/twin-runtime": "0.1.0"
+  }
+}

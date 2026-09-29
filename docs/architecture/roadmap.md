@@ -1,7 +1,7 @@
 # Implementation Roadmap
 
 Sixteen phases, in order, with what already exists credited and the gates that
-make each phase complete. Status as of **2026-09-29** (Phases 0–6 delivered; Phase 7 delivered in the kernel).
+make each phase complete. Status as of **2026-09-30** (Phases 0–6 delivered; Phases 7 and 8 delivered in the kernel).
 
 ## 1. Sequencing principle
 
@@ -43,7 +43,7 @@ flowchart LR
 | 5 | Decision Intelligence | **✅ done** | question, alternatives bound to runs, criteria, commitment | [phase-5-implemented.md](phase-5-implemented.md) |
 | 6 | Authority Graph | **✅ done** | roles, DOA versions, consequence-based rules, delegation, approval acts, scoped decision RLS | [phase-6-implemented.md](phase-6-implemented.md) |
 | 7 | Management Digital Twin | **✅ done in the kernel** (cloud path: pilot blockers) | versioned snapshots in five kinds, two-time lens, twin delta, trajectory, lineage, sensitivity, trusted authority service | [phase-7-implemented.md](phase-7-implemented.md) |
-| 8 | Causal Graph | planned | nothing | hypotheses with evidence both ways; correlation kept distinct |
+| 8 | Enterprise Causal Graph | **✅ done in the kernel** (cloud path: pilot blockers) | scoped causal claims, evidence hierarchy, derived status, two-time reconstruction, bounded traversal, correlation apart, twin integration | [phase-8-implemented.md](phase-8-implemented.md) |
 | 9 | Management Genome | planned | commitments + outcome reviews as substrate; no learner | structured `find_similar_*`, not embeddings-only |
 | 10 | Counterfactual | planned | nothing | actual vs expected vs alternative with confidence |
 | 11 | AI Intelligence Runtime | planned | none by design | provider port; citation validation rejects ungrounded ids |
@@ -185,7 +185,7 @@ Record: [phase-7-implemented.md](phase-7-implemented.md) ·
 | Shared database schema | Phase 7 migration applied and verified |
 | Trusted authority implementation | built and contract-tested |
 | Trusted authority deployment | **NOT DEPLOYED** |
-| Postgres conformance | **7 suites SKIPPED** (no isolated credentials) |
+| Postgres conformance | **8 suites SKIPPED** (no isolated credentials; the causal store added in Phase 8) |
 | Cloud end-to-end readiness | **NOT YET PROVEN** |
 | Production / pilot readiness | **BLOCKED** by the [trusted runtime deployment gate](trusted-runtime-deployment-gate.md) |
 
@@ -193,10 +193,20 @@ Blocker A (runtime not deployed, cloud path unproven) and Blocker B (Postgres
 conformance never run in an isolated authenticated environment) gate pilot
 use, production governance and Phase 14.
 
-## 6a. Phases 8–10 — causality, learning
+## 6a. Phase 8 — Enterprise Causal Graph (delivered in the kernel)
 
-8 separates correlation from management causal
-hypothesis, with evidence for *and against* and a confidence that moves. 9 turns
+What the enterprise has evidence to believe influences its outcomes: scoped,
+versioned causal claims judged by explicit evidence under a named policy, with
+status derived at a lens and never stored, kept apart from calculation
+dependency, correlation and coincidence. Record:
+[phase-8-implemented.md](phase-8-implemented.md) ·
+[ADR-0026](../adr/0026-enterprise-causal-graph.md) ·
+[ADR-0027](../adr/0027-causal-evidence-policy.md). The Postgres causal store
+joins Blocker B (8 suites SKIPPED).
+
+## 6b. Phases 9–10 — learning, counterfactuals
+
+9 turns
 the existing pattern detection into retrieval over structured situation patterns.
 10 delivers counterfactuals as scenario comparison, behind an interface that
 causal inference can implement later.

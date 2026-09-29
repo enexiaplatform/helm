@@ -18,11 +18,11 @@ twin continues to treat the trusted service as the canonical cloud path.
 
 | Layer | State |
 | --- | --- |
-| Kernel | Phase 7 complete |
-| Shared database schema | Phase 7 migration applied and verified (rolled-back proof: 24 refusals, 12 controls, 0 failures) |
+| Kernel | Phase 8 complete |
+| Shared database schema | Phase 7 and Phase 8 migrations applied and verified (rolled-back proofs: 24 refusals / 12 controls; 31 refusals / 10 controls; 0 failures) |
 | Trusted authority implementation | Built and contract-tested (`verify:authority-server`, 14 service tests, 4 mutations caught) |
 | Trusted authority deployment | **NOT DEPLOYED** |
-| Postgres conformance | **7 suites SKIPPED** — no isolated authenticated environment |
+| Postgres conformance | **8 suites SKIPPED** — no isolated authenticated environment (the causal store added in Phase 8) |
 | Cloud end-to-end readiness | **NOT YET PROVEN** |
 | Production / pilot readiness | **BLOCKED** by this gate |
 
@@ -33,7 +33,14 @@ twin continues to treat the trusted service as the canonical cloud path.
   Client writes to the authority tables are revoked, so until the function is
   deployed the cloud decision page cannot record a verdict or an approval.
 - **Blocker B** — the Postgres conformance suites have never run against an
-  isolated, authenticated environment.
+  isolated, authenticated environment. The Phase 8 live proof showed why this
+  matters: it found that RLS refused `INSERT … RETURNING` for the causal
+  tables (fixed before the proof passed), and that **Phase 7's
+  `helm_save_twin_snapshot` has the same defect** — the cloud twin cannot save
+  a snapshot even as an org admin — and the twin tables still carry the
+  default UPDATE/DELETE privilege. Both remain open; causal claims are
+  decision-relevant in the demo, but their cloud persistence is unproven until
+  this gate passes.
 
 Both bear on whether HELM's governance guarantees hold outside the in-memory
 reference environment. Other Phase 7 debt is ordinary backlog.
@@ -47,7 +54,7 @@ reference environment. Other Phase 7 debt is ordinary backlog.
    admin, a non-member).
 4. Every previously skipped Postgres conformance suite is executed: graph,
    value graph, calculations, scenario store, decision store, authority store,
-   twin store.
+   twin store, causal store.
 5. Zero conformance failures.
 6. The cloud Decision → Commitment → Authority Evaluation → Approval path is
    executed end to end through the deployed `helm-authority` function.

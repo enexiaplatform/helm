@@ -7,6 +7,11 @@
  * TRAJECTORY (now against the committed future) and DEPENDENCY (why an item is
  * there, and why a value moved). Everything is read from the runtime; nothing
  * here ranks, scores, recommends or approves.
+ *
+ * Phase 8: a difference also shows the CAUSAL HYPOTHESES people have recorded
+ * about the inputs that moved — beside the model explanation, never merged
+ * with it. The model says which input moved; only a claim and its evidence say
+ * why it moved in the world.
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -33,6 +38,8 @@ import {
   type TwinContext,
 } from '../services/twinRuntime.ts';
 import { displayValue } from '../services/decisionRuntime.ts';
+import type { TwinCausalExplanation } from '@helm/causal-runtime';
+import { causalDifferenceView, resolveCausalContext, statusTone } from '../services/causalRuntime.ts';
 import { PageHeader } from '../components/ui/PageHeader.tsx';
 import { SectionHead } from '../components/ui/SectionHead.tsx';
 import { EmptyState } from '../components/ui/EmptyState.tsx';
@@ -159,7 +166,7 @@ export function TwinPage() {
   // Async results are keyed by the inputs they were read for; what is shown is derived from that key.
   const [deltaState, setDeltaState] = useState<{ key: string; value: Awaited<ReturnType<typeof compareView>> } | null>(null);
   const [trajectoryState, setTrajectoryState] = useState<{ key: string; value: Awaited<ReturnType<typeof trajectoryView>> | null } | null>(null);
-  const [lineage, setLineage] = useState<{ title: string; statement: string; lines: readonly LineageLine[]; disclaimer?: string } | null>(null);
+  const [lineage, setLineage] = useState<{ title: string; statement: string; lines: readonly LineageLine[]; disclaimer?: string; causal?: TwinCausalExplanation | null } | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -253,14 +260,23 @@ export function TwinPage() {
 
   const openDifference = (fromKey: string, toKey: string, label: string) =>
     void differenceView(ctx, aId, bId, fromKey, toKey)
-      .then((d) =>
+      .then(async (d) => {
+        // The causal investigation is read separately and may be unavailable; the model explanation stands alone.
+        let causal: TwinCausalExplanation | null = null;
+        try {
+          const cctx = scope ? await resolveCausalContext(mode ?? 'demo', scope) : null;
+          causal = cctx ? await causalDifferenceView(cctx, aId, bId, fromKey, toKey) : null;
+        } catch {
+          causal = null;
+        }
         setLineage({
           title: `Why did ${label} change?`,
           statement: d.statement,
           disclaimer: d.disclaimer,
           lines: d.attribution.flatMap((node) => attributionLines(node, 0)),
-        }),
-      )
+          causal,
+        });
+      })
       .catch((e) => setLineage({ title: label, statement: String(e), lines: [] }));
 
   const groups: DeltaGroup[] = delta
@@ -504,6 +520,7 @@ export function TwinPage() {
           {lineage && (
             <div className="mt-3">
               <p className="font-serif text-read">{lineage.title}</p>
+              {lineage.causal && <p className="helm-label mt-3">Model explanation</p>}
               <p className="mt-2 whitespace-pre-line text-dense text-ink-700">{lineage.statement}</p>
               <ol className="mt-4 grid gap-2">
                 {lineage.lines.map((l, i) => (
@@ -515,6 +532,34 @@ export function TwinPage() {
                 ))}
               </ol>
               {lineage.disclaimer && <p className="helm-caveat mt-4">{lineage.disclaimer}</p>}
+              {lineage.causal && (
+                <div className="mt-6 border-t-2 border-ink-950 pt-3">
+                  <p className="helm-label">Causal hypotheses</p>
+                  {lineage.causal.causal.map((ci) => {
+                    const candidates = ci.questions[0]?.candidates.map((k) => k.view) ?? ci.claims;
+                    return (
+                      <div key={`${ci.moved.metricKey}:${ci.moved.nodeId}`} className="mt-3">
+                        <p className="text-dense text-ink-900">
+                          Why did <span className="font-mono">{ci.variable?.label ?? ci.moved.input}</span> move?
+                        </p>
+                        <p className={cn('text-meta', ci.state === 'SUPPORTED_EXPLANATION_EXISTS' ? 'text-ink-600' : 'text-red-700')}>{ci.statement}</p>
+                        <ul className="mt-2 grid gap-2">
+                          {candidates.map((v) => (
+                            <li key={v.claim.id} className="border-l border-ink-200 pl-3">
+                              <Pill tone={statusTone(v.evaluation.status)}>{v.evaluation.status}</Pill>
+                              <span className="mt-1 block text-dense text-ink-800">{v.revision.statement}</span>
+                              <span className="block font-mono text-meta text-ink-500">
+                                {v.evaluation.counts.supporting} for · {v.evaluation.counts.challenging + v.evaluation.counts.contradicting} against · confidence {v.evaluation.confidence}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })}
+                  <p className="helm-caveat mt-4">{lineage.causal.important}</p>
+                </div>
+              )}
             </div>
           )}
         </aside>

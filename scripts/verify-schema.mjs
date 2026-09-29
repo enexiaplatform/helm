@@ -57,6 +57,16 @@ const APPEND_ONLY = [
   'helm_decision_commitments',
   'helm_decision_commitment_snapshots',
   'helm_decision_outcome_reviews',
+  // What the enterprise believed about causes, and on what evidence. A belief
+  // changes by a new revision, a correction or a new link — never by an edit.
+  'helm_causal_variables',
+  'helm_causal_claims',
+  'helm_causal_claim_revisions',
+  'helm_causal_evidence',
+  'helm_causal_evidence_links',
+  'helm_correlation_findings',
+  'helm_causal_questions',
+  'helm_causal_question_candidates',
 ];
 
 /**
@@ -246,7 +256,9 @@ for (const p of policies) {
 // (7) destructive statements
 for (const f of files) {
   const sql = stripComments(readFileSync(join(migrationsDir, f), 'utf8'));
-  for (const m of sql.matchAll(/\b(DROP\s+TABLE|TRUNCATE|DROP\s+COLUMN)\b[^;]*/gi)) {
+  // TRUNCATE as a STATEMENT is destructive; revoking the TRUNCATE privilege
+  // (REVOKE … TRUNCATE … FROM authenticated) protects, so only the statement counts.
+  for (const m of sql.matchAll(/\b(DROP\s+TABLE|DROP\s+COLUMN)\b[^;]*|(?:^|;)\s*TRUNCATE\b[^;]*/gi)) {
     fail('destructive-migration', `${f}: ${m[0].trim().slice(0, 90)}`);
   }
 

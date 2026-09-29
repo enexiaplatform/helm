@@ -17,11 +17,11 @@
  * end (docs/architecture/phase-7-implemented.md, "Cloud-path status").
  */
 
-import { createInMemoryGraphStore, buildCanonicalScenario } from '@helm/graph-store';
+import { createInMemoryGraphStore, buildCanonicalScenario, type GraphStore } from '@helm/graph-store';
 import { createInMemoryValueGraph, buildCanonicalValueChain, buildCanonicalScenarioExtension } from '@helm/value-graph';
 import { createInMemoryCalculationStore, createPropagationEngine } from '@helm/propagation-engine';
 import { buildMeridianScenarios, createInMemoryScenarioStore, createScenarioRuntime, meridianConstraintsV1, meridianStateFrame } from '@helm/scenario-runtime';
-import { createDecisionRuntime, createInMemoryDecisionStore } from '@helm/decision-runtime';
+import { createDecisionRuntime, createInMemoryDecisionStore, type DecisionStore } from '@helm/decision-runtime';
 import { createPostgresDecisionStore } from '@helm/decision-runtime/postgres';
 import {
   MERIDIAN_DEMO_PEOPLE,
@@ -34,6 +34,8 @@ import {
   recordMeridianDoaV1,
   recordMeridianOccupancies,
   scopeAs,
+  type AuthorityStore,
+  type MeridianGovernanceGraph,
   type OrgUnit,
 } from '@helm/authority-runtime';
 import { createPostgresAuthorityStore } from '@helm/authority-runtime/postgres';
@@ -74,6 +76,15 @@ export type TwinContext = {
   /** Demo: the fictional readers the explorer can read AS. Cloud: the signed-in user only. */
   readonly viewers: readonly TwinViewerPreset[];
   readonly units: readonly OrgUnit[];
+  /** The kernel handles a layer above the twin (the causal graph) builds on. */
+  readonly kernel: {
+    readonly graph: GraphStore;
+    readonly clock: Clock & { jumpTo?(iso: string): void };
+    readonly decisionStore: DecisionStore;
+    readonly authorityStore: AuthorityStore;
+    readonly governance: MeridianGovernanceGraph | null;
+    readonly nodeIds: Readonly<Record<string, string>> | null;
+  };
 };
 
 let demoTwin: Promise<TwinContext> | null = null;
@@ -215,6 +226,7 @@ function getDemoTwin(scope: Scope): Promise<TwinContext> {
         preset('industrialHead', 'Industrial BU Head'),
       ],
       units: MERIDIAN_DEMO_UNITS,
+      kernel: { graph, clock, decisionStore, authorityStore, governance, nodeIds },
     };
   })();
   return demoTwin;
@@ -270,6 +282,7 @@ async function getCloudTwin(scope: Scope): Promise<TwinContext | null> {
       },
     ],
     units,
+    kernel: { graph: graphs.graphStore, clock: systemClock, decisionStore, authorityStore, governance: null, nodeIds: null },
   };
 }
 

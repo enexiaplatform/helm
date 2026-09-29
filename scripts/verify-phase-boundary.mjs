@@ -1,16 +1,18 @@
 /**
- * verify:phase-boundary — Phase 7 does what Phase 7 does, and no more.
+ * verify:phase-boundary — Phase 8 does what Phase 8 does, and no more.
  *
  * Every phase ships a verifier that asserts the ABSENCE of the next phase's
  * work, because the most expensive mistake in a layered build is a layer that
  * quietly starts doing the next one's job. Phase 3's verifier forbade scenario
  * comparison; Phase 4 took comparison and forbade decisions; Phase 5 took
  * decisions and forbade authority; Phase 6 took decision authority and forbade
- * a digital twin; Phase 7 now owns the Management Digital Twin — but ONLY in
- * @helm/twin-runtime and the twin surfaces, reading every layer below it and
- * writing none of them. Scanned across the propagation engine, the scenario,
- * decision, authority and twin runtimes, the trusted authority host and the
- * explorers:
+ * a digital twin; Phase 7 took the Management Digital Twin and forbade causal
+ * claims; Phase 8 now owns the Enterprise Causal Graph — but ONLY in
+ * @helm/causal-runtime and the causal surfaces, as evidence-backed claims that
+ * a person authors. It infers nothing, discovers nothing, scores nothing and
+ * writes nothing below itself. Scanned across the propagation engine, the
+ * scenario, decision, authority, twin and causal runtimes, the trusted
+ * authority host and the explorers:
  *
  *   1. No automatic recommendation, ranking or scoring — of a scenario OR of a
  *      decision alternative. HELM shows the trade-off space and evaluates
@@ -22,8 +24,11 @@
  *   2b. No governance simulation ("what if the DOA changed") and no
  *      notification platform: both are later phases.
  *   2c. The authority runtime never mutates a decision or a commitment.
- *   3. No counterfactual or causal inference. A value link is not a causal
- *      claim; the causal graph is a later phase.
+ *   3. Causal claims live only in the causal runtime (and its surfaces). No
+ *      counterfactual, no causal discovery or inference, no do-calculus, no
+ *      Bayesian network, no uplift model, no causal score or path
+ *      probability — anywhere. CALCULATION_DEPENDENCY ≠ CAUSAL_RELATIONSHIP:
+ *      the causal runtime never writes the model below it.
  *   4. No optimization solver. A constraint is checked, never solved for.
  *   5. No agent debate or multi-agent deliberation, and no AI recommendation:
  *      the Intelligence Runtime is Phase 11.
@@ -54,6 +59,8 @@ const SCENARIO_SRC = join(root, 'packages', 'scenario-runtime', 'src');
 const DECISION_SRC = join(root, 'packages', 'decision-runtime', 'src');
 const AUTHORITY_SRC = join(root, 'packages', 'authority-runtime', 'src');
 const TWIN_SRC = join(root, 'packages', 'twin-runtime', 'src');
+const CAUSAL_SRC = join(root, 'packages', 'causal-runtime', 'src');
+const PHASE8_MIGRATION = join(root, 'supabase', 'migrations', '20260930090000_helm_causal_graph.sql');
 const PHASE7_MIGRATION = join(root, 'supabase', 'migrations', '20260929090000_helm_management_twin.sql');
 const MIGRATION = join(root, 'supabase', 'migrations', '20260920090000_helm_propagation.sql');
 const PHASE4_MIGRATION = join(root, 'supabase', 'migrations', '20260922090100_helm_scenario_runtime.sql');
@@ -73,6 +80,11 @@ const TWIN_APP = [
   join(root, 'src', 'services', 'twinRuntime.ts'),
 ];
 const TRUSTED_HOST = [join(root, 'server', 'authority', 'host.ts')];
+/** The Phase 8 surfaces: where causal knowledge may be SHOWN. */
+const CAUSAL_APP = [
+  join(root, 'src', 'pages', 'CausalPage.tsx'),
+  join(root, 'src', 'services', 'causalRuntime.ts'),
+];
 const rel = (p) => p.slice(root.length + 1).replaceAll('\\', '/');
 /** The Phase 6 surfaces: where authority may be SHOWN. */
 const GOVERNANCE_APP = [
@@ -100,6 +112,7 @@ const scenarioFiles = tsFiles(SCENARIO_SRC);
 const decisionFiles = tsFiles(DECISION_SRC);
 const authorityFiles = tsFiles(AUTHORITY_SRC);
 const twinFiles = tsFiles(TWIN_SRC);
+const causalFiles = tsFiles(CAUSAL_SRC);
 const engineCode = new Map(engineFiles.map((f) => [f, stripNonCode(readFileSync(join(ENGINE_SRC, f), 'utf8'))]));
 
 /** Every file the phase boundary is checked against, by readable path. */
@@ -121,11 +134,21 @@ const scanned = new Map([
     `packages/twin-runtime/src/${f}`,
     stripNonCode(readFileSync(join(TWIN_SRC, f), 'utf8')),
   ]),
-  ...[...KERNEL_APP, ...GOVERNANCE_APP, ...TWIN_APP, ...TRUSTED_HOST].filter(existsSync).map((p) => [
+  ...causalFiles.map((f) => [
+    `packages/causal-runtime/src/${f}`,
+    stripNonCode(readFileSync(join(CAUSAL_SRC, f), 'utf8')),
+  ]),
+  ...[...KERNEL_APP, ...GOVERNANCE_APP, ...TWIN_APP, ...TRUSTED_HOST, ...CAUSAL_APP].filter(existsSync).map((p) => [
     p.slice(root.length + 1).replaceAll('\\', '/'),
     stripNonCode(readFileSync(p, 'utf8')),
   ]),
 ]);
+
+/** Where causal knowledge is allowed to exist at all. */
+const causalHome = (file) =>
+  file.startsWith('packages/causal-runtime/') ||
+  CAUSAL_APP.some((p) => rel(p) === file) ||
+  file === 'src/pages/TwinPage.tsx';
 
 /** Where decision authority is allowed to exist at all. */
 const authorityHome = (file) =>
@@ -210,10 +233,39 @@ const NOT_YET = [
     phase: 'never in Phase 7 — attention is a named condition with a cause, not a ranking',
   },
   {
-    rule: 'no-causal-inference',
-    patterns: [/\bcounterfactual\w*/i, /\bcausal\w*/i, /\bdoCalculus\b/i, /\binterventionEffect\b/i],
-    why: 'counterfactual or causal inference',
-    phase: 'the causal graph phase — a value link is not a causal claim',
+    rule: 'causal-in-its-home',
+    // Causal knowledge is Phase 8's, and it lives in ONE place. The twin page
+    // may SHOW causal hypotheses beside its model explanation; no layer below
+    // holds a causal claim of its own.
+    skip: causalHome,
+    patterns: [/\bcausal\w*/i, /\bCausalClaim\b/],
+    why: 'causal knowledge outside @helm/causal-runtime',
+    phase: 'the causal runtime — evidence-backed claims, kept apart from the model they explain',
+  },
+  {
+    rule: 'no-causal-inference-engine',
+    // Anywhere, including the causal runtime: Phase 8 is causal KNOWLEDGE
+    // infrastructure. Nothing discovers, infers or estimates causes.
+    patterns: [
+      /\bcounterfactual\w*/i,
+      /\bdoCalculus\b/i,
+      /\bcausalDiscovery\b|\bdiscover\w*Caus\w*/i,
+      /\bcausalInference\b|\binfer\w*Caus\w*/i,
+      /\bbayesianNetwork\w*/i,
+      /\bstructuralEquation\w*/i,
+      /\buplift\w*/i,
+      /\bpropensityScore\w*/i,
+      /\bbackdoorAdjust\w*/i,
+      /\binterventionEffect\b/i,
+    ],
+    why: 'counterfactual simulation or automatic causal inference',
+    phase: 'never in Phase 8 — counterfactuals are Phase 10; causes are claimed by people and judged by evidence',
+  },
+  {
+    rule: 'no-causal-scoring',
+    patterns: [/\bpathProbability\b/i, /\bcausalScore\w*/i, /\bcontributionP(?:ct|ercent)\w*/i, /\bconfidenceScore\w*/i, /\bevidenceScore\w*/i],
+    why: 'a causal score, path probability or causal contribution percentage',
+    phase: 'never — confidence is categorical with reasons; a path is as supported as its weakest claim',
   },
   {
     rule: 'no-optimization',
@@ -333,7 +385,25 @@ const LAYERS = [
       '@helm/authority-runtime',
     ],
     self: '@helm/twin-runtime',
-    note: 'the twin runtime is the top of the kernel',
+    note: 'the twin runtime sits below the causal runtime, and knows nothing of it',
+  },
+  {
+    dir: CAUSAL_SRC,
+    files: causalFiles,
+    label: 'packages/causal-runtime/src',
+    allowed: [
+      '@helm/shared',
+      '@helm/ontology',
+      '@helm/graph-store',
+      '@helm/value-graph',
+      '@helm/propagation-engine',
+      '@helm/scenario-runtime',
+      '@helm/decision-runtime',
+      '@helm/authority-runtime',
+      '@helm/twin-runtime',
+    ],
+    self: '@helm/causal-runtime',
+    note: 'the causal runtime is the top of the kernel',
   },
 ];
 for (const { dir, files, label, allowed, self, note } of LAYERS) {
@@ -371,6 +441,7 @@ const MIGRATIONS = [
   { path: PHASE5_MIGRATION, phase: 'Phase 5' },
   { path: PHASE6_MIGRATION, phase: 'Phase 6' },
   { path: PHASE7_MIGRATION, phase: 'Phase 7' },
+  { path: PHASE8_MIGRATION, phase: 'Phase 8' },
 ];
 for (const { path, phase } of MIGRATIONS) {
   if (!existsSync(path)) {
@@ -404,8 +475,9 @@ for (const { path, phase } of MIGRATIONS) {
     check('additive-only', m[1].toLowerCase().startsWith('helm_'),
       `the ${phase} migration touches "${m[1]}", which is not a HELM-owned table`);
   }
-  for (const m of sql.matchAll(/\b(DROP\s+TABLE|TRUNCATE|DROP\s+COLUMN)\b/gi)) {
-    fail('additive-only', `the ${phase} migration contains ${m[1]}`);
+  // A REVOKE of the TRUNCATE privilege protects; only the statement is destructive.
+  for (const m of sql.matchAll(/\b(DROP\s+TABLE|DROP\s+COLUMN)\b|(?:^|;)\s*(TRUNCATE)\b/gi)) {
+    fail('additive-only', `the ${phase} migration contains ${m[1] ?? m[2]}`);
   }
 }
 
@@ -441,6 +513,29 @@ for (const [file, code] of scanned) {
   const writes = /\.(createCommitment|commit|recordApproval|recordRejection|evaluate|recordObservation|createEntity|updateEntity|createRelationship|removeRelationship|execute|executeBaseline|addOverride|recordPolicy|recordOccupancy|endOccupancy|createDelegation|setActionIntentStatus|recordOutcomeReview|appendEvent|setDecisionState)\s*\(/.exec(code);
   check('twin-never-writes-below', !writes, `${file} calls ${writes?.[1]} — the twin reads the kernel, it does not change it`);
 }
+// The causal graph never writes the model: a claim does not change a formula,
+// a propagation, a scenario output or any record below it
+// (CALCULATION_DEPENDENCY ≠ CAUSAL_RELATIONSHIP).
+for (const [file, code] of scanned) {
+  if (!file.startsWith('packages/causal-runtime/')) continue;
+  const writes = /\.(recordObservation|createEntity|updateEntity|upsertEntity|createRelationship|removeRelationship|execute|executeBaseline|addOverride|createScenario|createRevision|rebase|register\w*|createValueNode|upsertValueNode|createValueLink|appendStep|commit|createCommitment|recordApproval|recordOutcomeReview|appendEvent|setDecisionState|setActionIntentStatus|saveSnapshot|buildSnapshot|grantClearance)\s*\(/.exec(code);
+  check('causal-never-writes-below', !writes, `${file} calls ${writes?.[1]} — a causal claim never changes the model or any layer below it`);
+}
+for (const { file, why } of [
+  { file: 'types.ts', why: 'the causal vocabulary' },
+  { file: 'policy.ts', why: 'the evidence policy' },
+  { file: 'scope.ts', why: 'causal scope and applicability' },
+  { file: 'runtime.ts', why: 'the causal graph runtime' },
+  { file: 'integration.ts', why: 'the twin, decision and scenario integration' },
+  { file: 'postgres.ts', why: 'the production causal store' },
+  { file: 'conformance.ts', why: 'the causal store contract' },
+  { file: 'meridianCausal.ts', why: 'the canonical causal investigation' },
+]) {
+  check('phase-artifacts', causalFiles.includes(file), `${why} (packages/causal-runtime/src/${file}) is missing`);
+}
+const causalPolicy = scanned.get('packages/causal-runtime/src/policy.ts') ?? '';
+check('phase-artifacts', /EVIDENCE_CEILING/.test(causalPolicy), 'the evidence policy has no evidence hierarchy');
+
 const trusted = scanned.get('packages/authority-runtime/src/trusted.ts') ?? '';
 check('phase-artifacts', /verifyCalculationTrace\s*\(/.test(trusted), 'the trusted authority service does not re-derive the chosen run before believing it');
 check('phase-artifacts', existsSync(join(root, 'supabase', 'functions', 'helm-authority', 'index.ts')), 'the helm-authority edge function is missing');
@@ -545,9 +640,9 @@ check('phase-artifacts', /appendStep/.test(engineSrc), 'the engine never appends
 
 if (failures.length === 0) {
   console.log(
-    `verify:phase-boundary — ok (${scanned.size} files: twin runtime present, confined to its package and writing nothing ` +
-      'below it; authority confined to its package; no recommendation, automated act, attention score, governance ' +
-      'simulation, notification platform, cockpit, causal inference, optimization, agent debate or pattern learning)',
+    `verify:phase-boundary — ok (${scanned.size} files: causal graph present, confined to its package and writing nothing ` +
+      'below it; twin and authority confined to theirs; no counterfactual, causal inference engine, causal score, ' +
+      'recommendation, automated act, attention score, cockpit, optimization, agent debate or pattern learning)',
   );
   process.exit(0);
 }

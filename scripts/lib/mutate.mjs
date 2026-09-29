@@ -1,5 +1,5 @@
 /**
- * A mutation harness for the Phase 5 verification contracts.
+ * A mutation harness for the Phase 5 and Phase 6 verification contracts.
  *
  * A verifier that passes proves nothing on its own: it might assert nothing at
  * all, or assert something that cannot fail. So each contract is also run
@@ -19,7 +19,9 @@ import { join } from 'node:path';
 
 const root = process.cwd();
 const K = 'packages/decision-runtime/src';
+const A = 'packages/authority-runtime/src';
 const MIGRATION = 'supabase/migrations/20260923100000_helm_decision_runtime.sql';
+const MIGRATION6 = 'supabase/migrations/20260928100000_helm_decision_authority.sql';
 
 /**
  * Each mutation: which contract must catch it, which invariant it attacks, and
@@ -161,6 +163,185 @@ const MUTATIONS = [
     file: `${K}/readiness.ts`,
     from: "      code: 'mixed-knowledge-boundaries',",
     to: "      code: 'noted',",
+  },
+
+  // ================================================================ Phase 6
+
+  // ------------------------------------------------- verify:authority-schema
+  {
+    verifier: 'verify-authority-schema.mjs',
+    invariant: 'the committer cannot be their own independent approval (separation of duties)',
+    file: MIGRATION6,
+    from: '  IF req.independent_of_user_id IS NOT NULL AND NEW.approver_user_id = req.independent_of_user_id THEN',
+    to: '  IF false THEN',
+  },
+  {
+    verifier: 'verify-authority-schema.mjs',
+    invariant: 'an authority evaluation is never edited',
+    file: MIGRATION6,
+    from: "    RAISE EXCEPTION 'helm_authority_evaluations: an evaluation is a record of a judgement; it is never edited or deleted';",
+    to: '    RETURN COALESCE(NEW, OLD);',
+  },
+  {
+    verifier: 'verify-authority-schema.mjs',
+    invariant: 'an approval is recorded only as the authenticated caller',
+    file: MIGRATION6,
+    from: '    AND approver_user_id = (select auth.uid())\n',
+    to: '',
+  },
+  {
+    verifier: 'verify-authority-schema.mjs',
+    invariant: 'a decision is no longer readable by every organization member',
+    file: MIGRATION6,
+    from: '  FOR SELECT TO authenticated USING (public.is_org_member(org_id) AND public.helm_can_see_decision(id));',
+    to: '  FOR SELECT TO authenticated USING (public.is_org_member(org_id));',
+  },
+  {
+    verifier: 'verify-authority-schema.mjs',
+    invariant: 'no typed economics in the authority schema',
+    file: MIGRATION6,
+    from: "  comments text NOT NULL DEFAULT '',",
+    to: "  approval_amount numeric,\n  comments text NOT NULL DEFAULT '',",
+  },
+
+  // ------------------------------------------------ verify:authority-runtime
+  {
+    verifier: 'verify-authority-runtime.mjs',
+    invariant: 'the actor is the identity that committed, not whoever evaluates',
+    file: `${A}/runtime.ts`,
+    from: '        actor: { userId: committer, label: seat?.personLabel ?? c.commitment.committedByLabel },',
+    to: '        actor: { userId: scope.actorId, label: seat?.personLabel ?? c.commitment.committedByLabel },',
+  },
+  {
+    verifier: 'verify-authority-runtime.mjs',
+    invariant: 'an escalated approval must be independent of the committer',
+    file: `${A}/engine.ts`,
+    from: "    rule.approvalIndependence === 'INDEPENDENT_OF_COMMITTER' ? input.committerUserId : null;",
+    to: '    null;',
+  },
+  {
+    verifier: 'verify-authority-runtime.mjs',
+    invariant: 'a pending approval is not reported as approved',
+    file: `${A}/state.ts`,
+    from: "  else progress = 'PENDING';",
+    to: "  else progress = 'APPROVED';",
+  },
+
+  // -------------------------------------------------- verify:authority-scope
+  {
+    verifier: 'verify-authority-scope.mjs',
+    invariant: 'scope is derived through the portfolio owner, not typed',
+    file: `${A}/scope.ts`,
+    from: "  { relationshipTypeKey: 'OWNS', direction: 'in', reads: 'is owned by' },",
+    to: '',
+  },
+  {
+    verifier: 'verify-authority-scope.mjs',
+    invariant: 'a touched entity outside the rule\u2019s scope is noticed',
+    file: `${A}/scope.ts`,
+    from: '          const stray = here.filter((r) => !allowed.has(r.entityId));',
+    to: '          const stray = here.filter((r) => !allowed.has(r.entityId) && false);',
+  },
+  {
+    verifier: 'verify-authority-scope.mjs',
+    invariant: 'an entity anchored above a rule\u2019s level is outside it',
+    file: `${A}/scope.ts`,
+    from: '        if (above) outside.push(`${t.label} (sits above ${readableDimension(d)} level)`);',
+    to: '        if (above) unknown.push(t.label);',
+  },
+
+  // ---------------------------------------------- verify:authority-threshold
+  {
+    verifier: 'verify-authority-threshold.mjs',
+    invariant: 'the line itself is inside a ≥ line (exact boundary)',
+    file: `${A}/conditions.ts`,
+    from: '      return cmp >= 0;',
+    to: '      return cmp > 0;',
+  },
+  {
+    verifier: 'verify-authority-threshold.mjs',
+    invariant: 'an UNKNOWN line never passes',
+    file: `${A}/conditions.ts`,
+    from: "  if (checks.some((c) => c.outcome === 'UNKNOWN')) return 'UNKNOWN';",
+    to: "  if (checks.some((c) => c.outcome === 'UNKNOWN')) return 'PASS';",
+  },
+  {
+    verifier: 'verify-authority-threshold.mjs',
+    invariant: 'thresholds compare exact decimals, not floats',
+    file: `${A}/conditions.ts`,
+    from: '  const cmp = compare(decimal(v.value), decimal(condition.threshold));',
+    to: '  const cmp = Math.sign(Number(v.value) - Number(condition.threshold)) as -1 | 0 | 1;',
+  },
+
+  // --------------------------------------------- verify:authority-delegation
+  {
+    verifier: 'verify-authority-delegation.mjs',
+    invariant: 'delegated authority is intersected with the delegator\u2019s own',
+    file: `${A}/engine.ts`,
+    from: '  const checks = [...own.deciding.conditionChecks, ...checkConditions(d.conditions, input.consequences)];',
+    to: '  const checks = [...checkConditions(d.conditions, input.consequences)];',
+  },
+  {
+    verifier: 'verify-authority-delegation.mjs',
+    invariant: 'outside its window a delegation does not exist',
+    file: `${A}/engine.ts`,
+    from: '  if (!openAt(d.validFrom, d.validTo, at)) {',
+    to: '  if (false) {',
+  },
+  {
+    verifier: 'verify-authority-delegation.mjs',
+    invariant: 'a delegation cannot reach beyond the delegator\u2019s scope',
+    file: `${A}/delegation.ts`,
+    from: '        const scope = constraintsWithin(draft.scope, rule.scope, input.ancestry);',
+    to: '        const scope = { within: true, problems: [] as string[] };',
+  },
+
+  // ------------------------------------------------ verify:approval-lineage
+  {
+    verifier: 'verify-approval-lineage.mjs',
+    invariant: 'an approval resolves to the value lineage of its consequences',
+    file: `${A}/runtime.ts`,
+    from: '        if (l.ok) valueLineage.push(l.value);',
+    to: '        void l;',
+  },
+  {
+    verifier: 'verify-approval-lineage.mjs',
+    invariant: 'the authority evaluation is on the decision timeline',
+    file: `${A}/runtime.ts`,
+    from: "      await event(scope, c.decisionId, 'AUTHORITY_EVALUATED', {",
+    to: "      await event(scope, c.decisionId, 'EVALUATED', {",
+  },
+
+  // ---------------------------------------------- verify:decision-visibility
+  {
+    verifier: 'verify-decision-visibility.mjs',
+    invariant: 'unit membership reaches the units below it',
+    file: `${A}/visibility.ts`,
+    from: '    stack.push(...(children.get(id) ?? []));',
+    to: '    void children;',
+  },
+  {
+    verifier: 'verify-decision-visibility.mjs',
+    invariant: 'the server-side helper admits only admins, the creator and granted units',
+    file: MIGRATION6,
+    from: '        OR d.created_by = auth.uid()',
+    to: '        OR true',
+  },
+
+  // --------------------------------------------------- verify:phase-boundary
+  {
+    verifier: 'verify-phase-boundary.mjs',
+    invariant: 'nothing approves automatically',
+    file: `${A}/engine.ts`,
+    from: 'const MAX_ESCALATION_STEPS = 6;',
+    to: 'const MAX_ESCALATION_STEPS = 6;\nconst autoApproveBelow = 0;',
+  },
+  {
+    verifier: 'verify-phase-boundary.mjs',
+    invariant: 'the decision runtime knows nothing of authority',
+    file: `${K}/index.ts`,
+    from: "export type { MeridianDecisionResult } from './meridianDecision.ts';",
+    to: "export type { MeridianDecisionResult } from './meridianDecision.ts';\nexport type { AuthorityEvaluation } from '@helm/authority-runtime';",
   },
 ];
 

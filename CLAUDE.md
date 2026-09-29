@@ -29,11 +29,11 @@ React 19 + Vite + TypeScript + Tailwind 3. Tokens live ONLY in `tailwind.config.
 - No emoji, no exclamation marks, no marketing adjectives. Loading = present-progressive sentence.
 
 ## Components (src/components)
-`brand/HelmLogo` (HelmLockup, HelmSymbol, HelmWordmark, HelmAppIcon) · `shell/AppShell` (`wide` for instrument pages) · `ui/{Button, Pill, PageHeader, SectionHead, FactRow, MetricList, TextField}` · `attention/{SignalArticle, SignalLine, EvidenceGrid}` · `decision/{CommitmentBanner, CriteriaMatrix, AssumptionList, ChallengeList, DecisionRow}` · `scenario/{ScenarioCompare, OverrideList, FeasibilityList, LineageTree}` · `memory/MemoryEntry` · `graph/{NodeIndex, NodeDetail}`. Compose pages from these; see `src/pages/*.v2.example.tsx`.
+`brand/HelmLogo` (HelmLockup, HelmSymbol, HelmWordmark, HelmAppIcon) · `shell/AppShell` (`wide` for instrument pages) · `ui/{Button, Pill, PageHeader, SectionHead, FactRow, MetricList, TextField}` · `attention/{SignalArticle, SignalLine, EvidenceGrid}` · `decision/{CommitmentBanner, CriteriaMatrix, AssumptionList, ChallengeList, DecisionRow, GovernancePanel}` · `scenario/{ScenarioCompare, OverrideList, FeasibilityList, LineageTree}` · `memory/MemoryEntry` · `graph/{NodeIndex, NodeDetail}`. Compose pages from these; see `src/pages/*.v2.example.tsx`.
 
 ## Registers
 - Management pages: 1240px cap, kicker "Management · …", headline = computed sentence (serif 44).
-- Instrument pages (Scenarios, Value Graph, Ontology, Calculations): `AppShell wide`, kicker "Kernel instrument · …", serif 28 title naming the object, raw enums, runs and fingerprints visible.
+- Instrument pages (Scenarios, Value Graph, Ontology, Calculations, Governance): `AppShell wide`, kicker "Kernel instrument · …", serif 28 title naming the object, raw enums, runs and fingerprints visible.
 - Brand graphics (chart grid, brass heading line) appear only on Auth.
 
 ## Logo

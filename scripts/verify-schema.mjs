@@ -68,6 +68,8 @@ const REGISTRY_TABLES = [
   'helm_relationship_types',
   'helm_value_metrics',
   'helm_calculations',
+  // Phase 6: governance classification; NULL org = shipped by HELM.
+  'helm_decision_types',
 ];
 
 /** Tables carrying facts about the world, which need both time dimensions. */

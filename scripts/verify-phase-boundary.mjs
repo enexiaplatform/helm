@@ -1,20 +1,25 @@
 /**
- * verify:phase-boundary — Phase 5 does what Phase 5 does, and no more.
+ * verify:phase-boundary — Phase 6 does what Phase 6 does, and no more.
  *
  * Every phase ships a verifier that asserts the ABSENCE of the next phase's
  * work, because the most expensive mistake in a layered build is a layer that
  * quietly starts doing the next one's job. Phase 3's verifier forbade scenario
- * comparison; Phase 4 took comparison and forbade decisions; Phase 5 now owns
- * decisions and commitment, so that rule retires in turn and is replaced by
- * what Phase 5 must not do. Scanned across the propagation engine, the
- * scenario runtime, the decision runtime and the two explorers:
+ * comparison; Phase 4 took comparison and forbade decisions; Phase 5 took
+ * decisions and forbade authority; Phase 6 now owns decision authority — but
+ * ONLY in @helm/authority-runtime and the governance surfaces. Scanned across
+ * the propagation engine, the scenario, decision and authority runtimes and
+ * the explorers:
  *
  *   1. No automatic recommendation, ranking or scoring — of a scenario OR of a
  *      decision alternative. HELM shows the trade-off space and evaluates
  *      management's own criteria; choosing is management's.
- *   2. No decision AUTHORITY: no approval thresholds, no escalation routing,
- *      no automatic authorization. That is Phase 6, and `authority_status`
- *      stays NOT_EVALUATED until it arrives.
+ *   2. Decision AUTHORITY lives only in the authority runtime. The engine,
+ *      the scenario runtime and the decision runtime still hold none of it,
+ *      and the commitment's authority_status stays NOT_EVALUATED for ever.
+ *      Nothing approves, commits or authorizes automatically — anywhere.
+ *   2b. No governance simulation ("what if the DOA changed") and no
+ *      notification platform: both are later phases.
+ *   2c. The authority runtime never mutates a decision or a commitment.
  *   3. No counterfactual or causal inference. A value link is not a causal
  *      claim; the causal graph is a later phase.
  *   4. No optimization solver. A constraint is checked, never solved for.
@@ -43,9 +48,11 @@ const root = process.cwd();
 const ENGINE_SRC = join(root, 'packages', 'propagation-engine', 'src');
 const SCENARIO_SRC = join(root, 'packages', 'scenario-runtime', 'src');
 const DECISION_SRC = join(root, 'packages', 'decision-runtime', 'src');
+const AUTHORITY_SRC = join(root, 'packages', 'authority-runtime', 'src');
 const MIGRATION = join(root, 'supabase', 'migrations', '20260920090000_helm_propagation.sql');
 const PHASE4_MIGRATION = join(root, 'supabase', 'migrations', '20260922090100_helm_scenario_runtime.sql');
 const PHASE5_MIGRATION = join(root, 'supabase', 'migrations', '20260923100000_helm_decision_runtime.sql');
+const PHASE6_MIGRATION = join(root, 'supabase', 'migrations', '20260928100000_helm_decision_authority.sql');
 /** The Phase 4 and Phase 5 surfaces: the technical explorers and their services. */
 const KERNEL_APP = [
   join(root, 'src', 'pages', 'ScenariosPage.tsx'),
@@ -53,6 +60,12 @@ const KERNEL_APP = [
   join(root, 'src', 'pages', 'DecisionDetailPage.tsx'),
   join(root, 'src', 'services', 'decisionRuntime.ts'),
   join(root, 'src', 'services', 'decisionWorkspace.ts'),
+];
+/** The Phase 6 surfaces: where authority may be SHOWN. */
+const GOVERNANCE_APP = [
+  join(root, 'src', 'pages', 'GovernancePage.tsx'),
+  join(root, 'src', 'services', 'authorityRuntime.ts'),
+  join(root, 'src', 'components', 'decision', 'GovernancePanel.tsx'),
 ];
 
 /**
@@ -72,6 +85,7 @@ const tsFiles = (dir) => (existsSync(dir) ? readdirSync(dir).filter((f) => f.end
 const engineFiles = tsFiles(ENGINE_SRC);
 const scenarioFiles = tsFiles(SCENARIO_SRC);
 const decisionFiles = tsFiles(DECISION_SRC);
+const authorityFiles = tsFiles(AUTHORITY_SRC);
 const engineCode = new Map(engineFiles.map((f) => [f, stripNonCode(readFileSync(join(ENGINE_SRC, f), 'utf8'))]));
 
 /** Every file the phase boundary is checked against, by readable path. */
@@ -85,11 +99,21 @@ const scanned = new Map([
     `packages/decision-runtime/src/${f}`,
     stripNonCode(readFileSync(join(DECISION_SRC, f), 'utf8')),
   ]),
-  ...KERNEL_APP.filter(existsSync).map((p) => [
+  ...authorityFiles.map((f) => [
+    `packages/authority-runtime/src/${f}`,
+    stripNonCode(readFileSync(join(AUTHORITY_SRC, f), 'utf8')),
+  ]),
+  ...[...KERNEL_APP, ...GOVERNANCE_APP].filter(existsSync).map((p) => [
     p.slice(root.length + 1).replaceAll('\\', '/'),
     stripNonCode(readFileSync(p, 'utf8')),
   ]),
 ]);
+
+/** Where decision authority is allowed to exist at all. */
+const authorityHome = (file) =>
+  file.startsWith('packages/authority-runtime/') ||
+  GOVERNANCE_APP.some((p) => p.slice(root.length + 1).replaceAll('\\', '/') === file) ||
+  file === 'src/pages/DecisionDetailPage.tsx';
 
 // ------------------------------- 1-7: the next phases have not started here
 
@@ -112,22 +136,50 @@ const NOT_YET = [
     phase: 'never — HELM shows the trade-off space and evaluates stated criteria; management chooses',
   },
   {
-    rule: 'no-authority',
-    // Phase 5 records that management committed. Whether the actor was allowed
-    // to is a different question with a different answer.
+    rule: 'no-authority-outside-its-home',
+    // Authority is Phase 6's, and it lives in ONE place. The engine, the
+    // scenario runtime and the decision runtime still record, compute and
+    // commit — they never judge who was allowed to.
+    skip: authorityHome,
     patterns: [
       /\bcanApprove\b/,
-      /\bautoApprove\w*/i,
       /\bauthorityLimit\b|\bauthorityThreshold\b/i,
       /\brequiresApproval\b/,
       /\bapprovalThreshold\b|\bapprovalChain\b/i,
       /\bescalationRule\w*|\bescalateTo\b/i,
       /\bvisibilityRule\b/,
       /\bdecisionRights?\b/,
+      /\bevaluateAuthority\b|\bAuthorityEngine\b/,
       /\b(?:AUTHORIZED|REQUIRES_APPROVAL|ESCALATED)\b/,
     ],
-    why: 'decision authority, approval or escalation',
-    phase: 'Phase 6 — Authority and Visibility',
+    why: 'decision authority, approval or escalation outside @helm/authority-runtime',
+    phase: 'the authority runtime — authority is judged in one place, over commitments it never changes',
+  },
+  {
+    rule: 'no-automated-decision',
+    // Anywhere, including the authority runtime: HELM judges and records; a
+    // person approves, commits and executes.
+    patterns: [/\bautoApprove\w*/i, /\bautoCommit\w*/i, /\bautoAuthori[sz]e\w*/i, /\bautoExecute\w*/i, /\bautoEscalate\w*/i],
+    why: 'an automated management act',
+    phase: 'never — the authority runtime evaluates; people act',
+  },
+  {
+    rule: 'no-governance-simulation',
+    patterns: [/\bsimulatePolicy\w*/i, /\bwhatIfPolicy\w*/i, /\bpolicySimulation\w*/i, /\bsimulateAuthority\w*/i],
+    why: 'governance scenario modelling',
+    phase: 'a later phase — Phase 6 evaluates the authority in force, it does not simulate a different one',
+  },
+  {
+    rule: 'no-notification-platform',
+    patterns: [/\bsendEmail\w*/i, /\bslack\w*\s*\(/i, /\bnotificationCenter\b/i, /\bpushNotification\w*/i, /\bsmtp\w*/i],
+    why: 'a notification or delivery platform',
+    phase: 'a later phase — Phase 6 stores governance state; delivery integrations come later',
+  },
+  {
+    rule: 'no-digital-twin',
+    patterns: [/\bdigitalTwin\w*/i, /\btwinState\w*/i, /\bmanagementTwin\w*/i],
+    why: 'a management digital twin',
+    phase: 'Phase 7 — Digital Twin',
   },
   {
     rule: 'no-causal-inference',
@@ -178,7 +230,8 @@ const NOT_YET = [
 ];
 
 for (const [file, code] of scanned) {
-  for (const { rule, patterns, why, phase } of NOT_YET) {
+  for (const { rule, patterns, why, phase, skip } of NOT_YET) {
+    if (skip && skip(file)) continue;
     for (const re of patterns) {
       if (re.test(code)) {
         fail(rule, `${file} contains ${why} (${re}). That is ${phase}.`);
@@ -219,7 +272,23 @@ const LAYERS = [
       '@helm/scenario-runtime',
     ],
     self: '@helm/decision-runtime',
-    note: 'the decision runtime is the top of the kernel',
+    note: 'the decision runtime sits below the authority runtime, and knows nothing of it',
+  },
+  {
+    dir: AUTHORITY_SRC,
+    files: authorityFiles,
+    label: 'packages/authority-runtime/src',
+    allowed: [
+      '@helm/shared',
+      '@helm/ontology',
+      '@helm/graph-store',
+      '@helm/value-graph',
+      '@helm/propagation-engine',
+      '@helm/scenario-runtime',
+      '@helm/decision-runtime',
+    ],
+    self: '@helm/authority-runtime',
+    note: 'the authority runtime is the top of the kernel',
   },
 ];
 for (const { dir, files, label, allowed, self, note } of LAYERS) {
@@ -255,6 +324,7 @@ const MIGRATIONS = [
   { path: MIGRATION, phase: 'Phase 3' },
   { path: PHASE4_MIGRATION, phase: 'Phase 4' },
   { path: PHASE5_MIGRATION, phase: 'Phase 5' },
+  { path: PHASE6_MIGRATION, phase: 'Phase 6' },
 ];
 for (const { path, phase } of MIGRATIONS) {
   if (!existsSync(path)) {
@@ -302,6 +372,19 @@ if (existsSync(PHASE5_MIGRATION)) {
   }
 }
 
+// The authority runtime judges commitments; it never changes one, and it
+// never writes below itself. meridianGovernance.ts is demo SEED data: it plays
+// management, building and committing the proof decisions through the decision
+// runtime as a person would, so it is the one file exempt.
+for (const [file, code] of scanned) {
+  if (!file.startsWith('packages/authority-runtime/') || file.endsWith('meridianGovernance.ts')) continue;
+  const writes = /\b(?:decisions|decisionStore)\.(createCommitment|createSnapshot|setDecisionState|sealRevision|updateDecisionFraming|addAlternative|setAlternativeBinding|recordAssessment|resolveChallenge|commit)\s*\(/;
+  const m = writes.exec(code);
+  check('authority-never-mutates', !m, `${file} calls ${m?.[1]} on the decision layer — the authority runtime judges commitments, it does not change them`);
+  const model = /\b(?:scenarios|engine)\.(execute|addOverride|createScenario|rebase|createRevision)\s*\(/.exec(code);
+  check('authority-never-mutates', !model, `${file} calls ${model?.[1]} — the authority runtime reads consequences, it does not compute them`);
+}
+
 // ------------------- what Phase 5 MUST have: the absence checks cut both ways
 
 // A boundary verifier that only proved absence could pass on an empty phase.
@@ -344,6 +427,28 @@ const scenarioRuntimeCode = scanned.get('packages/scenario-runtime/src/runtime.t
 check('phase-artifacts', /\bcompare\s*\(|async\s+compare\b/.test(scenarioRuntimeCode), 'the scenario runtime cannot compare states');
 check('phase-artifacts', /engine\.execute\s*\(/.test(scenarioRuntimeCode), 'the scenario runtime does not simulate through the engine');
 
+for (const { file, why } of [
+  { file: 'engine.ts', why: 'the authority engine' },
+  { file: 'scope.ts', why: 'enterprise scope derivation' },
+  { file: 'conditions.ts', why: 'consequence thresholds' },
+  { file: 'delegation.ts', why: 'delegation bounds' },
+  { file: 'policy.ts', why: 'the authority in force at an instant' },
+  { file: 'state.ts', why: 'the governance state projection' },
+  { file: 'visibility.ts', why: 'decision visibility' },
+  { file: 'fingerprint.ts', why: 'the evaluation fingerprint' },
+  { file: 'runtime.ts', why: 'the authority runtime' },
+  { file: 'postgres.ts', why: 'the production authority store' },
+  { file: 'conformance.ts', why: 'the authority store contract' },
+  { file: 'meridianGovernance.ts', why: 'the canonical demo governance policy' },
+]) {
+  check('phase-artifacts', authorityFiles.includes(file), `${why} (packages/authority-runtime/src/${file}) is missing`);
+}
+const authorityRuntimeCode = scanned.get('packages/authority-runtime/src/runtime.ts') ?? '';
+check('phase-artifacts', /scenarios\.getFutureState\s*\(/.test(authorityRuntimeCode),
+  'the authority runtime does not read consequences from the chosen future state');
+check('phase-artifacts', /evaluationFingerprint\s*\(/.test(authorityRuntimeCode), 'an evaluation is not fingerprinted');
+check('phase-artifacts', /commitmentFingerprint/.test(authorityRuntimeCode), 'an evaluation is not bound to the commitment fingerprint');
+
 // Commitment — forbidden in Phase 4 — exists, and rests on scenario futures.
 const decisionRuntimeCode = scanned.get('packages/decision-runtime/src/runtime.ts') ?? '';
 check('phase-artifacts', /async\s+commit\b/.test(decisionRuntimeCode), 'the decision runtime cannot record a commitment');
@@ -361,8 +466,9 @@ check('phase-artifacts', /appendStep/.test(engineSrc), 'the engine never appends
 
 if (failures.length === 0) {
   console.log(
-    `verify:phase-boundary — ok (${scanned.size} files: decision runtime, criteria and commitment present; no ` +
-      'recommendation, authority, causal inference, optimization, agent debate or pattern learning)',
+    `verify:phase-boundary — ok (${scanned.size} files: authority runtime present and confined to its package; no ` +
+      'recommendation, automated act, governance simulation, notification platform, digital twin, causal inference, ' +
+      'optimization, agent debate or pattern learning)',
   );
   process.exit(0);
 }

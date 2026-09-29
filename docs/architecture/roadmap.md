@@ -1,7 +1,7 @@
 # Implementation Roadmap
 
 Sixteen phases, in order, with what already exists credited and the gates that
-make each phase complete. Status as of **2026-09-19** (Phases 0, 1 and 2 delivered).
+make each phase complete. Status as of **2026-09-28** (Phases 0–6 delivered).
 
 ## 1. Sequencing principle
 
@@ -41,7 +41,7 @@ flowchart LR
 | 3 | Propagation Engine | **✅ done** | 13 governed calculations, exact decimals, lineage | [phase-3-implemented.md](phase-3-implemented.md) |
 | 4 | Scenario Runtime | **✅ done** | 7 canonical futures over one pinned baseline | [phase-4-implemented.md](phase-4-implemented.md) |
 | 5 | Decision Intelligence | **✅ done** | question, alternatives bound to runs, criteria, commitment | [phase-5-implemented.md](phase-5-implemented.md) |
-| 6 | Authority Graph | **▶ next** | `helm_approval_rules` (unused), `authorityStatus: NOT_EVALUATED` | multi-dimensional rules + chain + escalation + unit RLS |
+| 6 | Authority Graph | **✅ done** | roles, DOA versions, consequence-based rules, delegation, approval acts, scoped decision RLS | [phase-6-implemented.md](phase-6-implemented.md) |
 | 7 | Digital Twin | planned | nothing | versioned snapshots; current / scenario / expected-future |
 | 8 | Causal Graph | planned | nothing | hypotheses with evidence both ways; correlation kept distinct |
 | 9 | Management Genome | planned | commitments + outcome reviews as substrate; no learner | structured `find_similar_*`, not embeddings-only |
@@ -151,11 +151,16 @@ Record: [phase-5-implemented.md](phase-5-implemented.md) ·
 [legacy engine assessment](decision-engine-assessment.md) ·
 [decision quality ≠ outcome quality](decision-quality-vs-outcome.md).
 
-## 5. Phase 6 — reconnect governance
+## 5. Phase 6 — decision authority (delivered)
 
-**Phase 6 is a security phase.** Authority gains scope, geography, BU, risk,
-action type, approval chain and escalation; unit-level and functional RLS land
-with it ([security-model.md §3](security-model.md#3-known-gaps-and-the-phase-that-closes-each)).
+**Phase 6 was a security phase.** Authority gained scope, geography, BU, acts,
+thresholds on computed consequences, approval chains, escalation and
+delegation, and decision visibility became unit-scoped in RLS
+([security-model.md §3](security-model.md#3-known-gaps-and-the-phase-that-closes-each)).
+The commitment stayed exactly as Phase 5 recorded it: authority is a separate,
+fingerprint-bound judgement of it. Record: [phase-6-implemented.md](phase-6-implemented.md) ·
+[ADR-0022](../adr/0022-decision-authority-graph.md).
+
 It gates Phase 14: a cockpit exists to present cross-functional data to a scoped
 role, so shipping it while any org member can read every country's margins would
 be a defect, not a feature.

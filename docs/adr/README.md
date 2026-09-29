@@ -58,3 +58,4 @@ a new one, so the reasoning history stays readable.
 | [0019](0019-scenario-runtime.md) | The Scenario Runtime — branches of the model, not copies of the data | accepted | 4 |
 | [0020](0020-period-identity.md) | Period identity — a period is a value, not "the furthest-out forecast" | accepted | 4 |
 | [0021](0021-decision-runtime.md) | The Decision Runtime — what management decided, and what it decided against | accepted | 5 |
+| [0022](0022-decision-authority-graph.md) | The Decision Authority Graph — who may commit what, over which scope, under which consequences | accepted | 6 |

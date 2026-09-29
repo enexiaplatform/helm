@@ -97,18 +97,18 @@ export function SettingsPage() {
       </div>
 
       <section className="mt-11 max-w-[860px]">
-        <SectionHead title="Decision authority" caveat="not evaluated in this phase" />
+        <SectionHead title="Decision authority" caveat="judged apart from the commitment" />
         <p className="mt-3 text-base text-ink-700">
-          HELM records what management decided and on what grounds. It does not yet decide who is permitted to decide.
-          Every commitment carries <span className="font-mono text-meta">authorityStatus: NOT_EVALUATED</span> — in the
-          runtime and in the database — so a later authority model can be added without rewriting the commitments made
-          before it existed, and so nothing here can be mistaken for an approval that was never granted.
+          A commitment is what management decided. Whether the person who committed was allowed to is a separate,
+          recorded judgement: HELM evaluates it from the enterprise scope the commitment touches and the consequences the
+          model computed for it, under the delegation-of-authority policy in force when it was made. The commitment itself
+          still carries <span className="font-mono text-meta">authorityStatus: NOT_EVALUATED</span> and never changes.
         </p>
         <p className="mt-3 text-base text-ink-700">
-          The pre-kernel threshold rules that used to live here have been retired rather than carried forward: they
-          conflated "this decision is large" with "this person may make it". Decision rights, approval authority,
-          thresholds and escalation belong to the authority model (see{' '}
-          <span className="font-mono text-meta">docs/architecture/decision-engine-assessment.md</span>).
+          Roles, policy versions, rules, delegations, evaluations and approval acts are on the{' '}
+          <a href="/governance" className="font-medium">Governance</a> instrument. The pre-kernel threshold rules that used
+          to live here are retired: they compared a typed amount with an org rank, and conflated "this decision is large"
+          with "this person may make it".
         </p>
       </section>
 

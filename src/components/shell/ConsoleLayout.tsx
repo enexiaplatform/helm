@@ -7,7 +7,7 @@ import { displayClock, resolveScenarioWorkspace } from '../../services/scenarioR
 import { AppShell } from './AppShell.tsx';
 
 /** Kernel instruments run full width; everything else is the 1240px management register. */
-const INSTRUMENTS = new Set(['scenarios', 'value-graph', 'ontology', 'calculations']);
+const INSTRUMENTS = new Set(['scenarios', 'value-graph', 'ontology', 'calculations', 'governance']);
 
 const keyOf = (pathname: string): string => pathname.split('/')[1] || 'attention';
 const hrefOf = (key: string): string => (key === 'attention' ? '/' : `/${key}`);

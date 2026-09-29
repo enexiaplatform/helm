@@ -42,6 +42,19 @@ import {
   type DecisionWorkspaceContext,
 } from '../services/decisionRuntime.ts';
 import { alternativeOrder, criterionMatrix, loadWorkspace, targetLabel } from '../services/decisionWorkspace.ts';
+import {
+  GovernancePanel,
+  type ApprovalRequestView,
+  type GovernanceView,
+} from '../components/decision/GovernancePanel.tsx';
+import {
+  actingScope,
+  loadApprovalRequest,
+  loadGovernanceView,
+  resolveGovernanceContext,
+  type GovernanceContext,
+} from '../services/authorityRuntime.ts';
+import { asUserId, type Scope } from '@helm/shared';
 
 /** "A — Expedite supply" → mark "A", label "Expedite supply". */
 function splitMark(label: string, index: number): { mark: string; label: string } {
@@ -188,7 +201,7 @@ export function DecisionDetailPage() {
             label: 'Triggered by',
             value: decision.triggerRefs.length > 0 ? decision.triggerRefs.map((t) => t.label).join(' · ') : readable(decision.triggerType),
           },
-          { label: 'Authority', value: `${readable(decision.authorityStatus)} · Phase 6` },
+          { label: 'Commitment carries', value: 'no authority verdict — see governance below' },
         ]}
       />
 
@@ -336,8 +349,98 @@ export function DecisionDetailPage() {
         </section>
       )}
 
+      {commitment && scope && (
+        <Governance
+          scope={scope}
+          mode={mode ?? 'demo'}
+          commitmentId={commitment.id}
+          onChanged={() => void reload(ctx, decision.id, revisionId)}
+        />
+      )}
+
       <Timeline workspace={workspace} />
     </>
+  );
+}
+
+// ============================================================= governance
+
+/**
+ * Phase 6: was the commitment within authority, and what has been done about
+ * it. Everything is read from the authority runtime; this component only
+ * loads, shows and passes an act back.
+ */
+function Governance({ scope, mode, commitmentId, onChanged }: { scope: Scope; mode: 'demo' | 'cloud'; commitmentId: string; onChanged: () => void }) {
+  const [gov, setGov] = useState<GovernanceContext | null>(null);
+  const [view, setView] = useState<GovernanceView | null>(null);
+  const [request, setRequest] = useState<ApprovalRequestView | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const refresh = useCallback(async (context: GovernanceContext) => {
+    setView(await loadGovernanceView(context, commitmentId));
+    setLoaded(true);
+  }, [commitmentId]);
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const context = await resolveGovernanceContext(mode, scope);
+        if (!live || !context) return;
+        setGov(context);
+        await refresh(context);
+      } catch (e) {
+        if (live) setFailure(e instanceof Error ? e.message : String(e));
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [mode, scope, refresh]);
+
+  if (failure) return <Notice tone="error" label="Governance could not be read" className="mt-11">{failure}</Notice>;
+  if (!gov || !loaded) return <p className="mt-11 text-ui text-ink-500">Reading the authority evaluation…</p>;
+
+  return (
+    <GovernancePanel
+      view={view}
+      identities={gov.demoIdentities.map((i) => ({ userId: i.userId, label: i.label, seat: i.seat }))}
+      request={request}
+      busy={busy}
+      refusal={refusal}
+      onOpenRequest={(id) => void loadApprovalRequest(gov, id).then(setRequest).catch((e) => setRefusal(String(e)))}
+      onEvaluate={() => {
+        setBusy(true);
+        void gov.runtime.evaluate(gov.scope, commitmentId).then(async (r) => {
+          setBusy(false);
+          if (!r.ok) setRefusal(r.error.message);
+          await refresh(gov);
+          onChanged();
+        });
+      }}
+      onAct={(requirementId, decision, comments, asUserId_) => {
+        setBusy(true);
+        setRefusal(null);
+        const as = actingScope(gov, asUserId_ ? asUserId(asUserId_) : null);
+        const input = { comments };
+        const call =
+          decision === 'APPROVE'
+            ? gov.runtime.recordApproval(as, requirementId, input)
+            : decision === 'REJECT'
+              ? gov.runtime.recordRejection(as, requirementId, input)
+              : gov.runtime.returnForReconsideration(as, requirementId, input);
+        void call.then(async (r) => {
+          setBusy(false);
+          if (!r.ok) setRefusal(r.error.message);
+          else setRequest(null);
+          await refresh(gov);
+          onChanged();
+        });
+      }}
+    />
   );
 }
 
@@ -494,7 +597,7 @@ function CommitmentRecord({ workspace, explanation }: { workspace: DecisionWorks
       <SectionHead
         title="What management committed to, and why"
         meta={`${readable(c.authorship)} · ${displayInstant(c.committedAt)}`}
-        caveat={`authority ${readable(c.authorityStatus)} — Phase 6's question, not this record's`}
+        caveat={`authority ${readable(c.authorityStatus)} on the commitment itself — judged separately, below`}
       />
       <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-x-10 gap-y-7">
         <Rows label="Why">

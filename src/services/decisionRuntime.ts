@@ -20,6 +20,15 @@ import {
   type DecisionStore,
 } from '@helm/decision-runtime';
 import { createPostgresDecisionStore } from '@helm/decision-runtime/postgres';
+import {
+  MERIDIAN_DEMO_USERS,
+  buildMeridianGovernanceGraph,
+  createAuthorityRuntime,
+  createInMemoryAuthorityStore,
+  recordMeridianDoaV1,
+  recordMeridianOccupancies,
+  type AuthorityRuntime,
+} from '@helm/authority-runtime';
 import { systemClock, uuidIdGen, type Scope } from '@helm/shared';
 import type { ScenarioRuntime } from '@helm/scenario-runtime';
 import { supabaseClient } from '../lib/supabaseClient.ts';
@@ -27,11 +36,19 @@ import { resolveScenarioWorkspace, type ScenarioWorkspace } from './scenarioRunt
 
 export type DecisionWorkspaceContext = {
   runtime: DecisionRuntime;
+  /** The store behind the runtime — the authority runtime reads commitments and appends to the timeline through it. */
+  store: DecisionStore;
   scenarios: ScenarioWorkspace;
   scope: Scope;
   mode: 'demo' | 'cloud';
   /** The decision the demo opens on, if the canonical one was seeded. */
   canonicalDecisionId: string | null;
+  /**
+   * Demo only: the authority runtime, with its structure (roles, occupancies,
+   * DOA-2026-04) recorded BEFORE anything is committed — authority is never
+   * granted retroactively, so a commitment made first would be INDETERMINATE.
+   */
+  demoAuthority: AuthorityRuntime | null;
 };
 
 let demoContext: Promise<DecisionWorkspaceContext> | null = null;
@@ -46,18 +63,37 @@ function getDemoContext(scope: Scope): Promise<DecisionWorkspaceContext> {
   demoContext = (async () => {
     const scenarios = await resolveScenarioWorkspace('demo', scope);
     if (!scenarios) throw new Error('the demo scenario workspace is unavailable');
-    const runtime = buildRuntime(
-      scenarios.runtime,
-      createInMemoryDecisionStore({ clock: systemClock, idGen: uuidIdGen }),
-    );
-    const built = await buildMeridianDecision(runtime, scope, scenarios.scenarioIdsByKey);
+    const store = createInMemoryDecisionStore({ clock: systemClock, idGen: uuidIdGen });
+    const runtime = buildRuntime(scenarios.runtime, store);
+    // Committed by the demo Commercial Director — by identity, which is what
+    // Phase 6 governance reads — so the demo shows a commitment that needs
+    // the Country GM's approval.
+    const authority = createAuthorityRuntime({
+      store: createInMemoryAuthorityStore({ clock: systemClock, idGen: uuidIdGen }),
+      decisions: store,
+      scenarios: scenarios.runtime,
+      graph: scenarios.graphs.graphStore,
+      clock: systemClock,
+    });
+    const governance = await buildMeridianGovernanceGraph(scenarios.graphs.graphStore, scope);
+    if (!governance.ok) throw new Error(`the governance graph failed: ${governance.error.message}`);
+    const seats = await recordMeridianOccupancies(authority, scope, governance.value);
+    if (!seats.ok) throw new Error(`the demo occupancies failed: ${seats.error.message}`);
+    const doa = await recordMeridianDoaV1(authority, scope, governance.value);
+    if (!doa.ok) throw new Error(`the demo authority policy failed: ${doa.error.message}`);
+    const committer = { ...scope, actorId: MERIDIAN_DEMO_USERS.commercialDirector };
+    const built = await buildMeridianDecision(runtime, committer, scenarios.scenarioIdsByKey, {
+      committedByLabel: 'Commercial Director Vietnam',
+    });
     if (!built.ok) throw new Error(`the canonical decision failed: ${built.error.message}`);
     return {
       runtime,
+      store,
       scenarios,
       scope,
       mode: 'demo' as const,
       canonicalDecisionId: built.value.decision.id,
+      demoAuthority: authority,
     };
   })();
   return demoContext;
@@ -70,10 +106,12 @@ async function getCloudContext(scope: Scope): Promise<DecisionWorkspaceContext |
   const store = createPostgresDecisionStore({ client: supabaseClient, clock: systemClock });
   return {
     runtime: buildRuntime(scenarios.runtime, store),
+    store,
     scenarios,
     scope,
     mode: 'cloud',
     canonicalDecisionId: null,
+    demoAuthority: null,
   };
 }
 

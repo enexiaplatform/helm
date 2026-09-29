@@ -63,7 +63,15 @@ export async function buildMeridianDecision(
   runtime: DecisionRuntime,
   scope: Scope,
   scenarioIds: Readonly<Record<string, string>>,
-  options: { commit?: boolean; fork?: Partial<Decision['fork']> } = {},
+  options: {
+    commit?: boolean;
+    fork?: Partial<Decision['fork']>;
+    /**
+     * Who signs the commitment, as a label. The identity is always the
+     * scope's actor; Phase 6 governance reads that, never this text.
+     */
+    committedByLabel?: string;
+  } = {},
 ): Promise<Result<MeridianDecisionResult>> {
   const created = await runtime.createDecision(scope, {
     title: 'Rohto Q4 order fulfilment',
@@ -597,7 +605,7 @@ export async function buildMeridianDecision(
   const commitInput: CommitInput = {
     chosenAlternativeId: alternatives['reallocate'].id,
     authorship: 'MANAGEMENT_AUTHORED_DEMO',
-    committedByLabel: 'Country GM Vietnam',
+    committedByLabel: options.committedByLabel ?? 'Country GM Vietnam',
     summary:
       'Reallocate Distributor D’s consignment stock to serve the Rohto order in Q4, accepting that the distributor buffer goes to zero.',
     rationale,

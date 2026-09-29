@@ -13,6 +13,7 @@ export const HELM_NAV: NavItem[] = [
   { key: 'ontology', label: 'Ontology', group: 'Kernel' },
   { key: 'value-graph', label: 'Value Graph' },
   { key: 'calculations', label: 'Calculations' },
+  { key: 'governance', label: 'Governance' },
 ];
 
 interface Props {
@@ -36,7 +37,7 @@ interface Props {
   error?: string | null;
   onSignOut?: () => void;
   onSettings?: () => void;
-  /** instrument pages (Scenarios, Value Graph, Ontology, Calculations) run full width */
+  /** instrument pages (Scenarios, Value Graph, Ontology, Calculations, Governance) run full width */
   wide?: boolean;
   children: ReactNode;
 }

@@ -23,6 +23,7 @@ import { DecisionRow, type DecisionRowView } from '../components/decision/Decisi
 import type { PillTone } from '../components/ui/Pill.tsx';
 import { displayDate, readable, resolveDecisionContext } from '../services/decisionRuntime.ts';
 import { loadDecisionSummaries, type DecisionSummary } from '../services/decisionWorkspace.ts';
+import { latestCommitmentId, resolveGovernanceContext } from '../services/authorityRuntime.ts';
 
 const NUM = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
 const word = (n: number) => NUM[n] ?? String(n);
@@ -37,7 +38,13 @@ const TONE: Partial<Record<DecisionState, PillTone>> = {
   REVIEWED: 'reviewed',
 };
 
-function note(d: DecisionSummary): DecisionRowView['note'] {
+/** Governance state per decision, for the note line. Read from the authority runtime. */
+type Governed = Readonly<Record<string, { state: string; waitingOn: string[] }>>;
+
+function note(d: DecisionSummary, governed: Governed): DecisionRowView['note'] {
+  const g = governed[d.decision.id];
+  if (g && (g.state === 'PENDING_APPROVAL' || g.state === 'ESCALATED')) return { text: `Waiting on ${g.waitingOn.join(' and ')} approval`, alarm: true };
+  if (g && ['NOT_AUTHORIZED', 'INDETERMINATE', 'REJECTED'].includes(g.state)) return { text: `Authority: ${g.state.replaceAll('_', ' ')}`, alarm: true };
   if (d.openChallenges > 0)
     return { text: `${word(d.openChallenges)} ${plural(d.openChallenges, 'challenge', 'challenges')} still open`, alarm: true };
   if (d.unownedAssumptions > 0)
@@ -50,7 +57,7 @@ function note(d: DecisionSummary): DecisionRowView['note'] {
   return undefined;
 }
 
-function toRow(d: DecisionSummary): DecisionRowView {
+function toRow(d: DecisionSummary, governed: Governed): DecisionRowView {
   const { decision, latestRevision } = d;
   const dates = d.reviewedAt
     ? [
@@ -78,7 +85,7 @@ function toRow(d: DecisionSummary): DecisionRowView {
     state: decision.state.replaceAll('_', ' '),
     tone: TONE[decision.state] ?? 'neutral',
     dates,
-    note: note(d),
+    note: note(d, governed),
   };
 }
 
@@ -89,6 +96,7 @@ export function DecisionsPage() {
   const userId = useHelmStore((s) => s.userId);
   const myRole = useHelmStore((s) => s.myRole);
   const [items, setItems] = useState<DecisionSummary[] | null>(null);
+  const [governed, setGoverned] = useState<Governed>({});
   const [error, setError] = useState<string | null>(null);
 
   const scope = useMemo(
@@ -101,6 +109,8 @@ export function DecisionsPage() {
     if (!scope) return;
     void (async () => {
       try {
+        // Governance first: in the demo it also seeds the governance proof decisions.
+        const gov = await resolveGovernanceContext(mode ?? 'demo', scope).catch(() => null);
         const ctx = await resolveDecisionContext(mode ?? 'demo', scope);
         if (!live) return;
         if (!ctx) {
@@ -108,7 +118,18 @@ export function DecisionsPage() {
           return;
         }
         const loaded = await loadDecisionSummaries(ctx);
-        if (live) setItems(loaded);
+        const states: Record<string, { state: string; waitingOn: string[] }> = {};
+        if (gov) {
+          for (const d of loaded.filter((x) => x.committed)) {
+            const id = await latestCommitmentId(gov, d.decision.id);
+            const s = id ? await gov.runtime.getGovernanceState(scope, id) : null;
+            if (s?.ok) states[d.decision.id] = { state: s.value.state, waitingOn: s.value.requirements.filter((r) => !r.satisfied).map((r) => r.requirement.roleLabel) };
+          }
+        }
+        if (live) {
+          setGoverned(states);
+          setItems(loaded);
+        }
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : String(e));
       }
@@ -163,7 +184,7 @@ export function DecisionsPage() {
               <section key={g.title}>
                 <SectionHead title={g.title} size="section-sm" meta={String(g.items.length)} />
                 {g.items.map((d) => (
-                  <DecisionRow key={d.decision.id} d={toRow(d)} onOpen={(id) => navigate(`/decisions/${id}`)} />
+                  <DecisionRow key={d.decision.id} d={toRow(d, governed)} onOpen={(id) => navigate(`/decisions/${id}`)} />
                 ))}
               </section>
             ))}

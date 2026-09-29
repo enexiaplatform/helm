@@ -29,7 +29,9 @@ flowchart TB
     H1 --> P[RLS policies on every helm_* table]
     H3 --> P
     U --> UM[org_unit_memberships<br/>unit, is_manager]
-    UM -.->|"not yet in RLS predicates"| P
+    UM --> H4[helm_visible_org_units org<br/>subtree-inclusive]
+    H4 --> H5[helm_can_see_decision decision]
+    H5 --> P
 ```
 
 - Every HELM table carries `org_id`.
@@ -59,11 +61,13 @@ Stated plainly, because an undocumented gap is the dangerous kind.
 
 | Gap | Impact today | Closes in |
 | --- | --- | --- |
-| **No unit-level RLS.** `org_unit_memberships` exists but no policy consults it. Any org member can read all org data. | A country manager can read another country's margins | Phase 6 |
-| **No functional visibility.** No concept of "Supply Chain may not see customer-level margin". | Over-broad access inside an org | Phase 6 |
+| ~~No unit-level RLS on decisions.~~ **Closed in Phase 6** for every decision table: a decision is readable by org admins, its creator, and members of a unit it is shared with or of any unit above it (`helm_can_see_decision`, subtree-inclusive over `org_unit_memberships`). Proven server-side with users in two BUs and a country GM. | — | ✅ Phase 6 |
+| **Scenarios, value graph and calculations are still org-visible.** Unit scoping reaches decisions and everything hanging off them, not the model underneath. | A member can read a scenario bound to a decision they cannot see | Phase 7 (with sensitivity classes) |
+| **Functional visibility is by unit only.** A function is modelled as an org unit (`department`) and a cross-functional decision gets one grant per unit; there is no per-field or per-metric function rule. | Coarse, but not over-broad for decisions | Phase 7 |
 | **No sensitivity classes.** Compensation-grade and margin-grade data would sit in one tier. | Blocks HR data entirely | Phase 7 |
-| **There is no authority model.** Phase 5 retired the amount-threshold rules rather than carrying them forward; `helm_approval_rules` still exists, holds no kernel rows and is read by nothing. Every decision and commitment carries `authorityStatus: NOT_EVALUATED`, pinned by a database constraint. | HELM records *that* a named person committed and on what grounds. It asserts nothing about whether they were permitted to, and cannot be mistaken for doing so. | Phase 6 |
-| **No field-level redaction.** Access is row-shaped. | Cannot share a decision while hiding its amount | Phase 6 |
+| ~~There is no authority model.~~ **Closed in Phase 6** ([ADR-0022](../adr/0022-decision-authority-graph.md)): role occupancy, versioned DOA policies, consequence-based rules, delegation, evaluations bound to the commitment fingerprint, approval acts tied to identity and seat. `helm_approval_rules` is RETIRED. | — | ✅ Phase 6 |
+| **Authority verdicts are computed in the client.** The database enforces identity, immutability, fingerprint coherence, committer identity and that an `AUTHORIZED` basis was held; it cannot re-derive a threshold. | A tampered client could record a wrong verdict with a real basis rule | server-side authority runtime, before real onboarding |
+| **No field-level redaction.** Access is row-shaped. | Cannot share a decision while hiding its amount | Phase 7 |
 | **No AI access controls.** Nothing to control — there is no AI. Must exist before Phase 11. | none yet | Phase 11 |
 
 **Phase 6 is therefore a security phase as much as a governance phase.** The
@@ -140,9 +144,14 @@ The authority check will run in **two independent layers**:
 Duplication is deliberate. Layer 1 can be bypassed by a direct API call; layer 2
 cannot be bypassed at all.
 
-Neither exists today. Phase 5 deliberately left `authorityStatus` pinned to
-`NOT_EVALUATED` in the type *and* in the schema so that this can be added
-without rewriting a single commitment made before it.
+**Superseded by ADR-0022.** Phase 6 keeps the commitment as history and does
+not refuse its INSERT: refusing it would destroy the record of an unauthorized
+act. Instead the authority evaluation is a separate, immutable record, and the
+database's own guards check what can be checked without re-running the kernel —
+the evaluated fingerprint is the commitment's, the actor is its committer, an
+`AUTHORIZED` basis is a rule the actor held at the act, and an approval comes
+from the caller, from a seat or delegation they held, never from the committer
+when independence is required.
 
 ## 5. AI access controls (must precede Phase 11)
 

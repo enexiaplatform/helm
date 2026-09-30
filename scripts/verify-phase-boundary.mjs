@@ -1,5 +1,5 @@
 /**
- * verify:phase-boundary — Phase 8 does what Phase 8 does, and no more.
+ * verify:phase-boundary — Phase 9 does what Phase 9 does, and no more.
  *
  * Every phase ships a verifier that asserts the ABSENCE of the next phase's
  * work, because the most expensive mistake in a layered build is a layer that
@@ -7,10 +7,13 @@
  * comparison; Phase 4 took comparison and forbade decisions; Phase 5 took
  * decisions and forbade authority; Phase 6 took decision authority and forbade
  * a digital twin; Phase 7 took the Management Digital Twin and forbade causal
- * claims; Phase 8 now owns the Enterprise Causal Graph — but ONLY in
- * @helm/causal-runtime and the causal surfaces, as evidence-backed claims that
- * a person authors. It infers nothing, discovers nothing, scores nothing and
- * writes nothing below itself. Scanned across the propagation engine, the
+ * claims; Phase 8 took the Enterprise Causal Graph and forbade a Management
+ * Genome; Phase 9 now owns the Management Genome — but ONLY in
+ * @helm/genome-runtime and the genome surfaces, as episodes that wrap a
+ * decision by reference and patterns and lessons that a person authors. It
+ * learns nothing, discovers nothing, rates no one and writes nothing below
+ * itself. Phase 8's causal graph likewise infers nothing, discovers nothing,
+ * scores nothing and writes nothing below itself. Scanned across the propagation engine, the
  * scenario, decision, authority, twin and causal runtimes, the trusted
  * authority host and the explorers:
  *
@@ -32,8 +35,11 @@
  *   4. No optimization solver. A constraint is checked, never solved for.
  *   5. No agent debate or multi-agent deliberation, and no AI recommendation:
  *      the Intelligence Runtime is Phase 11.
- *   6. No Management Genome: outcome review records variance and assumption
- *      outcomes; it does not learn patterns or score decision quality.
+ *   6. The Management Genome lives only in the genome runtime (and its
+ *      surfaces). It is memory a person curates: no pattern learning or mining,
+ *      no decision-quality or person score, no outcome prediction — anywhere.
+ *      Decision Process Quality ≠ Outcome Quality.
+ *   6b. The genome remembers; it never writes a kernel layer below it.
  *   7. No management surfaces beyond the technical explorers: no GM cockpit.
  *   7b. The twin composes; it never writes a kernel layer below it, and its
  *       attention is conditions — never an AI priority or a score.
@@ -60,6 +66,8 @@ const DECISION_SRC = join(root, 'packages', 'decision-runtime', 'src');
 const AUTHORITY_SRC = join(root, 'packages', 'authority-runtime', 'src');
 const TWIN_SRC = join(root, 'packages', 'twin-runtime', 'src');
 const CAUSAL_SRC = join(root, 'packages', 'causal-runtime', 'src');
+const GENOME_SRC = join(root, 'packages', 'genome-runtime', 'src');
+const PHASE9_MIGRATION = join(root, 'supabase', 'migrations', '20260930110000_helm_management_genome.sql');
 const PHASE8_MIGRATION = join(root, 'supabase', 'migrations', '20260930090000_helm_causal_graph.sql');
 const PHASE7_MIGRATION = join(root, 'supabase', 'migrations', '20260929090000_helm_management_twin.sql');
 const MIGRATION = join(root, 'supabase', 'migrations', '20260920090000_helm_propagation.sql');
@@ -84,6 +92,11 @@ const TRUSTED_HOST = [join(root, 'server', 'authority', 'host.ts')];
 const CAUSAL_APP = [
   join(root, 'src', 'pages', 'CausalPage.tsx'),
   join(root, 'src', 'services', 'causalRuntime.ts'),
+];
+/** The Phase 9 surfaces: where the genome may be SHOWN. */
+const GENOME_APP = [
+  join(root, 'src', 'pages', 'GenomePage.tsx'),
+  join(root, 'src', 'services', 'genomeRuntime.ts'),
 ];
 const rel = (p) => p.slice(root.length + 1).replaceAll('\\', '/');
 /** The Phase 6 surfaces: where authority may be SHOWN. */
@@ -113,6 +126,7 @@ const decisionFiles = tsFiles(DECISION_SRC);
 const authorityFiles = tsFiles(AUTHORITY_SRC);
 const twinFiles = tsFiles(TWIN_SRC);
 const causalFiles = tsFiles(CAUSAL_SRC);
+const genomeFiles = tsFiles(GENOME_SRC);
 const engineCode = new Map(engineFiles.map((f) => [f, stripNonCode(readFileSync(join(ENGINE_SRC, f), 'utf8'))]));
 
 /** Every file the phase boundary is checked against, by readable path. */
@@ -138,17 +152,29 @@ const scanned = new Map([
     `packages/causal-runtime/src/${f}`,
     stripNonCode(readFileSync(join(CAUSAL_SRC, f), 'utf8')),
   ]),
-  ...[...KERNEL_APP, ...GOVERNANCE_APP, ...TWIN_APP, ...TRUSTED_HOST, ...CAUSAL_APP].filter(existsSync).map((p) => [
+  ...genomeFiles.map((f) => [
+    `packages/genome-runtime/src/${f}`,
+    stripNonCode(readFileSync(join(GENOME_SRC, f), 'utf8')),
+  ]),
+  ...[...KERNEL_APP, ...GOVERNANCE_APP, ...TWIN_APP, ...TRUSTED_HOST, ...CAUSAL_APP, ...GENOME_APP].filter(existsSync).map((p) => [
     p.slice(root.length + 1).replaceAll('\\', '/'),
     stripNonCode(readFileSync(p, 'utf8')),
   ]),
 ]);
 
-/** Where causal knowledge is allowed to exist at all. */
+/** Where the Management Genome is allowed to exist at all. */
+const genomeHome = (file) => file.startsWith('packages/genome-runtime/') || GENOME_APP.some((p) => rel(p) === file);
+
+/**
+ * Where causal knowledge is allowed to exist at all. The genome READS the
+ * causal graph: an episode keeps what management believed at a decision apart
+ * from what has been claimed since.
+ */
 const causalHome = (file) =>
   file.startsWith('packages/causal-runtime/') ||
   CAUSAL_APP.some((p) => rel(p) === file) ||
-  file === 'src/pages/TwinPage.tsx';
+  file === 'src/pages/TwinPage.tsx' ||
+  genomeHome(file);
 
 /** Where decision authority is allowed to exist at all. */
 const authorityHome = (file) =>
@@ -221,7 +247,7 @@ const NOT_YET = [
     rule: 'twin-in-its-home',
     // The twin is Phase 7's, and it lives in ONE place: the layers below
     // compose into it; none of them composes a twin of its own.
-    skip: (file) => file.startsWith('packages/twin-runtime/') || TWIN_APP.some((p) => rel(p) === file),
+    skip: (file) => file.startsWith('packages/twin-runtime/') || TWIN_APP.some((p) => rel(p) === file) || genomeHome(file),
     patterns: [/\bdigitalTwin\w*/i, /\btwinState\w*/i, /\bmanagementTwin\w*/i, /\bTwinSnapshot\b/, /\bcomposeSnapshot\b/],
     why: 'a management digital twin outside @helm/twin-runtime',
     phase: 'the twin runtime — one composition of management state, over layers it never changes',
@@ -289,17 +315,37 @@ const NOT_YET = [
     phase: 'Phase 11 — the Intelligence Runtime. Phase 5 is deterministic',
   },
   {
-    rule: 'no-genome',
-    // Preserving what is needed to learn later is Phase 5. Learning from it is not.
+    rule: 'genome-in-its-home',
+    // The genome is Phase 9's, and it lives in ONE place: the layers below
+    // record, compute, believe and commit; none of them remembers episodes.
+    skip: genomeHome,
+    patterns: [/\bmanagementGenome\b/i, /\bManagementEpisode\b/, /\bManagementPattern\b/, /\bgenomeEpisode\w*/i],
+    why: 'the Management Genome outside @helm/genome-runtime',
+    phase: 'the genome runtime — episodes by reference, patterns people author, lessons people review',
+  },
+  {
+    rule: 'no-pattern-learning',
+    // Anywhere, including the genome: it verifies a pattern a person proposes,
+    // it never finds one, and it never rates a decision, an outcome or a person.
     patterns: [
-      /\bmanagementGenome\b/i,
-      /\blearnPattern\w*|\bpatternLearning\b/i,
-      /\bdecisionQuality\w*/i,
-      /\bsimilarDecisions?\b/i,
-      /\bpredictOutcome\w*/i,
+      /\blearnPattern\w*|\bpatternLearning\b|\bpatternMining\b|\bminePatterns?\b/i,
+      /\bdiscoverPatterns?\b|\binferPatterns?\b|\bautoPattern\w*|\bsuggestPattern\w*/i,
+      /\bdecisionQuality\w*|\bdecisionScore\w*|\boutcomeScore\w*|\bprocessScore\w*/i,
+      /\bmanagerScore\w*|\bmanagerRating\w*|\bmanagerRank\w*|\bpersonScore\w*|\bperformanceRating\w*|\bleaderboard\w*/i,
+      /\bpredictOutcome\w*|\boutcomePrediction\w*|\bsuccessProbability\w*/i,
+      /\bclustering\b|\bkmeans\b|\bembedding\w*|\bcosineSimilarity\b|\bsimilarityScore\w*/i,
+      /\bbestPractice\w*|\bgoldenPattern\w*/i,
     ],
-    why: 'decision-pattern learning or a decision-quality judgement',
-    phase: 'Phase 9 — Management Genome. Phase 5 preserves the evidence it will need',
+    why: 'pattern learning, a decision-quality or person score, or an outcome prediction',
+    phase: 'never — Decision Process Quality ≠ Outcome Quality; HELM checks a pattern people propose and rates no one',
+  },
+  {
+    rule: 'no-genome-consumers',
+    // Nothing consumes a lesson or a pattern: no policy, calculation, belief or
+    // authority rule is changed because of a recorded pattern.
+    patterns: [/\bapplyLesson\w*|\bapplyPattern\w*|\benforceLesson\w*|\bautoUpdatePolicy\w*|\bpromoteLesson\w*/i],
+    why: 'a mechanism that acts on a lesson or a pattern',
+    phase: 'never — a lesson is authored, reviewed by someone else and inert',
   },
   {
     rule: 'no-management-surface',
@@ -403,7 +449,26 @@ const LAYERS = [
       '@helm/twin-runtime',
     ],
     self: '@helm/causal-runtime',
-    note: 'the causal runtime is the top of the kernel',
+    note: 'the causal runtime sits below the genome runtime, and knows nothing of it',
+  },
+  {
+    dir: GENOME_SRC,
+    files: genomeFiles,
+    label: 'packages/genome-runtime/src',
+    allowed: [
+      '@helm/shared',
+      '@helm/ontology',
+      '@helm/graph-store',
+      '@helm/value-graph',
+      '@helm/propagation-engine',
+      '@helm/scenario-runtime',
+      '@helm/decision-runtime',
+      '@helm/authority-runtime',
+      '@helm/twin-runtime',
+      '@helm/causal-runtime',
+    ],
+    self: '@helm/genome-runtime',
+    note: 'the genome runtime is the top of the kernel',
   },
 ];
 for (const { dir, files, label, allowed, self, note } of LAYERS) {
@@ -442,6 +507,7 @@ const MIGRATIONS = [
   { path: PHASE6_MIGRATION, phase: 'Phase 6' },
   { path: PHASE7_MIGRATION, phase: 'Phase 7' },
   { path: PHASE8_MIGRATION, phase: 'Phase 8' },
+  { path: PHASE9_MIGRATION, phase: 'Phase 9' },
 ];
 for (const { path, phase } of MIGRATIONS) {
   if (!existsSync(path)) {
@@ -521,6 +587,28 @@ for (const [file, code] of scanned) {
   const writes = /\.(recordObservation|createEntity|updateEntity|upsertEntity|createRelationship|removeRelationship|execute|executeBaseline|addOverride|createScenario|createRevision|rebase|register\w*|createValueNode|upsertValueNode|createValueLink|appendStep|commit|createCommitment|recordApproval|recordOutcomeReview|appendEvent|setDecisionState|setActionIntentStatus|saveSnapshot|buildSnapshot|grantClearance)\s*\(/.exec(code);
   check('causal-never-writes-below', !writes, `${file} calls ${writes?.[1]} — a causal claim never changes the model or any layer below it`);
 }
+// The genome remembers; it writes nothing below itself. meridianGenome.ts is demo
+// SEED data: it plays management, building and committing the demonstration
+// decisions through the decision runtime as a person would, so it is the one file exempt.
+for (const [file, code] of scanned) {
+  if (!file.startsWith('packages/genome-runtime/') || file.endsWith('meridianGenome.ts')) continue;
+  const writes = /\.(recordObservation|createEntity|updateEntity|upsertEntity|createRelationship|removeRelationship|execute|executeBaseline|addOverride|createScenario|createRevision|rebase|register\w*|createValueNode|upsertValueNode|createValueLink|appendStep|commit|createCommitment|recordApproval|recordRejection|evaluate|recordOutcomeReview|appendEvent|setDecisionState|setActionIntentStatus|saveSnapshot|buildSnapshot|grantClearance|createClaim|reviseClaim|retireClaim|recordEvidence|supportClaim|contradictClaim|declareGovernanceProfile|recordPolicy|createDelegation)\s*\(/.exec(code);
+  check('genome-never-writes-below', !writes, `${file} calls ${writes?.[1]} — the genome remembers the kernel, it does not change it`);
+}
+for (const { file, why } of [
+  { file: 'types.ts', why: 'the genome vocabulary' },
+  { file: 'policy.ts', why: 'the pattern policy' },
+  { file: 'situation.ts', why: 'situation features derived at the decision boundary' },
+  { file: 'runtime.ts', why: 'the genome runtime' },
+  { file: 'inMemoryStore.ts', why: 'the reference genome store' },
+  { file: 'postgres.ts', why: 'the production genome store' },
+  { file: 'conformance.ts', why: 'the genome store contract' },
+  { file: 'meridianGenome.ts', why: 'the canonical management episodes' },
+]) {
+  check('phase-artifacts', genomeFiles.includes(file), `${why} (packages/genome-runtime/src/${file}) is missing`);
+}
+const genomePolicy = scanned.get('packages/genome-runtime/src/policy.ts') ?? '';
+check('phase-artifacts', /GENOME_PATTERN_POLICY\s*=\s*'helm-genome-pattern@1'/.test(readFileSync(join(GENOME_SRC, 'policy.ts'), 'utf8')) && /decidePattern/.test(genomePolicy), 'the pattern policy is not versioned or does not decide a status');
 for (const { file, why } of [
   { file: 'types.ts', why: 'the causal vocabulary' },
   { file: 'policy.ts', why: 'the evidence policy' },

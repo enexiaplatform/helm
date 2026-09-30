@@ -20,8 +20,8 @@
 import { createInMemoryGraphStore, buildCanonicalScenario, type GraphStore } from '@helm/graph-store';
 import { createInMemoryValueGraph, buildCanonicalValueChain, buildCanonicalScenarioExtension } from '@helm/value-graph';
 import { createInMemoryCalculationStore, createPropagationEngine } from '@helm/propagation-engine';
-import { buildMeridianScenarios, createInMemoryScenarioStore, createScenarioRuntime, meridianConstraintsV1, meridianStateFrame } from '@helm/scenario-runtime';
-import { createDecisionRuntime, createInMemoryDecisionStore, type DecisionStore } from '@helm/decision-runtime';
+import { buildMeridianScenarios, createInMemoryScenarioStore, createScenarioRuntime, meridianConstraintsV1, meridianStateFrame, type ScenarioRuntime } from '@helm/scenario-runtime';
+import { createDecisionRuntime, createInMemoryDecisionStore, type DecisionRuntime, type DecisionStore } from '@helm/decision-runtime';
 import { createPostgresDecisionStore } from '@helm/decision-runtime/postgres';
 import {
   MERIDIAN_DEMO_PEOPLE,
@@ -34,6 +34,7 @@ import {
   recordMeridianDoaV1,
   recordMeridianOccupancies,
   scopeAs,
+  type AuthorityRuntime,
   type AuthorityStore,
   type MeridianGovernanceGraph,
   type OrgUnit,
@@ -76,14 +77,19 @@ export type TwinContext = {
   /** Demo: the fictional readers the explorer can read AS. Cloud: the signed-in user only. */
   readonly viewers: readonly TwinViewerPreset[];
   readonly units: readonly OrgUnit[];
-  /** The kernel handles a layer above the twin (the causal graph) builds on. */
+  /** The kernel handles the layers above the twin (the causal graph, the genome) build on. */
   readonly kernel: {
     readonly graph: GraphStore;
     readonly clock: Clock & { jumpTo?(iso: string): void };
     readonly decisionStore: DecisionStore;
     readonly authorityStore: AuthorityStore;
+    readonly scenarios: ScenarioRuntime;
+    readonly authority: AuthorityRuntime;
+    readonly decisions: DecisionRuntime;
     readonly governance: MeridianGovernanceGraph | null;
     readonly nodeIds: Readonly<Record<string, string>> | null;
+    /** Demo: the canonical scenarios by key. Null in the cloud. */
+    readonly scenarioIds: Readonly<Record<string, string>> | null;
   };
 };
 
@@ -226,7 +232,7 @@ function getDemoTwin(scope: Scope): Promise<TwinContext> {
         preset('industrialHead', 'Industrial BU Head'),
       ],
       units: MERIDIAN_DEMO_UNITS,
-      kernel: { graph, clock, decisionStore, authorityStore, governance, nodeIds },
+      kernel: { graph, clock, decisionStore, authorityStore, scenarios, authority, decisions, governance, nodeIds, scenarioIds },
     };
   })();
   return demoTwin;
@@ -282,7 +288,18 @@ async function getCloudTwin(scope: Scope): Promise<TwinContext | null> {
       },
     ],
     units,
-    kernel: { graph: graphs.graphStore, clock: systemClock, decisionStore, authorityStore, governance: null, nodeIds: null },
+    kernel: {
+      graph: graphs.graphStore,
+      clock: systemClock,
+      decisionStore,
+      authorityStore,
+      scenarios: workspace.runtime,
+      authority,
+      decisions: createDecisionRuntime({ store: decisionStore, scenarios: workspace.runtime, clock: systemClock }),
+      governance: null,
+      nodeIds: null,
+      scenarioIds: null,
+    },
   };
 }
 

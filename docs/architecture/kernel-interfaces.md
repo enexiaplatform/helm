@@ -283,11 +283,18 @@ export interface CausalEngine {
   reassess(scope: Scope, hypothesisId: string): Promise<CausalHypothesis>;
 };
 
-// management-genome (Phase 9)
+// management-genome (Phase 9) — delivered as @helm/genome-runtime (src/port.ts); abridged.
+// Every read takes the two-time lens; status is derived at it, never stored.
 export interface ManagementGenome {
-  findSimilarSituations(scope: Scope, s: SituationPattern, limit: number): Promise<SituationMatch[]>;
-  findSimilarDecisions(scope: Scope, d: DecisionPattern, limit: number): Promise<DecisionMatch[]>;
-  findLessons(scope: Scope, q: LessonQuery): Promise<Lesson[]>;
+  openEpisode(scope: Scope, input: OpenEpisodeInput): Promise<Result<EpisodeView>>;
+  /** Episodes agreeing on EVERY required feature, chronological, unscored. */
+  findSimilar(scope: Scope, input: { episodeId?: string; decisionId?: string; require: FeatureName[]; lens?: GenomeLens }): Promise<Result<SimilarSituations>>;
+  proposePattern(scope: Scope, input: ProposePatternInput): Promise<Result<PatternView>>;
+  /** Refused unless the stance agrees with what HELM's own records show. */
+  linkEpisode(scope: Scope, patternId: string, episodeId: string, stance: PatternStance, rationale: string): Promise<Result<PatternView>>;
+  recordLesson(scope: Scope, input: RecordLessonInput): Promise<Result<LessonView>>;
+  viewAt(scope: Scope, lens?: GenomeLens): Promise<Result<GenomeAtLens>>;
+  projectForViewer(scope: Scope, viewer: TwinViewer, units: OrgUnit[], facts: GenomeVisibilityFacts, lens?: GenomeLens): Promise<Result<ProjectedGenome>>;
 }
 
 // counterfactual-engine (Phase 10)
@@ -305,9 +312,11 @@ export type Counterfactual = {
 };
 ```
 
-`findSimilarSituations` takes a **structured** `SituationPattern`, not a text
-blob — §2.7's "do not rely purely on embeddings". Semantic similarity is an
-optional re-ranking step over structurally filtered candidates.
+`findSimilar` takes the **structured features** a caller requires to agree, not
+a text blob — §2.7's "do not rely purely on embeddings". A feature the situation
+does not state agrees with nothing, and the answer says so. Semantic similarity
+may one day supplement this; it may never define similarity
+([ADR-0028](../adr/0028-management-genome.md) §2).
 
 ## 7. Connector SDK
 

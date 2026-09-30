@@ -8,7 +8,10 @@ export type PillTone =
   | 'committed' | 'reviewed' | 'open' | 'accepted' | 'blocked' | 'computed' | 'overridden' | 'neutral'
   /* Phase 8 — causal knowledge. Five kinds of relationship, never drawn alike:
      a model dependency is 'computed'; these four are claims and findings. */
-  | 'hypothesis' | 'supported' | 'contested' | 'refuted' | 'correlation';
+  | 'hypothesis' | 'supported' | 'contested' | 'refuted' | 'correlation'
+  /* Phase 9 — the management genome. A pattern that recurred in recorded
+     episodes, and a lesson someone other than its author has endorsed. */
+  | 'recurring' | 'endorsed';
 
 const T: Record<PillTone, string> = {
   actual: 'bg-emerald-50 text-emerald-700',
@@ -31,6 +34,8 @@ const T: Record<PillTone, string> = {
   contested: 'bg-amber-100 text-amber-900',
   refuted: 'bg-red-100 text-red-800',
   correlation: 'bg-sky-50 text-sky-800',
+  recurring: 'bg-cyan-50 text-cyan-800',
+  endorsed: 'bg-lime-50 text-lime-800',
 };
 
 export function Pill({ tone = 'neutral', children, className }: { tone?: PillTone; children: ReactNode; className?: string }) {

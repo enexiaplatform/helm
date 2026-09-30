@@ -145,7 +145,7 @@ export async function resolveCausalContext(mode: 'demo' | 'cloud', scope: Scope)
 // ----------------------------------------------------------------- read models
 
 /** Which decisions this reader may see — the same rule RLS applies (helm_private.can_see_decision). */
-async function decisionVisibility(ctx: CausalContext, viewer: TwinViewer): Promise<(id: string) => boolean> {
+export async function decisionVisibility(ctx: CausalContext, viewer: TwinViewer): Promise<(id: string) => boolean> {
   const k = ctx.twin.kernel;
   const decisions = must(await k.decisionStore.listDecisions(ctx.scope), 'decisions');
   const visible = new Set<string>();

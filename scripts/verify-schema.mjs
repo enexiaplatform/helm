@@ -67,6 +67,17 @@ const APPEND_ONLY = [
   'helm_correlation_findings',
   'helm_causal_questions',
   'helm_causal_question_candidates',
+  // What the enterprise remembers of how it met a situation: the episode that
+  // wraps a decision by reference, the patterns people propose over episodes
+  // and the lessons they draw. A memory changes by a new revision, link or
+  // review — never by an edit.
+  'helm_genome_episodes',
+  'helm_genome_episode_refs',
+  'helm_genome_patterns',
+  'helm_genome_pattern_revisions',
+  'helm_genome_pattern_evidence',
+  'helm_genome_lessons',
+  'helm_genome_lesson_reviews',
 ];
 
 /**

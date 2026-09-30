@@ -18,11 +18,11 @@ twin continues to treat the trusted service as the canonical cloud path.
 
 | Layer | State |
 | --- | --- |
-| Kernel | Phase 8 complete |
-| Shared database schema | Phase 7 and Phase 8 migrations applied and verified (rolled-back proofs: 24 refusals / 12 controls; 31 refusals / 10 controls; 0 failures) |
+| Kernel | Phase 9 complete |
+| Shared database schema | Phase 7, 8 and 9 migrations applied and verified (rolled-back proofs: 24 refusals / 12 controls; 31 refusals / 10 controls; 52 refusals / 28 controls; 0 failures) |
 | Trusted authority implementation | Built and contract-tested (`verify:authority-server`, 14 service tests, 4 mutations caught) |
 | Trusted authority deployment | **NOT DEPLOYED** |
-| Postgres conformance | **8 suites SKIPPED** — no isolated authenticated environment (the causal store added in Phase 8) |
+| Postgres conformance | **9 suites SKIPPED** — no isolated authenticated environment (the causal store added in Phase 8, the genome store in Phase 9) |
 | Cloud end-to-end readiness | **NOT YET PROVEN** |
 | Production / pilot readiness | **BLOCKED** by this gate |
 
@@ -57,7 +57,7 @@ reference environment. Other Phase 7 debt is ordinary backlog.
    admin, a non-member).
 4. Every previously skipped Postgres conformance suite is executed: graph,
    value graph, calculations, scenario store, decision store, authority store,
-   twin store, causal store.
+   twin store, causal store, genome store.
 5. Zero conformance failures.
 6. The cloud Decision → Commitment → Authority Evaluation → Approval path is
    executed end to end through the deployed `helm-authority` function.

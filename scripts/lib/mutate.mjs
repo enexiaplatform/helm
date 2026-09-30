@@ -1,5 +1,5 @@
 /**
- * A mutation harness for the Phase 5, 6, 7 and 8 verification contracts.
+ * A mutation harness for the Phase 5, 6, 7, 8 and 9 verification contracts.
  *
  * A verifier that passes proves nothing on its own: it might assert nothing at
  * all, or assert something that cannot fail. So each contract is also run
@@ -26,6 +26,8 @@ const MIGRATION7 = 'supabase/migrations/20260929090000_helm_management_twin.sql'
 const T = 'packages/twin-runtime/src';
 const MIGRATION8 = 'supabase/migrations/20260930090000_helm_causal_graph.sql';
 const C8 = 'packages/causal-runtime/src';
+const MIGRATION9 = 'supabase/migrations/20260930110000_helm_management_genome.sql';
+const G9 = 'packages/genome-runtime/src';
 
 /**
  * Each mutation: which contract must catch it, which invariant it attacks, and
@@ -771,37 +773,254 @@ const MUTATIONS = [
     from: "USING (public.is_org_member(org_id) AND helm_private.twin_snapshot_row_visible(org_id, built_by, granted_unit_ids));",
     to: "USING (public.is_org_member(org_id) AND helm_private.can_see_twin_snapshot(id));",
   },
+  // ------------------------------------------------ verify:genome-schema (Phase 9)
+  {
+    verifier: 'verify-genome-schema.mjs',
+    invariant: 'a person cannot record a stance HELM did not observe',
+    file: MIGRATION9,
+    from: "    (stance = 'SUPPORTING_EPISODE' AND observed = 'SUPPORTS')\n    OR (stance = 'CONTRADICTORY_EPISODE' AND observed = 'CONTRADICTS')",
+    to: "    (stance = 'SUPPORTING_EPISODE')\n    OR (stance = 'CONTRADICTORY_EPISODE')",
+  },
+  {
+    verifier: 'verify-genome-schema.mjs',
+    invariant: 'an author cannot endorse their own lesson',
+    file: MIGRATION9,
+    from: "IF NEW.status = 'ENDORSED' AND NEW.reviewed_by IS NOT NULL AND NEW.reviewed_by = author THEN",
+    to: 'IF FALSE THEN',
+  },
+  {
+    verifier: 'verify-genome-schema.mjs',
+    invariant: "an episode read policy never re-reads its own row by id (INSERT … RETURNING)",
+    file: MIGRATION9,
+    from: '  USING (public.is_org_member(org_id) AND helm_private.genome_episode_row_visible(org_id, decision_id, visibility, authored_by, granted_unit_ids, sensitivity_classes));',
+    to: '  USING (public.is_org_member(org_id) AND helm_private.can_see_genome_episode(id));',
+  },
+  {
+    verifier: 'verify-genome-schema.mjs',
+    invariant: 'signed-in clients hold no UPDATE or DELETE on genome tables',
+    file: MIGRATION9,
+    from: 'REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE',
+    to: 'REVOKE REFERENCES, TRIGGER ON TABLE',
+  },
+  {
+    verifier: 'verify-genome-schema.mjs',
+    invariant: 'a pattern is withheld when it rests on an episode the viewer cannot read',
+    file: MIGRATION9,
+    from: 'WHERE e.pattern_id = p_pattern AND NOT helm_private.can_see_genome_episode(e.episode_id)',
+    to: 'WHERE e.pattern_id = p_pattern AND false',
+  },
+  {
+    verifier: 'verify-genome-schema.mjs',
+    invariant: 'an episode needs clearance for every class it carries',
+    file: MIGRATION9,
+    from: 'AND NOT EXISTS (SELECT 1 FROM unnest(p_classes) k WHERE NOT helm_private.has_clearance(p_org, k))',
+    to: 'AND TRUE',
+  },
+  {
+    verifier: 'verify-genome-schema.mjs',
+    invariant: 'record time is stamped by the database, never by the client',
+    file: MIGRATION9,
+    from: '  NEW.recorded_at := now();\n',
+    to: '',
+  },
+  {
+    verifier: 'verify-genome-schema.mjs',
+    invariant: 'the genome stores no score',
+    file: MIGRATION9,
+    from: '  CONSTRAINT helm_genome_patterns_scoped CHECK (',
+    to: '  score numeric,\n  CONSTRAINT helm_genome_patterns_scoped CHECK (',
+  },
+  {
+    verifier: 'verify-genome-schema.mjs',
+    invariant: 'a pattern always states its limitations',
+    file: MIGRATION9,
+    from: '  limitations text NOT NULL CHECK (char_length(btrim(limitations)) >= 1),',
+    to: '  limitations text,',
+  },
+  {
+    verifier: 'verify-genome-schema.mjs',
+    invariant: 'a lesson rests on the genome, not on free text',
+    file: MIGRATION9,
+    from: "      RAISE EXCEPTION 'helm_genome_lessons: a lesson rests on episodes or patterns of this genome, not on a %', r->>'kind';",
+    to: '      NULL;',
+  },
+  {
+    verifier: 'verify-schema.mjs',
+    invariant: 'a genome table permits no DELETE',
+    file: MIGRATION9,
+    from: 'DROP POLICY IF EXISTS "Scoped read genome lessons" ON public.helm_genome_lessons;',
+    to: 'DROP POLICY IF EXISTS "Scoped read genome lessons" ON public.helm_genome_lessons;\nCREATE POLICY "Erase lessons" ON public.helm_genome_lessons FOR DELETE TO authenticated USING (public.is_org_member(org_id));',
+  },
+  // ------------------------------------------------ verify:genome-runtime (Phase 9)
+  {
+    verifier: 'verify-genome-runtime.mjs',
+    invariant: 'a contradictory episode does not vanish under a majority',
+    file: `${G9}/policy.ts`,
+    from: '  if (c > 0) {',
+    to: '  if (c > s) {',
+  },
+  {
+    verifier: 'verify-genome-runtime.mjs',
+    invariant: 'an episode says process quality is not outcome quality',
+    file: `${G9}/runtime.ts`,
+    from: "        'neither judges the other (Decision Process Quality ≠ Outcome Quality).',",
+    to: "        '',",
+  },
+  // ------------------------------------------------ verify:genome-temporality (Phase 9)
+  {
+    verifier: 'verify-genome-temporality.mjs',
+    invariant: 'a snapshot recorded after the decision is hindsight, not the situation',
+    file: `${G9}/situation.ts`,
+    from: 'if (ms(snap.value.snapshot.spec.lens.recordedThrough) > ms(boundary.recordedThrough)) {',
+    to: 'if (false) {',
+  },
+  {
+    verifier: 'verify-genome-temporality.mjs',
+    invariant: 'hindsight cannot be bound to an existing episode as its situation',
+    file: `${G9}/runtime.ts`,
+    from: "if (role === 'SITUATION_SNAPSHOT' && lensT > T0)",
+    to: "if (false && role === 'SITUATION_SNAPSHOT' && lensT > T0)",
+  },
+  {
+    verifier: 'verify-genome-temporality.mjs',
+    invariant: 'an episode recorded later did not exist at an earlier knowledge boundary',
+    file: `${G9}/runtime.ts`,
+    from: '    if (ms(episode.recordedAt) > T) {\n      return fail(GenomeErrors.NOT_KNOWN_AT_LENS, `This episode was first recorded on',
+    to: '    if (false) {\n      return fail(GenomeErrors.NOT_KNOWN_AT_LENS, `This episode was first recorded on',
+  },
+  // ------------------------------------------------ verify:genome-scope (Phase 9)
+  {
+    verifier: 'verify-genome-scope.mjs',
+    invariant: 'a stance must agree with what HELM observed (policy AND store)',
+    file: `${G9}/policy.ts`,
+    from: "  if (stance === 'CONTEXTUAL_EPISODE') return { ok: true, message: '' };",
+    to: "  return { ok: true, message: '' };",
+    also: [
+      {
+        file: `${G9}/inMemoryStore.ts`,
+        from: "      if (!agrees) return fail(GenomeErrors.INCONSISTENT_STANCE, 'The stance must agree with what HELM observed in the episode.');",
+        to: '',
+      },
+    ],
+  },
+  {
+    verifier: 'verify-genome-scope.mjs',
+    invariant: 'absence of information is not similarity',
+    file: `${G9}/situation.ts`,
+    from: '    const agrees = stated && a.some((v) => b.includes(v));',
+    to: '    const agrees = !stated || a.some((v) => b.includes(v));',
+  },
+  // ------------------------------------------------ verify:genome-security (Phase 9)
+  {
+    verifier: 'verify-genome-security.mjs',
+    invariant: 'an uncleared viewer reads no episode carrying a class they lack',
+    file: `${G9}/runtime.ts`,
+    from: 'v.episode.sensitivityClasses.every((c) => isCleared(viewer, c, at)) && ',
+    to: '',
+  },
+  {
+    verifier: 'verify-genome-security.mjs',
+    invariant: 'a pattern or lesson is read whole or not at all',
+    file: `${G9}/runtime.ts`,
+    from: '[...p.supporting, ...p.contradictory, ...p.contextual].every((x) => visibleEpisode.has(x.episode.episode.id))',
+    to: 'true',
+  },
+  {
+    verifier: 'verify-genome-security.mjs',
+    invariant: 'an episode resting on an invisible decision is withheld',
+    file: `${G9}/runtime.ts`,
+    from: '(isAdmin || facts.decisionVisible(v.episode.decisionId))',
+    to: '(isAdmin || true)',
+  },
+  // ------------------------------------------------ verify:genome-lineage (Phase 9)
+  {
+    verifier: 'verify-genome-lineage.mjs',
+    invariant: 'demo episodes are labelled demo',
+    file: `${G9}/meridianGenome.ts`,
+    from: 'await genome.openEpisode(gm, { decisionId, title: `${title} (demo)`, scope,',
+    to: 'await genome.openEpisode(gm, { decisionId, title, scope,',
+  },
+  // ------------------------------------------------ verify:genome-process-outcome (Phase 9)
+  {
+    verifier: 'verify-genome-process-outcome.mjs',
+    invariant: 'no view carries a quality, score or verdict',
+    file: `${G9}/runtime.ts`,
+    from: '      decisionTitle: facts.value.decision.title,\n',
+    to: "      decisionTitle: facts.value.decision.title,\n      quality: 'GOOD',\n",
+  },
+  {
+    verifier: 'verify-genome-process-outcome.mjs',
+    invariant: 'the genome discovers no pattern by itself',
+    file: `${G9}/runtime.ts`,
+    from: '    async findSimilar(scope, input) {',
+    to: '    async discoverPatterns() {\n      return ok([]);\n    },\n\n    async findSimilar(scope, input) {',
+  },
+  // ------------------------------------------------ verify:phase-boundary (Phase 9)
+  {
+    verifier: 'verify-phase-boundary.mjs',
+    invariant: 'the causal graph knows nothing of the genome above it',
+    file: `${C8}/types.ts`,
+    from: "import type { OrgId, UserId } from '@helm/shared';",
+    to: "import type { OrgId, UserId } from '@helm/shared';\nimport type { ManagementEpisode } from '@helm/genome-runtime';\nexport type EpisodeItem = ManagementEpisode;",
+  },
+  {
+    verifier: 'verify-phase-boundary.mjs',
+    invariant: 'no decision-quality judgement, anywhere',
+    file: `${G9}/policy.ts`,
+    from: 'export const GENOME_PATTERN_POLICY',
+    to: 'export const decisionQuality = 0;\nexport const GENOME_PATTERN_POLICY',
+  },
+  {
+    verifier: 'verify-phase-boundary.mjs',
+    invariant: 'the genome remembers the kernel and never writes it',
+    file: `${G9}/runtime.ts`,
+    from: "      const isAdmin = viewer.orgRole === 'admin';\n",
+    to: "      const isAdmin = viewer.orgRole === 'admin';\n      sources.decisions.commit();\n",
+  },
 ];
 
 const only = process.argv[2] ?? '';
 const selected = MUTATIONS.filter((m) => m.verifier.includes(only));
 const results = [];
 
-for (let m of selected) {
-  const path = join(root, m.file);
-  const original = readFileSync(path, 'utf8');
-  // The repository is mixed CRLF/LF (Windows development), so a multi-line
-  // pattern is written with \n and adapted to whatever the file actually uses.
-  const crlf = original.includes('\r\n');
-  if (crlf) {
-    m = { ...m, from: m.from.replaceAll('\n', '\r\n'), to: m.to.replaceAll('\n', '\r\n') };
+for (const m of selected) {
+  // A mutation is one edit, or — where an invariant is held by two independent layers — several
+  // (`also`): breaking one layer must be survived by the other, so both are broken to prove the
+  // contract notices the invariant is gone.
+  const edits = [{ file: m.file, from: m.from, to: m.to, all: m.all }, ...(m.also ?? [])];
+  const originals = [];
+  let skipped = null;
+  const prepared = [];
+  for (const e of edits) {
+    const path = join(root, e.file);
+    const original = readFileSync(path, 'utf8');
+    // The repository is mixed CRLF/LF (Windows development), so a multi-line
+    // pattern is written with \n and adapted to whatever the file actually uses.
+    const crlf = original.includes('\r\n');
+    const from = crlf ? e.from.replaceAll('\n', '\r\n') : e.from;
+    const to = crlf ? e.to.replaceAll('\n', '\r\n') : e.to;
+    const count = original.split(from).length - 1;
+    if (count === 0 || (!e.all && count > 1)) {
+      skipped = `the target text in ${e.file} appears ${count} time(s)`;
+      break;
+    }
+    originals.push({ path, original });
+    prepared.push({ path, mutated: e.all ? original.split(from).join(to) : original.replace(from, to) });
   }
-  const count = original.split(m.from).length - 1;
-  if (count === 0 || (!m.all && count > 1)) {
-    results.push({ ...m, outcome: 'NOT_APPLIED', note: `the target text appears ${count} time(s)` });
+  if (skipped) {
+    results.push({ ...m, outcome: 'NOT_APPLIED', note: skipped });
     continue;
   }
-  const mutated = m.all ? original.split(m.from).join(m.to) : original.replace(m.from, m.to);
   let outcome;
   let note = '';
   try {
-    writeFileSync(path, mutated);
+    for (const { path, mutated } of prepared) writeFileSync(path, mutated);
     const r = spawnSync(process.execPath, [join('scripts', m.verifier)], { cwd: root, encoding: 'utf8' });
     outcome = r.status === 0 ? 'SURVIVED' : 'CAUGHT';
     const lines = `${r.stdout ?? ''}${r.stderr ?? ''}`.trim().split('\n');
     note = outcome === 'CAUGHT' ? (lines.find((l) => /^\s*\[/.test(l)) ?? lines[0] ?? '').trim() : '';
   } finally {
-    writeFileSync(path, original);
+    for (const { path, original } of originals) writeFileSync(path, original);
   }
   results.push({ ...m, outcome, note });
 }

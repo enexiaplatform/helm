@@ -185,7 +185,7 @@ Record: [phase-7-implemented.md](phase-7-implemented.md) ·
 | Shared database schema | Phase 7 migration applied and verified |
 | Trusted authority implementation | built and contract-tested |
 | Trusted authority deployment | **NOT DEPLOYED** |
-| Postgres conformance | **8 suites SKIPPED** (no isolated credentials; the causal store added in Phase 8) |
+| Postgres conformance | **9 suites SKIPPED** (no isolated credentials; the causal store joined in Phase 8, the genome store in Phase 9) |
 | Cloud end-to-end readiness | **NOT YET PROVEN** |
 | Production / pilot readiness | **BLOCKED** by the [trusted runtime deployment gate](trusted-runtime-deployment-gate.md) |
 
@@ -202,14 +202,22 @@ dependency, correlation and coincidence. Record:
 [phase-8-implemented.md](phase-8-implemented.md) ·
 [ADR-0026](../adr/0026-enterprise-causal-graph.md) ·
 [ADR-0027](../adr/0027-causal-evidence-policy.md). The Postgres causal store
-joins Blocker B (8 suites SKIPPED).
+joins Blocker B.
 
-## 6b. Phases 9–10 — learning, counterfactuals
+## 6b. Phase 9 — Management Genome (delivered in the kernel)
 
-9 turns
-the existing pattern detection into retrieval over structured situation patterns.
-10 delivers counterfactuals as scenario comparison, behind an interface that
-causal inference can implement later.
+What the enterprise remembers of how it has met a situation: episodes that wrap
+a decision by reference, structural (never scored) similarity, patterns a person
+proposes and HELM checks, and inert authored lessons — with how management
+decided and what happened kept in two sections that never judge each other, and
+no person rated. Record: [phase-9-implemented.md](phase-9-implemented.md) ·
+[ADR-0028](../adr/0028-management-genome.md). The Postgres genome store joins
+Blocker B (9 suites SKIPPED).
+
+## 6c. Phase 10 — counterfactuals
+
+Counterfactuals as scenario comparison, behind an interface that causal
+inference can implement later. Not started.
 
 ## 7. Phases 11–13 — intelligence and integration
 

@@ -1,49 +1,17 @@
 import { create } from 'zustand';
 import { supabaseClient } from '../lib/supabaseClient.ts';
-import type {
-  CostObject,
-  EconomicsRow,
-  InventoryItem,
-  OrgMember,
-  OrgRole,
-  OrgUnit,
-  Organization,
-  Process,
-  ProcessActivity,
-  Signal,
-  SignalStatus,
-} from '../domain/types.ts';
-import { detectSignals } from '../domain/engines/signals.ts';
-import {
-  demoCostObjects,
-  demoEconomics,
-  demoInventory,
-  demoMembers,
-  demoMemoireOpportunities,
-  demoOrganization,
-  demoProcessActivities,
-  demoProcesses,
-  demoUnits,
-  DEMO_USER_ID,
-} from '../data/demoOrg.ts';
+import type { OrgMember, OrgRole, OrgUnit, Organization } from '../domain/types.ts';
+import { demoMembers, demoOrganization, demoUnits, DEMO_USER_ID } from '../data/demoOrg.ts';
 import * as map from './mappers.ts';
-import {
-  listMemoireOpportunities,
-  type MemoireOpportunity,
-} from './memoireBridge.ts';
 
 /**
- * The single application store. Demo mode mutates local state only (demo data
- * never syncs — the ecosystem rule); cloud mode writes to Supabase first and
- * mirrors into state. Decision state changes go exclusively through
- * `transitionDecision`, which enforces the state machine and appends an audit
- * event for every move.
+ * The application store: WHO is signed in and which organization they are in. Nothing about the enterprise
+ * lives here — decisions, twin state, causal claims, the genome, counterfactual worlds, reviews, sources and
+ * the AI layer are all read from the kernels (src/services/*Runtime.ts), as the person reading. Demo mode
+ * holds a local organization shell that never syncs (the ecosystem rule).
  */
 
 type Mode = 'demo' | 'cloud';
-
-const uid = () => crypto.randomUUID();
-const nowIso = () => new Date().toISOString();
 
 type HelmState = {
   authReady: boolean;
@@ -57,13 +25,6 @@ type HelmState = {
 
   units: OrgUnit[];
   members: OrgMember[];
-  costObjects: CostObject[];
-  economics: EconomicsRow[];
-  inventory: InventoryItem[];
-  processes: Process[];
-  processActivities: ProcessActivity[];
-  signals: Signal[];
-  memoireOpportunities: MemoireOpportunity[];
 
   // ---- auth & context ----
   initAuth: () => Promise<void>;
@@ -82,44 +43,15 @@ type HelmState = {
   myRole: () => OrgRole;
   currency: () => string;
 
-  // ---- signals ----
-  refreshSignals: () => Promise<void>;
-  setSignalStatus: (signalId: string, status: SignalStatus) => Promise<void>;
-
-  // ---- memoire ----
-  loadMemoireOpportunities: () => Promise<void>;
 };
 
 const emptyData = {
   units: [] as OrgUnit[],
   members: [] as OrgMember[],
-  costObjects: [] as CostObject[],
-  economics: [] as EconomicsRow[],
-  inventory: [] as InventoryItem[],
-  processes: [] as Process[],
-  processActivities: [] as ProcessActivity[],
-  signals: [] as Signal[],
-  memoireOpportunities: [] as MemoireOpportunity[],
 };
 
 export const useHelmStore = create<HelmState>((set, get) => {
   const isDemo = () => get().mode === 'demo';
-
-  /** Write path helper: run the cloud mutation only in cloud mode; always run
-   * the local mirror. Cloud failures surface in `error` and skip the mirror. */
-  const write = async (cloud: () => Promise<void>, local: () => void): Promise<string | null> => {
-    if (!isDemo()) {
-      try {
-        await cloud();
-      } catch (e) {
-        const message = e instanceof Error ? e.message : 'Write failed';
-        set({ error: message });
-        return message;
-      }
-    }
-    local();
-    return null;
-  };
 
   return {
     authReady: false,
@@ -195,24 +127,8 @@ export const useHelmStore = create<HelmState>((set, get) => {
         activeOrgId: demoOrganization.id,
         units: demoUnits,
         members: demoMembers,
-        costObjects: demoCostObjects,
-        economics: demoEconomics,
-        inventory: demoInventory,
-        processes: demoProcesses,
-        processActivities: demoProcessActivities,
-        signals: [],
-        memoireOpportunities: demoMemoireOpportunities.map((o) => ({
-          id: o.id,
-          accountId: null,
-          accountName: o.accountName,
-          title: o.title,
-          value: o.value,
-          currency: o.currency,
-          stage: o.stage,
-        })),
         error: null,
       });
-      void get().refreshSignals();
     },
 
     exitDemo: () => {
@@ -272,24 +188,15 @@ export const useHelmStore = create<HelmState>((set, get) => {
         return;
       }
       const sb = supabaseClient;
-      const q = (table: string) => sb.from(table).select('*').eq('org_id', orgId);
       try {
-        const [units, costObjects, economics, inventory, processes, activities, signals, memberRows] =
-          await Promise.all([
-            q('org_units'),
-            q('helm_cost_objects'),
-            q('helm_economics'),
-            q('helm_inventory_items'),
-            q('helm_processes'),
-            q('helm_process_activities'),
-            q('helm_signals'),
-            sb
-              .from('organization_memberships')
-              .select('user_id, role, user_profiles:user_profiles!inner(id, email, display_name)')
-              .eq('org_id', orgId),
-          ]);
-        const first = [units, costObjects, economics, inventory, processes, activities, signals].find((r) => r.error);
-        if (first?.error) throw new Error(first.error.message);
+        const [units, memberRows] = await Promise.all([
+          sb.from('org_units').select('*').eq('org_id', orgId),
+          sb
+            .from('organization_memberships')
+            .select('user_id, role, user_profiles:user_profiles!inner(id, email, display_name)')
+            .eq('org_id', orgId),
+        ]);
+        if (units.error) throw new Error(units.error.message);
 
         const members: OrgMember[] = (memberRows.data ?? []).map((m) => {
           const p = m.user_profiles as unknown as { id: string; email: string; display_name: string | null } | null;
@@ -303,17 +210,9 @@ export const useHelmStore = create<HelmState>((set, get) => {
 
         set({
           units: (units.data ?? []).map(map.mapOrgUnit),
-          costObjects: (costObjects.data ?? []).map(map.mapCostObject),
-          economics: (economics.data ?? []).map(map.mapEconomics),
-          inventory: (inventory.data ?? []).map(map.mapInventoryItem),
-          processes: (processes.data ?? []).map(map.mapProcess),
-          processActivities: (activities.data ?? []).map(map.mapProcessActivity),
-          signals: (signals.data ?? []).map(map.mapSignal),
           members,
           loadingData: false,
         });
-        await get().refreshSignals();
-        void get().loadMemoireOpportunities();
       } catch (e) {
         set({ loadingData: false, error: e instanceof Error ? e.message : 'Failed to load organization data' });
       }
@@ -341,86 +240,5 @@ export const useHelmStore = create<HelmState>((set, get) => {
     },
     myRole: () => get().activeOrg()?.role ?? 'viewer',
     currency: () => get().activeOrg()?.baseCurrency ?? 'USD',
-
-    // --------------------------------------------------------------- signals
-
-    refreshSignals: async () => {
-      const st = get();
-      const org = st.activeOrg();
-      if (!org) return;
-      const candidates = detectSignals({
-        currency: org.baseCurrency,
-        costObjects: st.costObjects,
-        economics: st.economics,
-        inventory: st.inventory,
-        processes: st.processes,
-        processActivities: st.processActivities,
-      });
-      const existingByKey = new Map(st.signals.map((sg) => [sg.dedupeKey, sg]));
-      const merged: Signal[] = candidates.map((c) => {
-        const existing = existingByKey.get(c.dedupeKey);
-        return {
-          ...c,
-          id: existing?.id ?? uid(),
-          orgId: org.id,
-          status: existing?.status ?? 'open',
-          decisionId: existing?.decisionId ?? null,
-          detectedAt: existing?.detectedAt ?? nowIso(),
-        };
-      });
-      // Converted signals whose condition cleared stay visible via their
-      // decision; open ones that cleared simply drop out of the inbox.
-      set({ signals: merged });
-
-      if (!isDemo() && supabaseClient) {
-        const rows = merged.map((sg) => ({
-          id: sg.id,
-          org_id: sg.orgId,
-          rule_code: sg.ruleCode,
-          dedupe_key: sg.dedupeKey,
-          severity: sg.severity,
-          title: sg.title,
-          reason: sg.reason,
-          threshold_label: sg.thresholdLabel,
-          measured_label: sg.measuredLabel,
-          evidence: sg.evidence,
-          entity_kind: sg.entityKind,
-          entity_id: sg.entityId,
-          status: sg.status,
-          decision_id: sg.decisionId,
-          detected_at: sg.detectedAt,
-        }));
-        if (rows.length > 0) {
-          await supabaseClient.from('helm_signals').upsert(rows, { onConflict: 'org_id,dedupe_key' });
-        }
-      }
-    },
-
-    setSignalStatus: async (signalId, status) => {
-      const sg = get().signals.find((x) => x.id === signalId);
-      if (!sg) return;
-      await write(
-        async () => {
-          if (!supabaseClient) throw new Error('Cloud not configured');
-          const { error } = await supabaseClient
-            .from('helm_signals')
-            .update({ status, resolved_at: status === 'dismissed' ? nowIso() : null })
-            .eq('id', signalId);
-          if (error) throw new Error(error.message);
-        },
-        () =>
-          set((st) => ({
-            signals: st.signals.map((x) => (x.id === signalId ? { ...x, status } : x)),
-          })),
-      );
-    },
-
-    // --------------------------------------------------------------- memoire
-
-    loadMemoireOpportunities: async () => {
-      if (isDemo()) return;
-      const opportunities = await listMemoireOpportunities();
-      set({ memoireOpportunities: opportunities });
-    },
   };
 });

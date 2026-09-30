@@ -24,7 +24,7 @@ A decision feature is easy to build badly, and the bad shapes are familiar:
 3. **An approval workflow.** The decision object becomes a routing slip:
    `pending_approval`, `approved`, `rejected`. What survives is *who signed*,
    not *why*. HELM had exactly this before Phase 5
-   (see [decision engine assessment](../architecture/decision-engine-assessment.md)).
+   (see [decision engine assessment](../archive/decision-engine-assessment.md)).
 4. **A copy of the economics.** The alternative stores its own revenue, margin
    and cash figures. They are stale the moment the model moves, and nothing can
    say whether two alternatives were ever computed on the same basis.

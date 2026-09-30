@@ -14,7 +14,7 @@
 import type { Result, Scope } from '@helm/shared';
 import type { OrgUnit } from '@helm/authority-runtime';
 import type { CausalClaim, ClaimView } from '@helm/causal-runtime';
-import type { TwinViewer } from '@helm/twin-runtime';
+import type { SensitivityClass, TwinViewer } from '@helm/twin-runtime';
 import type {
   Classification,
   EpisodeRef,
@@ -81,6 +81,12 @@ export type OpenEpisodeInput = {
   scope: GenomeScope;
   /** A twin snapshot of the situation. Must have been known at the decision boundary — a later one is hindsight. */
   situationSnapshotId?: string | null;
+  /**
+   * Classes the episode's readers must ALSO be cleared for, beyond those of the metrics it expected — declared when what
+   * the episode references (an assumption about a tender, a counterfactual case) is of another class. Fixed at opening: an
+   * episode is read whole, so it can never reference what its readers are not cleared to read.
+   */
+  carriesClasses?: readonly SensitivityClass[];
   visibility?: 'ORG_WIDE' | 'RESTRICTED';
   grantedUnitIds?: readonly string[];
   authoredByLabel: string;
@@ -144,6 +150,18 @@ export type EpisodeCausal = {
   readonly since: readonly ClaimView[];
 };
 
+/** A counterfactual case that reviews this episode's decision — shown apart from the process and the outcome, and never folded into either. */
+export type EpisodeCounterfactual = {
+  readonly caseId: string;
+  readonly title: string;
+  readonly question: string;
+  readonly interventionLabel: string;
+  readonly status: 'OPEN' | 'ESTIMATED' | 'REVIEWED';
+  /** Which retrospective lenses have a world at this lens. They are never blended. */
+  readonly lenses: { readonly asKnownThen: boolean; readonly withHindsight: boolean };
+  readonly reviews: number;
+};
+
 export type EpisodeView = {
   readonly episode: ManagementEpisode;
   readonly lens: GenomeLens;
@@ -154,6 +172,8 @@ export type EpisodeView = {
   readonly process: EpisodeProcess;
   readonly outcome: EpisodeOutcome;
   readonly causal: EpisodeCausal;
+  /** What might have happened otherwise: a different question from how management decided and what happened. */
+  readonly counterfactuals: readonly EpisodeCounterfactual[];
   readonly refs: readonly EpisodeRef[];
   readonly patterns: readonly { readonly patternId: string; readonly title: string; readonly stance: PatternStance }[];
   readonly statement: string;

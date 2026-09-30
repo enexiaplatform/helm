@@ -4,13 +4,14 @@ import type { ForkPoint } from '@helm/scenario-runtime';
 import { useHelmStore } from '../../services/helmStore.ts';
 import { cloudScope, demoScope } from '../../services/ontologyGraph.ts';
 import { displayClock, resolveScenarioWorkspace } from '../../services/scenarioRuntime.ts';
+import { attentionCount } from '../../services/twinRuntime.ts';
 import { AppShell } from './AppShell.tsx';
 
 /** Kernel instruments run full width; everything else is the 1240px management register. */
-const INSTRUMENTS = new Set(['scenarios', 'value-graph', 'ontology', 'calculations', 'governance', 'twin', 'causal', 'genome']);
+const INSTRUMENTS = new Set(['scenarios', 'value-graph', 'ontology', 'calculations', 'governance', 'twin', 'causal', 'counterfactuals', 'genome', 'sources']);
 
-const keyOf = (pathname: string): string => pathname.split('/')[1] || 'attention';
-const hrefOf = (key: string): string => (key === 'attention' ? '/' : `/${key}`);
+const keyOf = (pathname: string): string => pathname.split('/')[1] || 'cockpit';
+const hrefOf = (key: string): string => (key === 'cockpit' ? '/' : `/${key}`);
 
 /**
  * The routed shell: reads the store and the router and hands plain values to
@@ -31,7 +32,7 @@ export function ConsoleLayout() {
   const setActiveOrg = useHelmStore((s) => s.setActiveOrg);
   const signOut = useHelmStore((s) => s.signOut);
   const exitDemo = useHelmStore((s) => s.exitDemo);
-  const openSignals = useHelmStore((s) => s.signals.filter((x) => x.status === 'open').length);
+  const [openSignals, setOpenSignals] = useState(0);
   const [fork, setFork] = useState<ForkPoint | null>(null);
 
   const scope = useMemo(
@@ -48,6 +49,22 @@ export function ConsoleLayout() {
       })
       .catch(() => {
         if (!cancelled) setFork(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, scope]);
+
+  // The brass count is the attention conditions HELM's own rules hold in the latest current state — not a stored signal.
+  useEffect(() => {
+    if (!scope || !mode) return;
+    let cancelled = false;
+    attentionCount(mode, scope)
+      .then((n) => {
+        if (!cancelled) setOpenSignals(n);
+      })
+      .catch(() => {
+        if (!cancelled) setOpenSignals(0);
       });
     return () => {
       cancelled = true;

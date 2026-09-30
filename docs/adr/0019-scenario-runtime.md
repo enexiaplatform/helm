@@ -151,7 +151,7 @@ rationale and confidence) → baseline observation → source provenance, and th
 design rather than a discipline.
 
 **Cost.** Every scenario costs a full propagation per period — see the
-performance note in [phase-4-implemented](../architecture/phase-4-implemented.md).
+performance note in [phase-4-implemented](../architecture/layers/scenario-runtime.md).
 Nothing is cached yet; the fingerprint exists so that it can be.
 
 **Refusals users will meet.** Overriding a computed node; simulating a draft

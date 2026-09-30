@@ -1,5 +1,5 @@
 /**
- * A mutation harness for the Phase 5, 6, 7, 8 and 9 verification contracts.
+ * A mutation harness for the kernel, counterfactual, integration, review, intelligence and council contracts.
  *
  * A verifier that passes proves nothing on its own: it might assert nothing at
  * all, or assert something that cannot fail. So each contract is also run
@@ -28,6 +28,13 @@ const MIGRATION8 = 'supabase/migrations/20260930090000_helm_causal_graph.sql';
 const C8 = 'packages/causal-runtime/src';
 const MIGRATION9 = 'supabase/migrations/20260930110000_helm_management_genome.sql';
 const G9 = 'packages/genome-runtime/src';
+const MIGRATION_INT = 'supabase/migrations/20260930130000_helm_integration_fabric.sql';
+const MIGRATION_REV = 'supabase/migrations/20260930140000_helm_management_reviews.sql';
+const MIGRATION_AI = 'supabase/migrations/20260930150000_helm_intelligence_audit.sql';
+const INT = 'packages/integration-runtime/src';
+const REV = 'packages/review-runtime/src';
+const AI = 'packages/intelligence-runtime/src';
+const AG = 'packages/agent-runtime/src';
 
 /**
  * Each mutation: which contract must catch it, which invariant it attacks, and
@@ -334,16 +341,16 @@ const MUTATIONS = [
     to: '        OR true',
   },
 
-  // --------------------------------------------------- verify:phase-boundary
+  // --------------------------------------------------- verify:boundaries
   {
-    verifier: 'verify-phase-boundary.mjs',
+    verifier: 'verify-boundaries.mjs',
     invariant: 'nothing approves automatically',
     file: `${A}/engine.ts`,
     from: 'const MAX_ESCALATION_STEPS = 6;',
     to: 'const MAX_ESCALATION_STEPS = 6;\nconst autoApproveBelow = 0;',
   },
   {
-    verifier: 'verify-phase-boundary.mjs',
+    verifier: 'verify-boundaries.mjs',
     invariant: 'the decision runtime knows nothing of authority',
     file: `${K}/index.ts`,
     from: "export type { MeridianDecisionResult } from './meridianDecision.ts';",
@@ -518,16 +525,16 @@ const MUTATIONS = [
     from: "    CHECK (evaluator->>'kind' = 'TRUSTED_SERVICE');",
     to: "    CHECK (evaluator->>'kind' IN ('TRUSTED_SERVICE', 'CLIENT_RUNTIME'));",
   },
-  // ------------------------------------------ verify:phase-boundary (Phase 7)
+  // ------------------------------------------ verify:boundaries (Phase 7)
   {
-    verifier: 'verify-phase-boundary.mjs',
+    verifier: 'verify-boundaries.mjs',
     invariant: 'the twin writes nothing below itself',
     file: `${T}/runtime.ts`,
     from: 'export function createTwinRuntime(opts: TwinRuntimeOptions): TwinRuntime {',
     to: 'export function createTwinRuntime(opts: TwinRuntimeOptions): TwinRuntime {\n  void opts.sources.valueGraph.recordObservation(null as never, null as never);',
   },
   {
-    verifier: 'verify-phase-boundary.mjs',
+    verifier: 'verify-boundaries.mjs',
     invariant: 'attention is never scored',
     file: `${T}/attention.ts`,
     from: 'export const ATTENTION_RULES_VERSION',
@@ -737,16 +744,16 @@ const MUTATIONS = [
     from: "          v.claim.visibility === 'ORG_WIDE' ||\n",
     to: "          true ||\n",
   },
-  // ------------------------------------------------ verify:phase-boundary (Phase 8)
+  // ------------------------------------------------ verify:boundaries (Phase 8)
   {
-    verifier: "verify-phase-boundary.mjs",
+    verifier: "verify-boundaries.mjs",
     invariant: "the twin knows nothing of the causal graph",
     file: "packages/twin-runtime/src/types.ts",
     from: "import type { OrgId, UserId } from '@helm/shared';",
     to: "import type { OrgId, UserId } from '@helm/shared';\nimport type { CausalClaim } from '@helm/causal-runtime';\nexport type CausalItem = CausalClaim;",
   },
   {
-    verifier: "verify-phase-boundary.mjs",
+    verifier: "verify-boundaries.mjs",
     invariant: "no path probability, no causal score",
     file: `${C8}/policy.ts`,
     from: "export const CAUSAL_EVIDENCE_POLICY",
@@ -955,27 +962,255 @@ const MUTATIONS = [
     from: '    async findSimilar(scope, input) {',
     to: '    async discoverPatterns() {\n      return ok([]);\n    },\n\n    async findSimilar(scope, input) {',
   },
-  // ------------------------------------------------ verify:phase-boundary (Phase 9)
+  // ------------------------------------------------ verify:boundaries (Phase 9)
   {
-    verifier: 'verify-phase-boundary.mjs',
+    verifier: 'verify-boundaries.mjs',
     invariant: 'the causal graph knows nothing of the genome above it',
     file: `${C8}/types.ts`,
     from: "import type { OrgId, UserId } from '@helm/shared';",
     to: "import type { OrgId, UserId } from '@helm/shared';\nimport type { ManagementEpisode } from '@helm/genome-runtime';\nexport type EpisodeItem = ManagementEpisode;",
   },
   {
-    verifier: 'verify-phase-boundary.mjs',
+    verifier: 'verify-boundaries.mjs',
     invariant: 'no decision-quality judgement, anywhere',
     file: `${G9}/policy.ts`,
     from: 'export const GENOME_PATTERN_POLICY',
     to: 'export const decisionQuality = 0;\nexport const GENOME_PATTERN_POLICY',
   },
   {
-    verifier: 'verify-phase-boundary.mjs',
+    verifier: 'verify-boundaries.mjs',
     invariant: 'the genome remembers the kernel and never writes it',
     file: `${G9}/runtime.ts`,
     from: "      const isAdmin = viewer.orgRole === 'admin';\n",
     to: "      const isAdmin = viewer.orgRole === 'admin';\n      sources.decisions.commit();\n",
+  },
+
+  // ============================================ integration, reviews, intelligence, council
+  {
+    verifier: 'verify-integration-schema.mjs',
+    invariant: 'v1 writes nothing to an operational system: the mode is pinned to DRY_RUN',
+    file: MIGRATION_INT,
+    from: "mode text NOT NULL CHECK (mode = 'DRY_RUN'),",
+    to: "mode text NOT NULL CHECK (mode IN ('DRY_RUN', 'LIVE')),",
+  },
+  {
+    verifier: 'verify-integration-schema.mjs',
+    invariant: 'a blocked or failed run leaves the checkpoint where it was',
+    file: MIGRATION_INT,
+    from: "    outcome NOT IN ('BLOCKED_BY_DRIFT', 'FAILED') OR cursor_after IS NOT DISTINCT FROM cursor_before",
+    to: "    true OR cursor_after IS NOT DISTINCT FROM cursor_before",
+  },
+  {
+    verifier: 'verify-integration-schema.mjs',
+    invariant: 'a write derives only from an action intent of its own commitment',
+    file: MIGRATION_INT,
+    from: "    WHERE a.id = NEW.action_intent_id AND a.org_id = NEW.org_id AND a.commitment_id = NEW.commitment_id",
+    to: "    WHERE a.id = NEW.action_intent_id AND a.org_id = NEW.org_id",
+  },
+  {
+    verifier: 'verify-integration-runtime.mjs',
+    invariant: 'ingestion is idempotent by content: an unchanged observation is not recorded again',
+    file: `${INT}/pipeline.ts`,
+    from: 'else counts.observationsUnchanged += 1;',
+    to: 'else counts.observationsRecorded += 1;',
+  },
+  {
+    verifier: 'verify-integration-runtime.mjs',
+    invariant: 'breaking drift blocks the object type instead of guessing',
+    file: `${INT}/pipeline.ts`,
+    from: "if (report.status === 'BREAKING') blockedTypes.add(objectType);",
+    to: 'void report;',
+  },
+  {
+    verifier: 'verify-writeback-dry-run.mjs',
+    invariant: 'a commitment governance does not permit cannot be written',
+    file: `${INT}/writeback.ts`,
+    from: "const EXECUTABLE_STATES = ['AUTHORIZED', 'APPROVED'] as const;",
+    to: "const EXECUTABLE_STATES = ['AUTHORIZED', 'APPROVED', 'PENDING_APPROVAL'] as const;",
+  },
+  {
+    verifier: 'verify-writeback-dry-run.mjs',
+    invariant: 'a dry run says nothing was sent',
+    file: `${INT}/writeback.ts`,
+    from: 'dryRun: true, sent: false,',
+    to: 'dryRun: true, sent: true,',
+  },
+  {
+    verifier: 'verify-review-schema.mjs',
+    invariant: 'a closure covers every item with exactly one disposition',
+    file: MIGRATION_REV,
+    from: "WHERE d->>'itemId' = i.id::text) <> 1",
+    to: "WHERE d->>'itemId' = i.id::text) < 0",
+  },
+  {
+    verifier: 'verify-review-schema.mjs',
+    invariant: 'a review is read whole: every class it carries',
+    file: MIGRATION_REV,
+    from: "        AND NOT EXISTS (SELECT 1 FROM unnest(p_classes) k WHERE NOT helm_private.has_clearance(p_org, k))\n      )",
+    to: "        AND true\n      )",
+  },
+  {
+    verifier: 'verify-review-runtime.mjs',
+    invariant: 'a review follows a closed review',
+    file: `${REV}/runtime.ts`,
+    from: 'if (!closedIds.has(p.value.id)) return fail(ReviewErrors.PREVIOUS_NOT_CLOSED',
+    to: 'if (false) return fail(ReviewErrors.PREVIOUS_NOT_CLOSED',
+    also: [{ file: `${REV}/inMemoryStore.ts`, from: 'if (!x.closures.some((c) => c.reviewId === p.id)) return fail(ReviewErrors.PREVIOUS_NOT_CLOSED', to: 'if (false) return fail(ReviewErrors.PREVIOUS_NOT_CLOSED' }],
+  },
+  {
+    verifier: 'verify-review-runtime.mjs',
+    invariant: 'nothing is left hanging at close',
+    file: `${REV}/runtime.ts`,
+    from: 'if (missing.length > 0) return fail(ReviewErrors.OPEN_ITEMS',
+    to: 'if (false && missing.length > 0) return fail(ReviewErrors.OPEN_ITEMS',
+    also: [{ file: `${REV}/inMemoryStore.ts`, from: 'if (missing.length > 0) return fail(ReviewErrors.OPEN_ITEMS', to: 'if (false && missing.length > 0) return fail(ReviewErrors.OPEN_ITEMS' }],
+  },
+  {
+    verifier: 'verify-review-security.mjs',
+    invariant: 'a pack is prepared only for a viewer cleared for every class',
+    file: `${REV}/runtime.ts`,
+    from: 'const classesOk = (rv.sensitivityClasses as readonly SensitivityClass[]).every((c) => isCleared(viewer, c, at));',
+    to: 'const classesOk = true;',
+  },
+  {
+    verifier: 'verify-review-security.mjs',
+    invariant: 'a review is projected only to a viewer cleared for every class',
+    file: `${REV}/runtime.ts`,
+    from: 'const classesOk = (r.sensitivityClasses as readonly SensitivityClass[]).every((c) => isCleared(viewer, c, at));',
+    to: 'const classesOk = true;',
+  },
+  {
+    verifier: 'verify-intelligence-schema.mjs',
+    invariant: 'the audit trail has nowhere to keep a reasoning trace',
+    file: MIGRATION_AI,
+    from: "AND (output - 'statements' - 'questions' - 'unknowns') = '{}'::jsonb",
+    to: '',
+  },
+  {
+    verifier: 'verify-intelligence-schema.mjs',
+    invariant: 'a person reads their own AI runs only',
+    file: MIGRATION_AI,
+    from: "USING (public.is_org_member(org_id) AND (user_id = (select auth.uid()) OR public.has_org_role(org_id, 'admin')));",
+    to: 'USING (public.is_org_member(org_id));',
+  },
+  {
+    verifier: 'verify-intelligence-grounding.mjs',
+    invariant: 'a recommendation is removed however it is classed',
+    file: `${AI}/grounding.ts`,
+    from: 'if (RECOMMENDATION.test(text)) {',
+    to: 'if (false && RECOMMENDATION.test(text)) {',
+  },
+  {
+    verifier: 'verify-intelligence-grounding.mjs',
+    invariant: 'a figure no cited evidence returned is a fabricated figure',
+    file: `${AI}/grounding.ts`,
+    from: 'if (ungrounded.length > 0) {',
+    to: 'if (false && ungrounded.length > 0) {',
+  },
+  {
+    verifier: 'verify-intelligence-grounding.mjs',
+    invariant: 'a hypothesis stays a hypothesis',
+    file: `${AI}/grounding.ts`,
+    from: "if (finalClass === 'CAUSAL_CLAIM') {",
+    to: "if (false && finalClass === 'CAUSAL_CLAIM') {",
+  },
+  {
+    verifier: 'verify-intelligence-governed.mjs',
+    invariant: 'a tool outside the catalogue cannot run',
+    file: `${AI}/gather.ts`,
+    from: '    if (!t) {\n      calls.push({ tool: String(call.tool), args: call.args, outcome: \'REFUSED\'',
+    to: '    if (false) {\n      calls.push({ tool: String(call.tool), args: call.args, outcome: \'REFUSED\'',
+  },
+  {
+    verifier: 'verify-intelligence-governed.mjs',
+    invariant: 'a plan is bounded',
+    file: `${AI}/gather.ts`,
+    from: 'plan.slice(0, MAX_TOOL_CALLS)',
+    to: 'plan.slice(0, 1000)',
+  },
+  {
+    verifier: 'verify-intelligence-governed.mjs',
+    invariant: 'the AI reads as the caller: decision visibility',
+    file: `${AI}/tools.ts`,
+    from: 'const canSeeDecision = (c: ToolContext, id: string) => isAdmin(c) || c.facts.decisionVisible(id);',
+    to: 'const canSeeDecision = (c: ToolContext, id: string) => true || isAdmin(c) || c.facts.decisionVisible(id);',
+  },
+  {
+    verifier: 'verify-intelligence-governed.mjs',
+    invariant: 'the AI explains no value above the clearance of the caller',
+    file: `${AI}/tools.ts`,
+    from: 'if (!isCleared(ctx.viewer, item.sensitivity, ctx.now)) return done(',
+    to: 'if (false) return done(',
+  },
+  {
+    verifier: 'verify-intelligence-governed.mjs',
+    invariant: 'the AI compares no change above the clearance of the caller',
+    file: `${AI}/tools.ts`,
+    from: 'const visible = all.filter((c) => isCleared(ctx.viewer, (c.after ?? c.before)!.sensitivity, ctx.now));',
+    to: 'const visible = all;',
+  },
+  {
+    verifier: 'verify-council.mjs',
+    invariant: 'People is never spoken for',
+    file: `${AG}/perspectives.ts`,
+    from: "        : { supported: false, reason: 'HELM holds no people data:",
+    to: "        : { supported: true, reason: 'HELM holds no people data:",
+  },
+  {
+    verifier: 'verify-council.mjs',
+    invariant: 'disagreement is preserved, never netted',
+    file: `${AG}/council.ts`,
+    from: 'The two are shown side by side: nothing is netted, and HELM does not say which is right.',
+    to: 'The two are weighed and the balance is positive.',
+  },
+  {
+    verifier: 'verify-council.mjs',
+    invariant: 'a perspective sees relevance, not everything: the evidence subset is its own',
+    file: `${AG}/council.ts`,
+    from: "const subset = evidence.filter((e) => relevantTo(p, e));",
+    to: "const subset = evidence;",
+  },
+  {
+    verifier: 'verify-boundaries.mjs',
+    invariant: 'the AI layer writes nothing below itself',
+    file: `${AI}/gather.ts`,
+    from: 'export const MAX_TOOL_CALLS = 8;',
+    to: 'export const MAX_TOOL_CALLS = 8;\nvoid ((x: { commit(): void }) => x.commit());',
+  },
+  {
+    verifier: 'verify-boundaries.mjs',
+    invariant: 'the council never votes',
+    file: `${AG}/council.ts`,
+    from: '/** Where perspectives pull apart, as a FACT about an alternative — never netted, never ranked. */',
+    to: 'const tallyVotes = () => 0; void tallyVotes;',
+  },
+  {
+    verifier: 'verify-boundaries.mjs',
+    invariant: 'the integration fabric never decides',
+    file: `${INT}/pipeline.ts`,
+    from: 'const blockedTypes = new Set<string>();',
+    to: 'const blockedTypes = new Set<string>();\n      void ((x: { recordApproval(): void }) => x.recordApproval());',
+  },
+  {
+    verifier: 'verify-boundaries.mjs',
+    invariant: 'no health score, anywhere',
+    file: `${REV}/pack.ts`,
+    from: 'export async function computePack',
+    to: 'export const healthScore = 0;\nexport function computePack',
+  },
+  {
+    verifier: 'verify-memoire-boundary.mjs',
+    invariant: 'HELM never writes to Memoire, from the bridge or anywhere else',
+    file: 'src/services/memoireBridge.ts',
+    from: 'const READ_COLUMNS =',
+    to: "const probeWrite = () => supabaseClient?.from('opportunities').update({});\nvoid probeWrite;\nconst READ_COLUMNS =",
+  },
+  {
+    verifier: 'verify-boundaries.mjs',
+    invariant: 'a review knows nothing of the AI layer above it',
+    file: `${REV}/types.ts`,
+    from: "import type { UserId } from '@helm/shared';",
+    to: "import type { UserId } from '@helm/shared';\nimport type { AiRun } from '@helm/intelligence-runtime';\nexport type RunItem = AiRun;",
   },
 ];
 

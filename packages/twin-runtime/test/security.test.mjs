@@ -1,7 +1,7 @@
 /**
  * Visibility and sensitivity (ADR-0025), and their independence from authority.
  * The kernel statement of what RLS enforces server-side; the live-database
- * proof is recorded in docs/architecture/phase-7-implemented.md.
+ * proof is recorded in docs/architecture/layers/management-twin.md.
  */
 
 import { before, describe, it } from 'node:test';

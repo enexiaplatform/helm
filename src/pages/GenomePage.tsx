@@ -12,6 +12,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { featureNames, type EpisodeView, type FeatureName, type GenomeScope, type LessonView, type PatternCharacteristic, type PatternView, type ProjectedGenome, type SimilarSituations } from '@helm/genome-runtime';
 import type { ClaimView } from '@helm/causal-runtime';
+import { Link } from 'react-router-dom';
+import type { TwinViewer } from '@helm/twin-runtime';
+import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.tsx';
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
 import { entityLabels, genomeForViewer, lessonTone, patternTone, resolveGenomeContext, similarView, stanceTone, type GenomeContext } from '../services/genomeRuntime.ts';
@@ -204,7 +207,7 @@ function SimilarPanel({ ctx, episode, lensKey, labels }: { ctx: GenomeContext; e
   );
 }
 
-function EpisodeDetail({ ctx, v, lensKey, labels }: { ctx: GenomeContext; v: EpisodeView; lensKey: string; labels: ReadonlyMap<string, string> }) {
+function EpisodeDetail({ ctx, v, lensKey, labels, viewer }: { ctx: GenomeContext; v: EpisodeView; lensKey: string; labels: ReadonlyMap<string, string>; viewer: TwinViewer | null }) {
   const sit = v.episode.situation;
   const labelled = (vals: readonly string[]): string => vals.map((x) => labels.get(x) ?? x).join(', ');
   return (
@@ -250,7 +253,25 @@ function EpisodeDetail({ ctx, v, lensKey, labels }: { ctx: GenomeContext; v: Epi
         </ul>
       </div>
 
+      <div className="mt-5">
+        <p className="helm-label">What might have happened otherwise</p>
+        {v.counterfactuals.length === 0 && <p className="mt-2 text-dense text-ink-600">No counterfactual case reviews this episode's decision.</p>}
+        <ul className="mt-2 grid gap-2">
+          {v.counterfactuals.map((c) => (
+            <li key={c.caseId} className="border-l border-ink-200 pl-3">
+              <span className="flex flex-wrap items-baseline gap-2">
+                <Pill tone={c.status === 'REVIEWED' ? 'reviewed' : 'counterfactual'}>{c.status}</Pill>
+                <span className="text-dense text-ink-900">{c.title}</span>
+              </span>
+              <span className="block font-mono text-meta text-ink-500">asks about {c.interventionLabel} · {c.lenses.asKnownThen ? 'as known then' : 'no world then'} · {c.lenses.withHindsight ? 'with hindsight' : 'no hindsight world'} · {c.reviews} reading(s)</span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 text-meta text-ink-600">Kept beside, never inside, how management decided and what happened. <Link to="/counterfactuals" className="text-accent-700 underline">Open the counterfactual worlds →</Link></p>
+      </div>
+
       <SimilarPanel ctx={ctx} episode={v} lensKey={lensKey} labels={labels} />
+      <IntelligencePanel task="FIND_SIMILAR_SITUATIONS" params={{ episodeId: v.episode.id, require: 'decisionType,businessUnit' }} viewer={viewer} label="Find similar situations" detail="Earlier episodes that agree on the features named, and the patterns they bear on, in the order they were decided. Recurrence is described and never certified." />
     </div>
   );
 }
@@ -374,7 +395,7 @@ export function GenomePage() {
   const labels = genomeState && genomeState.key === key ? genomeState.labels : new Map<string, string>();
   const episode = selected?.kind === 'episode' ? g?.episodes.find((e) => e.episode.id === selected.id) ?? null : null;
   const pattern = selected?.kind === 'pattern' ? g?.patterns.find((p) => p.pattern.id === selected.id) ?? null : null;
-  const select = 'rounded-lg border border-ink-200 bg-white px-3 py-2 text-ui';
+  const select = 'max-w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-ui';
 
   return (
     <>
@@ -397,13 +418,13 @@ export function GenomePage() {
       </Notice>
 
       <div className="mt-6 flex flex-wrap items-end gap-4">
-        <label className="grid gap-1">
+        <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">Read as</span>
           <select className={select} value={viewerKey} onChange={(e) => setViewerKey(e.target.value)}>
             {ctx.viewers.map((v) => <option key={v.key} value={v.key}>{v.label}</option>)}
           </select>
         </label>
-        <label className="grid gap-1">
+        <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">As known on</span>
           <select className={select} value={lensKey} onChange={(e) => setLensKey(e.target.value)}>
             {ctx.lenses.map((l) => <option key={l.key} value={l.key}>{l.label}</option>)}
@@ -482,7 +503,7 @@ export function GenomePage() {
         <aside className="w-full max-w-[360px] flex-[0_1_360px]">
           <SectionHead title={selected?.kind === 'pattern' ? 'What the records say' : 'How did we decide, and what happened?'} size="section-sm" />
           {!episode && !pattern && <p className="mt-3 text-ui text-ink-500">Choose an episode to see its situation, how management decided and what happened — or a pattern to see the episodes it rests on.</p>}
-          {episode && <EpisodeDetail ctx={ctx} v={episode} lensKey={lensKey} labels={labels} />}
+          {episode && <EpisodeDetail ctx={ctx} v={episode} lensKey={lensKey} labels={labels} viewer={viewer} />}
           {pattern && <PatternDetail p={pattern} />}
         </aside>
       </div>

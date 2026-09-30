@@ -1,3 +1,5 @@
+import { ok, fail } from '@helm/shared';
+import type { MemoireOpportunityRow, MemoireReader } from '@helm/integration-runtime';
 import { supabaseClient } from '../lib/supabaseClient.ts';
 
 /**
@@ -14,34 +16,23 @@ import { supabaseClient } from '../lib/supabaseClient.ts';
  * (§58); the architecture is the deliverable here, not the automation.
  *
  * HELM never copies Memoire entities — it stores references.
+ *
+ * The integration fabric reads through `createMemoireOpportunityReader()` below: the same read side, as the adapter's port —
+ * rows strictly after a cursor, oldest first, under the caller's own RLS. It is READ-ONLY; HELM never writes into Memoire.
  */
 
-export type MemoireOpportunity = {
-  id: string;
-  accountId: string | null;
-  accountName: string;
-  title: string;
-  value: number | null;
-  currency: string;
-  stage: string;
-};
+const READ_COLUMNS = 'id, account_id, account_name, opportunity_name, title, stage, estimated_value, currency, pipeline_probability, status, expected_close_period, updated_at';
 
-export async function listMemoireOpportunities(): Promise<MemoireOpportunity[]> {
-  if (!supabaseClient) return [];
-  const { data, error } = await supabaseClient
-    .from('opportunities')
-    .select('id, account_id, account_name, title, opportunity_name, estimated_value, currency, stage, status')
-    .neq('status', 'archived')
-    .order('updated_at', { ascending: false })
-    .limit(100);
-  if (error || !data) return [];
-  return data.map((r) => ({
-    id: r.id as string,
-    accountId: (r.account_id as string | null) ?? null,
-    accountName: (r.account_name as string | null) || '—',
-    title: (r.opportunity_name as string | null) || (r.title as string | null) || 'Untitled opportunity',
-    value: (r.estimated_value as number | null) ?? null,
-    currency: (r.currency as string | null) || 'USD',
-    stage: (r.stage as string | null) || '—',
-  }));
+/** The Memoire read port of the integration fabric, over the signed-in user's own `opportunities` (RLS scopes it). */
+export function createMemoireOpportunityReader(): MemoireReader {
+  return {
+    async listOpportunities(_scope, after, limit) {
+      if (!supabaseClient) return fail('integration.no_client', 'Memoire cannot be read: no database client is configured.');
+      let q = supabaseClient.from('opportunities').select(READ_COLUMNS).order('updated_at', { ascending: true }).order('id', { ascending: true }).limit(limit);
+      if (after) q = q.or(`updated_at.gt.${after.updatedAt},and(updated_at.eq.${after.updatedAt},id.gt.${after.id})`);
+      const { data, error } = await q;
+      if (error) return fail('integration.read_failed', `Reading Memoire opportunities failed: ${error.message}`);
+      return ok(((data ?? []) as unknown as MemoireOpportunityRow[]).map((r) => ({ ...r, updated_at: new Date(r.updated_at).toISOString() })));
+    },
+  };
 }

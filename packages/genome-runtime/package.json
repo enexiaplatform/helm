@@ -24,6 +24,7 @@
     "@helm/decision-runtime": "0.1.0",
     "@helm/authority-runtime": "0.1.0",
     "@helm/twin-runtime": "0.1.0",
-    "@helm/causal-runtime": "0.1.0"
+    "@helm/causal-runtime": "0.1.0",
+    "@helm/counterfactual-runtime": "0.1.0"
   }
 }

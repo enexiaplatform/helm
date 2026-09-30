@@ -143,7 +143,7 @@ if (!configured) {
       // The shared suite's cross-tenant checks arrange fixtures as scopeB. Against
       // a real database the principal is not a member of org B, so RLS refuses the
       // arrange step — which is itself the correct behaviour, verified separately
-      // by the SQL-level isolation proof (see phase-3-implemented.md §Security).
+      // by the SQL-level isolation proof (see docs/architecture/layers/propagation-engine.md §Security).
       skip: ['a completed run cannot be closed from another organization'],
     },
   );

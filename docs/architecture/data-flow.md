@@ -1,112 +1,131 @@
 # Data Flow
 
-How information enters HELM, becomes management truth, and returns as a decision
-and a lesson.
+How information enters HELM, becomes management truth, and returns as a decision, a
+review and a lesson. The layers themselves are in
+[helm-architecture.md](helm-architecture.md).
 
 ## 1. The operating loop
 
 ```
-SENSE → DIAGNOSE → SIMULATE → DECIDE → EXECUTE → CONTROL → LEARN
+SENSE → DIAGNOSE → SIMULATE → DECIDE → EXECUTE → CONTROL → LEARN → (and back to SENSE)
 ```
 
-Every arrow is a data transformation with a contract. The loop closes: LEARN
-writes back into the model that SENSE reads, which is what makes the
-organization compound rather than merely record.
+Every arrow is a data transformation with a contract, and the loop closes **through
+people**: what is learned is recorded as memory and beliefs that people author and
+review, and that the next decision and the next review can *read*. Nothing learned
+rewrites the model, a formula, a weight or an authority rule by itself.
 
 ```mermaid
 flowchart TB
     subgraph SENSE
-        SRC[Source systems] -->|SourceEvent| CONN[Connector.translate]
-        CONN -->|OntologyMutation| GRAPH[(Ontology + Value Graph)]
+        SRC[Source systems] -->|SourceRecord| ADP[SourceAdapter.translate — pure]
+        ADP -->|entities · aliases · SOURCE facts| GRAPH[(Ontology + Value Graph)]
         GRAPH --> PROP[Propagation run]
         PROP --> OBS[(Derived observations<br/>+ calculation trace)]
-        OBS --> RULES[Signal rules]
-        RULES --> SIG[(Signals)]
+        GRAPH --> TWIN[Twin snapshot at a lens]
+        OBS --> TWIN
+        TWIN --> ATT[Attention: named conditions with causes]
     end
 
     subgraph DIAGNOSE
-        SIG --> DRIVERS[driversOf → upstream chain]
-        DRIVERS --> CAUSAL[Causal hypotheses]
-        CAUSAL --> DIAG[Diagnosis: what + why]
+        ATT --> DRIVERS[Twin lineage: what moved, from what]
+        DRIVERS --> CAUSAL[Causal claims people made<br/>with evidence for and against]
     end
 
     subgraph SIMULATE
-        DIAG --> OPTS[Decision options]
-        OPTS --> SCEN[Scenario per option<br/>sparse graph overrides]
+        CAUSAL --> ALT[Alternatives management frames]
+        ALT --> SCEN[Scenario per alternative<br/>branch of the model]
         SCEN --> RERUN[Propagation per scenario]
-        RERUN --> COMPARE[Comparison across<br/>revenue · margin · WC · cash<br/>service · risk · future options]
+        RERUN --> COMPARE[Comparison across dimensions<br/>nothing ranked or totalled]
     end
 
     subgraph DECIDE
-        COMPARE --> GENOME[Similar past decisions<br/>+ lessons]
-        GENOME --> REC[Recommendation<br/>+ assumptions + confidence]
-        REC --> AUTH{Authority check}
-        AUTH -->|allowed| APPROVED[Approved]
-        AUTH -->|insufficient| CHAIN[Approval chain / escalation]
+        COMPARE --> EVAL[Evaluation against management's own criteria]
+        EVAL --> CHOICE[Management chooses and commits]
+        CHOICE --> AUTH{Authority evaluation<br/>trusted service}
+        AUTH -->|authorized| APPROVED[Governed commitment]
+        AUTH -->|not| CHAIN[Required approvals / escalation]
         CHAIN --> APPROVED
     end
 
     subgraph EXECUTE
-        APPROVED --> ACT[Actions + owners + dates]
-        ACT --> WB[Provenance write-back<br/>commercial_events]
+        APPROVED --> ACT[Action intents: system, owner, date]
+        ACT --> WB[Dry-run write-back request<br/>nothing is sent]
     end
 
     subgraph CONTROL
-        ACT --> MON[Monitor expected vs actual]
-        MON --> REVIEW[Outcome review]
+        APPROVED --> TRAJ[Current state vs committed future]
+        TRAJ --> OUTC[Outcome review: expected vs actual,<br/>assumptions marked]
+        OUTC --> REV[Management review<br/>weekly · monthly · quarterly · strategic]
     end
 
     subgraph LEARN
-        REVIEW --> OUTCOME[(Outcome ledger)]
-        OUTCOME --> LESSON[(Lessons)]
-        OUTCOME --> CF[Counterfactual]
-        LESSON --> GENOME
+        OUTC --> EVID[Causal evidence, recorded by people]
+        OUTC --> CFR[Counterfactual case<br/>anchored before the decision]
+        OUTC --> EP[Genome episode<br/>by reference]
+        EP --> PAT[Patterns and lessons people author]
+        CFR --> EP
     end
 
-    LESSON -.->|"validate / contradict"| CAUSAL
-    OUTCOME -.->|"recalibrate weight + confidence"| GRAPH
-    APPROVED -.->|"every transition"| AUDIT[(Append-only events)]
+    REV -.->|carried forward by reference| REV
+    PAT -.->|"read on the next similar situation"| ALT
+    EVID -.->|"read: claims are revised by people"| CAUSAL
+    APPROVED -.->|"every transition"| AUDIT[(Append-only records)]
+    TWIN -.->|"read as the caller"| AI[Governed AI · council]
+    REV -.-> AI
 ```
 
-The two dotted lines back into `CAUSAL` and `GRAPH` are the whole point. Without
-them HELM is a decision log; with them it is infrastructure that gets better at
-the enterprise it manages.
+The dotted lines back are the point, and they are all *reads* or *authored records*.
+HELM remembers with reasons and reproduces any closed review; it is not a system that
+quietly recalibrates itself.
 
 ## 2. Ingestion — source fact to ontology
 
 ```mermaid
 sequenceDiagram
     participant SRC as Memoire
-    participant C as MemoireConnector
-    participant O as OntologyRegistry
+    participant R as MemoireReader (caller's RLS)
+    participant P as IngestionPipeline
+    participant A as SourceAdapter
     participant G as GraphStore
     participant V as ValueGraph
+    participant L as Sync ledger
 
-    SRC->>C: pull(since: cursor)
-    Note over C: opportunity.updated<br/>value 4.2B, prob 70%
-    C->>C: translate(event) — pure
-    C-->>O: OntologyMutation[]
-    O->>O: validateEntity / validateRelationship
-    alt invalid
-        O-->>C: Result.error — quarantined, never partially applied
-    else valid
-        O->>G: upsertEntity(Opportunity, naturalKey=memoire:opp:123)
-        Note over G: prior version superseded,<br/>not overwritten
-        O->>G: upsertRelationship(sells → Product SKU-X, weight 12)
-        O->>V: observe(ExpectedRevenue, kind=forecast, conf 0.7)
+    P->>L: checkpointOf(memoire) — derived from the ledger
+    P->>R: rows strictly after the checkpoint
+    R-->>P: SourceRecord[]
+    P->>P: detectDrift(contract, records)
+    alt BREAKING
+        P->>L: append BLOCKED_BY_DRIFT — checkpoint holds, nothing written
+    else NONE or ADDITIVE
+        loop each record
+            P->>A: translate(record) — pure
+            A-->>P: entities · relationships · aliases · SOURCE facts
+            alt cannot translate
+                P->>L: quarantine — the checkpoint holds
+            else
+                P->>G: write only what differs; register aliases
+                P->>V: record a SOURCE observation only if the value differs
+            end
+        end
+        P->>L: append the run: counts · drift · quarantined · cursor
     end
 ```
 
 Guarantees:
 
-- **Idempotent.** `naturalKey` unique per `(orgId, typeCode)`; replaying an event
-  changes nothing.
-- **Non-destructive.** An update closes the prior row's validity window.
-- **Provenance-stamped.** Every row records the system, reference and observation
-  time.
-- **Atomic per event.** A rejected mutation leaves no partial write.
-- **Vocabulary-confined.** The kernel never sees `estimated_value` or
-  `account_name` — only `Opportunity.attributes.value`.
+- **Idempotent by content.** An entity is written only if it differs, an observation
+  only if its value differs, an alias only if new; a blank checkpoint re-reading
+  everything changes nothing.
+- **Non-destructive.** A changed value is a new observation and the earlier one stays.
+- **Provenance-stamped.** Every fact traces to its ingestion event, connector and source
+  object.
+- **Source-typed.** A source can only say `ACTUAL`, `FORECAST` or `TARGET`; a model
+  estimate of the same quantity sits beside it and neither overwrites the other.
+- **Stops rather than guesses.** Breaking drift blocks the object type; a record HELM
+  cannot take is quarantined and holds the checkpoint.
+- **Vocabulary-confined.** The kernel never sees `estimated_value` or `account_name` —
+  only the ontology's terms.
 
 ## 3. Propagation — a change becomes consequences
 
@@ -164,14 +183,16 @@ risk, cash, strategic alignment and confidence.
 This is why overrides live on relationships and observations rather than in a
 duplicated subgraph: adding an option is O(overrides), not O(graph).
 
-## 5. Decision — as implemented in Phase 5
+## 5. Decision, authority and review
 
 ```mermaid
 sequenceDiagram
     participant M as Manager
     participant D as DecisionRuntime
     participant S as ScenarioRuntime
-    participant E as Event log
+    participant A as Authority (trusted service)
+    participant T as Twin
+    participant R as ReviewRuntime
 
     M->>D: createDecision(management question, trigger, owner, horizon)
     M->>D: addAlternative(label) + bindScenario(scenario, revision, run)
@@ -179,75 +200,65 @@ sequenceDiagram
     S-->>D: yes → MODELLED · no → refused
     Note over D: an alternative with no model is<br/>UNMODELLED with a stated reason
     M->>D: addCriterion / recordAssessment / addAssumption / challenge / addEvidence
-    M->>D: evaluateReadiness()
-    D-->>M: READY | READY_WITH_GAPS | NOT_READY + named gaps
-    M->>D: prepareCommitment(chosen) → the evidence manifest, previewed
+    M->>D: evaluateReadiness() → READY | READY_WITH_GAPS | NOT_READY + named gaps
     M->>D: commit(rationale, accepted trade-offs, expected outcomes)
-    D->>D: freeze snapshot · seal revision · authorityStatus NOT_EVALUATED
-    D->>E: append REVISION_SEALED, COMMITTED, ACTION_INTENT_ADDED
+    D->>D: freeze snapshot · seal revision · fingerprint the commitment
+    D->>A: evaluate(commitment) — consequences re-derived from the chosen run
+    A-->>M: who may approve, under which policy version, which approvals are required
+    M->>A: recordApproval / recordRejection / returnForReconsideration
+    T->>T: getCommittedFuture · getTrajectory — current vs committed
+    M->>R: the review binds the decision, commitment and assumptions by reference
 ```
 
-Every step writes to `helm_decision_events`, which has INSERT and SELECT
-policies and deliberately **no UPDATE or DELETE** — history cannot be rewritten
-from a client, by anyone, including an admin.
+Every step writes an append-only record: history cannot be rewritten from a client, by
+anyone, including an admin. **Authority is a separate, immutable evaluation** bound to the
+commitment fingerprint, computed by the trusted service and never asserted by a client;
+recording a commitment is history even when the person was not authorized to, so the
+evaluation says *whose* authority it needs instead of the record disappearing.
 
-HELM writes nothing into another system. A commitment produces **action
-intents** naming the system that should act; delivering them over an explicit
-contract is a later phase.
+HELM writes nothing into another system. A governed commitment produces **action
+intents** naming the system that should act; the integration fabric turns an explicit
+intent into a dry-run request that says nothing was sent
+([ADR-0030](../adr/0030-integration-fabric.md)).
 
-### What is still Phase 6
+## 6. Learning — the loop closes through people
 
-Authority is **not** in this flow. There is no `AuthorityEngine` call, no
-approval state and no escalation: every decision and commitment carries
-`authorityStatus: NOT_EVALUATED`, pinned by a database constraint. Whether the
-person who committed was permitted to is the question Phase 6 answers, and the
-field exists now so that answering it later does not require rewriting
-commitments made before it did.
+At **outcome review**, each expected outcome is compared with the actual and the variance
+is stated, and each assumption is marked `CONFIRMED`, `PARTIALLY_CONFIRMED`, `DISPROVED`
+or `UNKNOWN`, against the sealed revision. The review passes no judgement: [decision
+quality is not outcome quality](decision-quality-vs-outcome.md).
 
-## 6. Learning — the loop closes on the model
+From there, and only by people's acts:
 
-**Implemented in Phase 5.** At outcome review, each expected outcome is compared
-with the actual and the variance is stated, and each assumption is marked
-`CONFIRMED`, `PARTIALLY_CONFIRMED`, `DISPROVED` or `UNKNOWN`. Both are written
-against the sealed revision, which accepts these two things and nothing else.
-The review passes no judgement: [decision quality is not outcome
-quality](decision-quality-vs-outcome.md).
-
-**Not implemented, and deliberately.** Everything below this line is design for
-later phases. Nothing in HELM today lowers a hypothesis's confidence, adjusts a
-link weight, or detects a pattern across decisions.
-
-1. **Assumption validation → causal evidence.** A disproved assumption is
-   evidence against any causal hypothesis it rested on. There are no causal
-   hypotheses yet (Phase 8).
-2. **Graph recalibration.** Systematic error in a calculation's output would
-   adjust the confidence, and with enough evidence the weight, of the links
-   involved (Phase 8+).
-3. **Pattern detection.** Phase 5 preserves the substrate a Management Genome
-   needs — the question, the alternatives, the criteria, the assumptions with
-   their outcomes, expected against actual — and learns nothing from it
-   (Phase 9).
+1. **Causal evidence.** A disproved assumption can be recorded as evidence *against* a
+   causal claim it rested on; the claim's status is *derived* under the evidence policy
+   (an ordinary count never decides) and revised by a person
+   ([ADR-0026](../adr/0026-enterprise-causal-graph.md)).
+2. **A counterfactual case** anchored to the state *before* the decision, estimated as
+   known then and with hindsight, four layers side by side, no regret
+   ([ADR-0029](../adr/0029-counterfactual-worlds.md)).
+3. **A genome episode** that wraps the decision by reference (situation as known at the
+   boundary; beliefs of the day apart from those since), with patterns and lessons that
+   people propose and someone else reviews ([ADR-0028](../adr/0028-management-genome.md)).
+4. **The next management review**, prepared with what changed since the last one closed,
+   inheriting what it left open by reference, reproducible ever after
+   ([ADR-0031](../adr/0031-management-reviews.md)).
 
 ```mermaid
 flowchart LR
-    REV[Outcome review] --> OUT[(Outcome)]
-    OUT --> ASM{Assumptions}
-    ASM -->|held| CONF_UP[Hypothesis confidence ↑]
-    ASM -->|failed| CONF_DOWN[Hypothesis confidence ↓]
-    OUT --> PAT[Pattern detection<br/>≥3 closed decisions]
-    PAT --> LES[(Lesson)]
-    LES --> NEXT[Surfaced on the next<br/>similar decision]
-    CONF_DOWN --> LINK[Value-link confidence ↓]
-    LINK --> NEXT
+    REV[Outcome review] --> ASM{Assumptions}
+    ASM -->|disproved| EV[Evidence against a claim<br/>recorded by a person]
+    EV --> ST[Claim status re-derived<br/>under the evidence policy]
+    REV --> EP[Episode by reference]
+    EP --> PAT[Pattern a person proposes<br/>stance must agree with the records]
+    PAT --> LES[Lesson — reviewed by someone else, inert]
+    LES --> NEXT[Read on the next similar situation]
+    ST --> NEXT
 ```
 
-The threshold will matter. The pre-kernel `decisionMemory.ts` required at least
-three closed decisions with two-thirds agreement before asserting a pattern, on
-the principle that learning which fires on a single outcome is superstition.
-That engine was **retired in Phase 5**
-([assessment](decision-engine-assessment.md)) — not because the threshold was
-wrong, but because it learned from `outcomeScore`, a grade of the decision by
-its outcome, and that grade is the one thing HELM must not keep.
+Nothing in HELM lowers a claim's status by itself, adjusts a link weight, mines a pattern
+or acts on a lesson. The pre-kernel `decisionMemory` engine learned from `outcomeScore`, a
+grade of the decision by its outcome — the one thing HELM must not keep — and was retired.
 
 ## 7. What the manager sees at the end of the chain
 

@@ -12,25 +12,10 @@
  * only. They never round a stored value and never compute one.
  */
 
-import {
-  buildMeridianDecision,
-  createDecisionRuntime,
-  createInMemoryDecisionStore,
-  type DecisionRuntime,
-  type DecisionStore,
-} from '@helm/decision-runtime';
+import { createDecisionRuntime, type DecisionRuntime, type DecisionStore } from '@helm/decision-runtime';
 import { createPostgresDecisionStore } from '@helm/decision-runtime/postgres';
-import {
-  MERIDIAN_DEMO_USERS,
-  buildMeridianGovernanceGraph,
-  createAuthorityRuntime,
-  createInMemoryAuthorityStore,
-  recordMeridianDoaV1,
-  recordMeridianOccupancies,
-  type AuthorityRuntime,
-  type AuthorityStore,
-} from '@helm/authority-runtime';
-import { systemClock, uuidIdGen, type Scope } from '@helm/shared';
+import type { AuthorityRuntime, AuthorityStore } from '@helm/authority-runtime';
+import { systemClock, type Scope } from '@helm/shared';
 import type { ScenarioRuntime } from '@helm/scenario-runtime';
 import { supabaseClient } from '../lib/supabaseClient.ts';
 import { resolveScenarioWorkspace, type ScenarioWorkspace } from './scenarioRuntime.ts';
@@ -60,45 +45,25 @@ function buildRuntime(scenarios: ScenarioRuntime, store: DecisionStore): Decisio
   return createDecisionRuntime({ store, scenarios, clock: systemClock });
 }
 
-/** Demo: the canonical decision prepared and committed once, in memory. */
+/** Demo: the decision workspace of the ONE demonstration world — the twin's decisions, governance and story, not a parallel copy. */
 function getDemoContext(scope: Scope): Promise<DecisionWorkspaceContext> {
   if (demoContext) return demoContext;
   demoContext = (async () => {
     const scenarios = await resolveScenarioWorkspace('demo', scope);
     if (!scenarios) throw new Error('the demo scenario workspace is unavailable');
-    const store = createInMemoryDecisionStore({ clock: systemClock, idGen: uuidIdGen });
-    const runtime = buildRuntime(scenarios.runtime, store);
-    // Committed by the demo Commercial Director — by identity, which is what
-    // Phase 6 governance reads — so the demo shows a commitment that needs
-    // the Country GM's approval.
-    const authorityStore = createInMemoryAuthorityStore({ clock: systemClock, idGen: uuidIdGen });
-    const authority = createAuthorityRuntime({
-      store: authorityStore,
-      decisions: store,
-      scenarios: scenarios.runtime,
-      graph: scenarios.graphs.graphStore,
-      clock: systemClock,
-    });
-    const governance = await buildMeridianGovernanceGraph(scenarios.graphs.graphStore, scope);
-    if (!governance.ok) throw new Error(`the governance graph failed: ${governance.error.message}`);
-    const seats = await recordMeridianOccupancies(authority, scope, governance.value);
-    if (!seats.ok) throw new Error(`the demo occupancies failed: ${seats.error.message}`);
-    const doa = await recordMeridianDoaV1(authority, scope, governance.value);
-    if (!doa.ok) throw new Error(`the demo authority policy failed: ${doa.error.message}`);
-    const committer = { ...scope, actorId: MERIDIAN_DEMO_USERS.commercialDirector };
-    const built = await buildMeridianDecision(runtime, committer, scenarios.scenarioIdsByKey, {
-      committedByLabel: 'Commercial Director Vietnam',
-    });
-    if (!built.ok) throw new Error(`the canonical decision failed: ${built.error.message}`);
+    const { resolveTwinContext } = await import('./twinRuntime.ts');
+    const twin = await resolveTwinContext('demo', scope);
+    if (!twin?.story) throw new Error('the demonstration world is unavailable');
+    const k = twin.kernel;
     return {
-      runtime,
-      store,
+      runtime: k.decisions,
+      store: k.decisionStore,
       scenarios,
       scope,
       mode: 'demo' as const,
-      canonicalDecisionId: built.value.decision.id,
-      demoAuthority: authority,
-      demoAuthorityStore: authorityStore,
+      canonicalDecisionId: twin.story.decisionId,
+      demoAuthority: k.authority,
+      demoAuthorityStore: k.authorityStore,
     };
   })();
   return demoContext;

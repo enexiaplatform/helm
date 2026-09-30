@@ -66,7 +66,7 @@ and by the phase checklist item "architecture docs written or updated".
 ## Migration implications
 
 None. The pre-existing `docs/architecture.md` is preserved as
-[implemented-mvp.md](../architecture/implemented-mvp.md) — an accurate record of
+[implemented-mvp.md](../archive/implemented-mvp.md) — an accurate record of
 what was built, now positioned as history rather than as the plan. The decisions
 it records are restated as ADRs 0003, 0005 and 0011 so they carry forward
 explicitly.

@@ -91,6 +91,18 @@ export type MeridianTwinDeps = {
   readonly advanceTo: (iso: string) => void;
   /** Org units the snapshots are shared with (demo: unit ids of MERIDIAN_DEMO_UNITS). */
   readonly units: { readonly vietnam: string; readonly pharma: string; readonly industrial: string };
+  /**
+   * Moments a host may live alongside the story — a management review that opens with the twin's first snapshot and closes
+   * once the commitment is governed. Optional: the story is the same without them. A hook that throws stops the story.
+   */
+  readonly hooks?: MeridianTwinHooks;
+};
+
+export type MeridianTwinHooks = {
+  /** The decision is prepared and NOT yet committed; S0 has just been composed. */
+  readonly afterS0?: (a: { decisionId: string; snapshot: ComposedSnapshot; scopes: { readonly vietnam: TwinScope } }) => Promise<void>;
+  /** The commitment is governed and its committed future exists. */
+  readonly afterCommittedFuture?: (a: { decisionId: string; commitmentId: string; snapshot: ComposedSnapshot; committedFuture: ComposedSnapshot }) => Promise<void>;
 };
 
 export type MeridianTwinStory = {
@@ -176,9 +188,16 @@ export async function runMeridianTwinStory(d: MeridianTwinDeps): Promise<Result<
   const built = must(
     await buildMeridianDecision(d.decisions, cd, d.scenarioIds, {
       committedByLabel: 'Commercial Director Vietnam',
-      beforeCommit: async () => {
+      beforeCommit: async (prepared) => {
         const s = await current('S0 — before the decision');
         if (s.ok) S0 = s.value;
+        if (s.ok && d.hooks?.afterS0) {
+          try {
+            await d.hooks.afterS0({ decisionId: prepared.decisionId, snapshot: s.value, scopes: { vietnam: scopes.vietnam } });
+          } catch (e) {
+            return fail('twin.hook_failed', `The afterS0 hook failed: ${(e as Error).message}`);
+          }
+        }
         return s;
       },
     }),
@@ -212,6 +231,13 @@ export async function runMeridianTwinStory(d: MeridianTwinDeps): Promise<Result<
     'CF1',
   );
   if (!CF1.ok) return CF1;
+  if (d.hooks?.afterCommittedFuture) {
+    try {
+      await d.hooks.afterCommittedFuture({ decisionId: built.value.decision.id, commitmentId: commitment.id, snapshot: S1.value, committedFuture: CF1.value });
+    } catch (e) {
+      return fail('twin.hook_failed', `The afterCommittedFuture hook failed: ${(e as Error).message}`);
+    }
+  }
 
   // ------------------------------------------------ what happened afterwards
   d.advanceTo(MERIDIAN_TWIN_TIMES.doaV2);

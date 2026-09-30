@@ -78,6 +78,22 @@ const APPEND_ONLY = [
   'helm_genome_pattern_evidence',
   'helm_genome_lessons',
   'helm_genome_lesson_reviews',
+  // What might have happened otherwise: the question asked of a decision at its
+  // boundary, each world estimated for it and each person's reading. A later
+  // estimate is a new world — never an edit of the earlier one.
+  'helm_counterfactual_cases',
+  'helm_counterfactual_worlds',
+  'helm_counterfactual_reviews',
+  // What each source system said and when HELM took it, what a dry-run writeback
+  // would have sent, what a management review bound, what it closed with, and
+  // what the AI was asked and answered. A later sync, dispatch, review or run is
+  // a new record — never an edit of the earlier one.
+  'helm_integration_syncs',
+  'helm_writeback_requests',
+  'helm_management_reviews',
+  'helm_management_review_items',
+  'helm_management_review_closures',
+  'helm_ai_runs',
 ];
 
 /**

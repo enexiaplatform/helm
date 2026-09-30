@@ -11,7 +11,7 @@
  * management decision (Phase 5).
  *
  * Replaces the pre-kernel CVP what-if pages (retired in Phase 4 — see
- * docs/architecture/scenario-engine-assessment.md).
+ * docs/archive/scenario-engine-assessment.md).
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';

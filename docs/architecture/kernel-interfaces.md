@@ -4,9 +4,9 @@ The contracts every kernel package exposes. These are the **stable seams**: an
 implementation may be replaced (Postgres → Neo4j, formula → Monte Carlo, rule →
 model) without a caller changing, provided the contract holds.
 
-Signatures here are the Phase 0 design. Phase 1 implements `shared`, `ontology`
-and `graph-store` exactly as written; later phases refine their own interfaces
-via ADR before implementation.
+§1–5 are the design contracts of the semantic kernel; §6–8 abridge the runtime ports of
+the layers above it. **The port file in each package is authoritative**: where this page
+and a `port.ts` differ, the port is right and this page is stale.
 
 ## 1. Conventions
 
@@ -254,37 +254,29 @@ export type Explanation = {
 `Explanation` is the §17 auditability requirement as a type. If a number cannot
 produce one, it does not get displayed.
 
-## 6. Governance and learning interfaces
+## 6. Governance, belief, memory and review interfaces
+
+Each layer above the propagation engine exposes a **runtime port** in its own
+`src/port.ts` and a **store port** beside it, implemented twice (in memory and
+Postgres) against one conformance suite. The runtime port is what the app and the
+layers above call; every read that describes the world takes the two-time lens, and
+status is derived at it, never stored. The files are the contract; this page names
+the shape, abridged.
+
+| Layer | Runtime port (`packages/<pkg>/src/port.ts`) | Shape |
+| --- | --- | --- |
+| `authority-runtime` | `AuthorityRuntime` | `recordPolicy` (a DOA version, never edited) · `recordOccupancy` · `createDelegation` · `declareGovernanceProfile` · `grantVisibility` · `evaluate(commitmentId)` → an immutable evaluation bound to the commitment fingerprint, with required approvals · `recordApproval` / `recordRejection` · `getGovernanceState`. The verdict is produced by the trusted service; a client cannot supply facts |
+| `twin-runtime` | `TwinRuntime` | `buildSnapshot` (kind, scope, periods, lens) · `getSnapshot` · `currentState` · `replaySnapshot` · `compareSnapshots` → the twin delta · `getCommittedFuture` / `getTrajectory` (current against committed future) · `explainItem` / `explainDifference` (lineage) · `projectForViewer(snapshotId, viewer, units)` (what was withheld is stated) |
+| `causal-runtime` | `CausalRuntime` | `defineVariable` · `createClaim` / `reviseClaim` / `retireClaim` · `recordEvidence` / `correctEvidence` · `linkEvidence` / `supportClaim` / `challengeClaim` · `recordCorrelation` (kept apart) · `askQuestion` / `proposeCandidate` / `investigate` · `getClaim` / `listClaims` / `evaluateClaim` / `explainClaim` at a lens · bounded `getCauses` / `getEffects`. Status is derived from the evidence policy, never stored |
+| `counterfactual-runtime` | `CounterfactualRuntime` | `openCase` · `estimate` (one world per retrospective lens) · `recordReview` · `getCase` / `listCases` · `compare` → four layers, two named differences · `viewAt` · `projectForViewer` |
+| `genome-runtime` | `ManagementGenome` | abridged below |
+| `integration-runtime` | `SourceAdapter`, `IntegrationStore`, `IngestionPipeline`, `WritebackGateway` | §7 |
+| `review-runtime` | `ReviewRuntime` | `openReview` · `addItem` · `closeReview` (one disposition per item) · `getReview` / `listReviews` at a lens · `prepare` · `closingPack` · `reproduce` · `preparedFor` / `projectForViewer` |
+| `intelligence-runtime` | `IntelligenceRuntime`, `AiProvider` | §8 |
+| `agent-runtime` | `Council` | `convene(scope, caller, { question, decisionId?, reviewId?, perspectives? })` — the only method |
 
 ```ts
-// authority-engine (Phase 6)
-export interface AuthorityEngine {
-  evaluate(scope: Scope, req: AuthorityRequest): AuthorityVerdict;
-}
-export type AuthorityRequest = {
-  actionType: string;                // 'approve_discount', 'commit_inventory'
-  decisionType: string;
-  amount: Money | null;
-  riskLevel: 'low' | 'medium' | 'high' | null;
-  orgUnitId: OrgUnitId | null;
-  countryId: EntityId | null;
-  actorRoleId: EntityId;
-};
-export type AuthorityVerdict =
-  | { allowed: true; ruleId: string; rationale: string }
-  | { allowed: false; ruleId: string | null; rationale: string;
-      requiredRoleIds: EntityId[]; approvalChain: EntityId[]; escalationPath: EntityId[] };
-
-// causal-engine (Phase 8)
-export interface CausalEngine {
-  hypothesesFor(scope: Scope, entityId: EntityId): Promise<CausalHypothesis[]>;
-  recordEvidence(scope: Scope, e: CausalEvidenceInput): Promise<CausalHypothesis>;
-  /** Recomputes confidence from supporting vs contradicting evidence. */
-  reassess(scope: Scope, hypothesisId: string): Promise<CausalHypothesis>;
-};
-
-// management-genome (Phase 9) — delivered as @helm/genome-runtime (src/port.ts); abridged.
-// Every read takes the two-time lens; status is derived at it, never stored.
+// genome-runtime — abridged. Every read takes the two-time lens.
 export interface ManagementGenome {
   openEpisode(scope: Scope, input: OpenEpisodeInput): Promise<Result<EpisodeView>>;
   /** Episodes agreeing on EVERY required feature, chronological, unscored. */
@@ -296,103 +288,53 @@ export interface ManagementGenome {
   viewAt(scope: Scope, lens?: GenomeLens): Promise<Result<GenomeAtLens>>;
   projectForViewer(scope: Scope, viewer: TwinViewer, units: OrgUnit[], facts: GenomeVisibilityFacts, lens?: GenomeLens): Promise<Result<ProjectedGenome>>;
 }
-
-// counterfactual-engine (Phase 10)
-export interface CounterfactualEngine {
-  compare(scope: Scope, decisionId: string, alternativeId: string): Promise<Counterfactual>;
-}
-export type Counterfactual = {
-  actual: OutcomeSummary;
-  expected: OutcomeSummary;
-  alternative: OutcomeSummary;
-  deltas: { metric: string; actualVsExpected: number; actualVsAlternative: number }[];
-  confidence: Confidence;
-  assumptions: string[];
-  method: 'scenario_comparison' | 'causal_inference';
-};
 ```
 
-`findSimilar` takes the **structured features** a caller requires to agree, not
-a text blob — §2.7's "do not rely purely on embeddings". A feature the situation
-does not state agrees with nothing, and the answer says so. Semantic similarity
-may one day supplement this; it may never define similarity
+`findSimilar` takes the **structured features** a caller requires to agree, not a text
+blob. A feature the situation does not state agrees with nothing, and the answer says
+so. Semantic similarity may one day supplement this; it may never define similarity
 ([ADR-0028](../adr/0028-management-genome.md) §2).
 
-## 7. Connector SDK
+## 7. Source adapters and write-back
 
 ```ts
-export interface SourceConnector {
-  readonly sourceSystem: string;
-  readonly version: string;
-  /** Types this connector may create — the kernel enforces the whitelist. */
-  readonly producesEntityTypes: string[];
-  readonly producesRelationshipTypes: string[];
-
-  healthCheck(): Promise<ConnectorHealth>;
-  /** Pull changes since a cursor. Transport-agnostic: poll, webhook or queue. */
-  pull(scope: Scope, since: Cursor | null): Promise<{ events: SourceEvent[]; cursor: Cursor }>;
-  /** Translate a source event into ontology terms. Pure and unit-testable. */
-  translate(event: SourceEvent): Result<OntologyMutation[]>;
+// integration-runtime/src/port.ts
+export interface SourceAdapter {
+  readonly system: SourceSystem;
+  /** 'memoire-connector@0.2.0' — recorded in provenance so a fact names the build that translated it. */
+  readonly connector: string;
+  /** What the adapter promises each object type looks like. Drift is detected against this. */
+  readonly contracts: readonly SchemaContract[];
+  /** READ-ONLY. */
+  pull(scope: Scope, cursor: string | null, limit?: number): Promise<Result<PullResult>>;
+  /** Pure: a source record in the source's own words -> ontology entities, relationships, aliases and SOURCE facts. */
+  translate(record: SourceRecord): Result<Translation>;
 }
-
-export type SourceEvent = {
-  eventType: string;                 // 'opportunity.updated'
-  occurredAt: string;
-  sourceSystem: string;
-  sourceRef: string;
-  payload: Record<string, unknown>;
-  idempotencyKey: string;
-};
-
-export type OntologyMutation =
-  | { kind: 'entity'; input: EntityInput }
-  | { kind: 'relationship'; input: RelationshipInput }
-  | { kind: 'observation'; input: ObservationInput };
 ```
 
-`translate` being pure is what makes connectors testable with fixtures and no
-network, and it is where every source-specific field name is confined.
+`translate` being pure is what makes an adapter testable with fixtures and no network,
+and it is where every source-specific field name is confined. A translation can only
+produce `ACTUAL`, `FORECAST` or `TARGET` facts; one that produces anything else is
+quarantined. Write-back is a separate object, `WritebackAdapter`, with `describe` (what a
+live write *would* be) and `supportedOperations` — **no method that sends**
+([ADR-0030](../adr/0030-integration-fabric.md)).
 
-## 8. LLM provider port (Phase 11)
+## 8. AI provider port
 
 ```ts
-export interface LlmProvider {
-  readonly name: string;
-  complete(req: LlmRequest): Promise<Result<LlmResponse>>;
+// intelligence-runtime/src/provider.ts
+export interface AiProvider extends ProviderIdentity {   // { id, model, modelVersion }
+  /** Only for open-ended asks: which of the catalogued tools to call. Contextual tasks use a fixed plan. */
+  plan?(input: PlanInput): Promise<readonly ToolCall[]>;
+  synthesize(input: SynthesisInput): Promise<Draft>;
 }
-
-export type LlmRequest = {
-  purpose: 'summarize' | 'explain' | 'generate_options' | 'critique' | 'synthesize';
-  /** Grounding is required: the model may reference only what is in here. */
-  context: GroundedContext;
-  instruction: string;
-  maxTokens: number;
-  schema?: JsonSchema;               // structured output when applicable
-};
-
-export type GroundedContext = {
-  scope: Scope;
-  entities: Entity[];
-  observations: ValueObservation[];
-  explanations: Explanation[];
-  assumptions: Assumption[];
-  lessons: Lesson[];
-  /** Assembled by the kernel, never by the model. */
-  provenance: Provenance[];
-};
-
-export type LlmResponse = {
-  text: string;
-  structured?: unknown;
-  /** Must resolve to ids present in the request context. */
-  citedEntityIds: EntityId[];
-  citedObservationIds: string[];
-  uncertainty: 'low' | 'medium' | 'high';
-  provider: string;
-  model: string;
-};
 ```
 
-An AI answer that cites an id absent from its `GroundedContext` is rejected by
-the runtime, not merely flagged. That check is the mechanical implementation of
-"never present hallucinated business facts as truth".
+The provider is handed **plain JSON evidence** (no function, runtime, store or client)
+gathered by the governed read-only tools *as the caller*, and returns a `Draft` of
+classed statements, questions and unknowns. It does not decide what survives: `groundDraft`
+does — a figure no cited evidence returned is removed, a recommendation is removed, a
+hypothesis stated as fact is downgraded, and evidence ids are local to the run. An answer
+that cites anything else is rejected by the runtime, not merely flagged
+([ADR-0032](../adr/0032-governed-intelligence-runtime.md)). The council uses the same port
+with a perspective in the input ([ADR-0033](../adr/0033-agent-council.md)).

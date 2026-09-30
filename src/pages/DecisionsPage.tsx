@@ -8,7 +8,7 @@
  * to the Decision Workspace.
  *
  * Replaces the pre-kernel decision list (retired in Phase 5 — see
- * docs/architecture/decision-engine-assessment.md).
+ * docs/archive/decision-engine-assessment.md).
  */
 
 import { useEffect, useMemo, useState } from 'react';

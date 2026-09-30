@@ -7,7 +7,7 @@
  * Rules (docs/architecture/helm-vs-memoire.md §2.1):
  *   1. No kernel package reads or writes a Memoire-owned table.
  *   2. The app reads Memoire only through the designated bridge module.
- *   3. The only write into Memoire is appending to commercial_events.
+ *   3. HELM never writes to Memoire — no insert, upsert, update or delete on a Memoire table anywhere.
  *   4. No migration alters or drops a Memoire-owned object.
  *   5. HELM never claims a Memoire-owned table name (see ADR-0005).
  */
@@ -35,9 +35,8 @@ const MEMOIRE_TABLES = [
   'early_access_requests', 'product_funnel_events', 'product_events',
 ];
 
-/** The one module allowed to touch Memoire, and the one table it may append to. */
+/** The one module allowed to read Memoire. */
 const BRIDGE = 'src/services/memoireBridge.ts';
-const APPENDABLE = 'commercial_events';
 
 function walk(dir, exts, out = []) {
   if (!existsSync(dir)) return out;
@@ -84,22 +83,19 @@ for (const file of codeFiles) {
   }
 }
 
-// ------------------------------------- 3: the only Memoire write is an append
+// --------------------------------------------- 3: HELM never writes to Memoire
 
+// The bridge once appended a `commercial_events` row when a decision was approved. That write is
+// retired: a commitment produces action INTENTS, and the integration fabric turns an intent into a
+// DRY-RUN request that sends nothing. So no file — bridge or otherwise — may mutate a Memoire table.
 if (existsSync(join(root, BRIDGE))) {
-  const src = readFileSync(join(root, BRIDGE), 'utf8');
-  // Find every mutating call and the table it targets.
-  for (const m of src.matchAll(
-    /\.from\(\s*['"]([a-z_]+)['"]\s*\)\s*\.\s*(insert|upsert|update|delete)\b/g,
-  )) {
-    const [, table, op] = m;
-    if (!MEMOIRE_TABLES.includes(table)) continue;
-    if (table === APPENDABLE && (op === 'insert' || op === 'upsert')) continue;
-    fail(
-      'memoire-write',
-      join(root, BRIDGE),
-      `${op}() on Memoire-owned "${table}" — only appending to ${APPENDABLE} is permitted`,
-    );
+  for (const file of codeFiles) {
+    const src = readFileSync(file, 'utf8');
+    for (const m of src.matchAll(/\.from\(\s*['"]([a-z_]+)['"]\s*\)\s*\.\s*(insert|upsert|update|delete)\b/g)) {
+      const [, table, op] = m;
+      if (!MEMOIRE_TABLES.includes(table)) continue;
+      fail('memoire-write', file, `${op}() on Memoire-owned "${table}" — HELM never writes to Memoire`);
+    }
   }
 } else {
   failures.push({

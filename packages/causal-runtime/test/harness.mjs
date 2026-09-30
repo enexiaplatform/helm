@@ -15,8 +15,8 @@ export { ADMIN, MEMBERSHIP, UNITS, USERS, item, itemsOf, unwrap, valueKey };
 export { expectFail } from '../../twin-runtime/test/harness.mjs';
 export const DEMO_UNITS = MERIDIAN_DEMO_UNITS;
 
-export async function buildCausalStack() {
-  const s = await buildStory();
+export async function buildCausalStack(existing = null) {
+  const s = existing ?? (await buildStory());
   const causalStore = createInMemoryCausalStore({ clock: s.clock, idGen: seqIdGen('c') });
   const causal = createCausalGraph({ store: causalStore, graph: s.graph, metrics: buildSeedValueRegistry(), calculations: s.registry, clock: s.clock });
   return { ...s, causalStore, causal };

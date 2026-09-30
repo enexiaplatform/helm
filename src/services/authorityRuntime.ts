@@ -21,8 +21,6 @@ import {
   MERIDIAN_DEMO_PEOPLE,
   MERIDIAN_DEMO_UNITS,
   MERIDIAN_DEMO_USERS,
-  buildCallOffScenario,
-  buildProofDecision,
   canSeeDecision,
   createAuthorityRuntime,
   createTrustedAuthorityService,
@@ -89,18 +87,16 @@ const SEATS: Readonly<Record<keyof typeof MERIDIAN_DEMO_USERS, string>> = {
   industrialHead: 'Industrial BU Head Vietnam',
 };
 
-const must = <T>(r: { ok: true; value: T } | { ok: false; error: { message: string } }, what: string): T => {
-  if (!r.ok) throw new Error(`${what}: ${r.error.message}`);
-  return r.value;
-};
-
 function getDemoGovernance(scope: Scope): Promise<GovernanceContext> {
   if (demoGovernance) return demoGovernance;
   demoGovernance = (async () => {
     const decisions = await resolveDecisionContext('demo', scope);
     if (!decisions) throw new Error('the demo decision workspace is unavailable');
+    const { resolveTwinContext } = await import('./twinRuntime.ts');
+    const twinClock = (await resolveTwinContext('demo', scope))?.kernel.clock;
+    if (!twinClock) throw new Error('the demonstration world is unavailable');
     // The structure (roles, occupancies, DOA-2026-04) was recorded by the
-    // decision service before it committed anything; reuse that runtime.
+    // story before it committed anything; reuse that runtime.
     const runtime = decisions.demoAuthority;
     const store = decisions.demoAuthorityStore;
     if (!runtime || !store) throw new Error('the demo authority runtime was not seeded');
@@ -113,7 +109,7 @@ function getDemoGovernance(scope: Scope): Promise<GovernanceContext> {
         decisions: decisions.store,
         scenarios: decisions.scenarios.runtime,
         graph: graphs.graphStore,
-        clock: systemClock,
+        clock: twinClock,
         evaluator: { kind: 'TRUSTED_SERVICE', host: 'in-process (demo)' },
       }),
       store,
@@ -143,81 +139,8 @@ function getDemoGovernance(scope: Scope): Promise<GovernanceContext> {
     const act = async (caller: UserId, requiredApprovalId: string, decision: ApprovalDecisionKind, comments: string) =>
       outcome(await trusted.handle({ userId: caller }, { op: OP[decision], orgId: scope.orgId, requiredApprovalId, comments }));
 
-    const cd = scopeAs(scope, MERIDIAN_DEMO_USERS.commercialDirector);
-    const unit = (id: string) => MERIDIAN_DEMO_UNITS.find((u) => u.id === id)!;
-    const share = async (decisionId: string, unitIds: string[]) => {
-      for (const id of unitIds) {
-        must(await runtime.grantVisibility(cd, decisionId, { orgUnitId: id, orgUnitLabel: unit(id).label, reason: 'Demo: the units this decision concerns' }), 'share');
-      }
-    };
-
-    // 1. The canonical Rohto commitment: classified, shared, evaluated, approved.
-    if (decisions.canonicalDecisionId) {
-      const id = decisions.canonicalDecisionId;
-      must(await runtime.declareGovernanceProfile(cd, id, { decisionTypeKey: 'INVENTORY_ALLOCATION', note: 'Allocation of SKU-X stock to the Rohto order.' }), 'classify');
-      await share(id, ['unit-vn-pharma', 'unit-vn-finance']);
-      const commitments = must(await decisions.store.listCommitments(scope, id), 'commitments');
-      const commitment = commitments[commitments.length - 1];
-      if (commitment) {
-        const evaluated = await evaluate(MERIDIAN_DEMO_USERS.countryGM, commitment.id);
-        if (!evaluated.ok) throw new Error(`evaluate the Rohto commitment: ${evaluated.message}`);
-        const required = evaluated.body.required as { id: string; roleLabel: string }[];
-        const gm = required.find((r) => r.roleLabel === SEATS.countryGM);
-        if (gm) {
-          const approved = await act(
-            MERIDIAN_DEMO_USERS.countryGM,
-            gm.id,
-            'APPROVE',
-            'Approved within Country GM authority. The distributor-buffer risk is accepted for the quarter.',
-          );
-          if (!approved.ok) throw new Error(`Country GM approval: ${approved.message}`);
-        }
-      }
-    }
-
-    // 2. A smaller commitment inside the Commercial Director's own line.
-    const callOff = must(
-      await buildCallOffScenario(decisions.scenarios.runtime, scope, decisions.scenarios.graphs.nodeHandles ?? {}, decisions.scenarios.defaultFork),
-      'call-off scenario',
-    );
-    const small = must(
-      await buildProofDecision(decisions.runtime, cd, {
-        title: 'Rohto 2027-Q1 framework call-off',
-        managementQuestion: 'How should Meridian serve the Rohto framework call-off in 2027-Q1?',
-        scenarioId: callOff.scenarioId,
-        alternativeLabel: 'Call off from standard replenishment',
-        committedByLabel: 'Commercial Director Vietnam',
-      }),
-      'call-off decision',
-    );
-    must(await runtime.declareGovernanceProfile(cd, small.decision.id, { decisionTypeKey: 'INVENTORY_ALLOCATION' }), 'classify call-off');
-    await share(small.decision.id, ['unit-vn-pharma']);
-    if (small.commitment) {
-      const r = await evaluate(MERIDIAN_DEMO_USERS.commercialDirector, small.commitment.id);
-      if (!r.ok) throw new Error(`evaluate the call-off: ${r.message}`);
-    }
-
-    // 3. One left pending: beyond both the Commercial Director and the Finance line.
-    const alt = decisions.scenarios.scenarioIdsByKey['alternative-product'];
-    if (alt) {
-      const pending = must(
-        await buildProofDecision(decisions.runtime, cd, {
-          title: 'Offer the alternative analyzer to Rohto',
-          managementQuestion: 'Should Meridian serve the Rohto order with the in-stock alternative analyzer?',
-          scenarioId: alt,
-          alternativeLabel: 'Offer the alternative analyzer',
-          committedByLabel: 'Commercial Director Vietnam',
-        }),
-        'alternative decision',
-      );
-      must(await runtime.declareGovernanceProfile(cd, pending.decision.id, { decisionTypeKey: 'INVENTORY_ALLOCATION' }), 'classify alternative');
-      await share(pending.decision.id, ['unit-vn-pharma', 'unit-vn-finance']);
-      if (pending.commitment) {
-        const r = await evaluate(MERIDIAN_DEMO_USERS.commercialDirector, pending.commitment.id);
-        if (!r.ok) throw new Error(`evaluate the alternative: ${r.message}`);
-      }
-    }
-
+    // The story already framed, committed, shared and (where it could be) evaluated and approved these decisions through the
+    // same kernels; what is still unevaluated stays unevaluated, and the page can evaluate it as the trusted service would.
     return {
       runtime,
       evaluate,

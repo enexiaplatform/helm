@@ -65,3 +65,8 @@ a new one, so the reasoning history stays readable.
 | [0026](0026-enterprise-causal-graph.md) | The Enterprise Causal Graph — evidence-backed causal claims, kept apart from dependency, correlation and coincidence | accepted | 8 |
 | [0027](0027-causal-evidence-policy.md) | The causal evidence policy — a hierarchy with ceilings, count never decides | accepted | 8 |
 | [0028](0028-management-genome.md) | The Management Genome — organizational memory of situations, beliefs, choices and outcomes; process and outcome kept apart, no person rated | accepted | 9 |
+| [0029](0029-counterfactual-worlds.md) | Counterfactual worlds — anchored, labelled, never collapsed | accepted | 10 |
+| [0030](0030-integration-fabric.md) | The integration fabric — the source owns the fact; HELM ingests it, never duplicates it, never writes back live | accepted | integration |
+| [0031](0031-management-reviews.md) | Management reviews — the operating cadence as a pack of references | accepted | reviews |
+| [0032](0032-governed-intelligence-runtime.md) | The intelligence runtime — a governed, provider-neutral reader that cannot write enterprise truth | accepted | intelligence |
+| [0033](0033-agent-council.md) | The council — perspectives over one truth; an Agent Perspective is not Decision Authority | accepted | agents |

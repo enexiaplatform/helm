@@ -231,7 +231,7 @@ export function GovernancePanel({ view, identities, request, onOpenRequest, onEv
       {pending.length > 0 && (
         <div className="mt-6 grid max-w-[640px] gap-3">
           {identities.length > 0 && (
-            <label className="grid gap-1">
+            <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
               <span className="text-meta text-ink-500">Demo: record the act as</span>
               <select value={asUser} onChange={(e) => setAsUser(e.target.value)} className="rounded-lg border border-ink-300 bg-white px-3 py-2 text-dense">
                 {identities.map((i) => (
@@ -243,7 +243,7 @@ export function GovernancePanel({ view, identities, request, onOpenRequest, onEv
               </span>
             </label>
           )}
-          <label className="grid gap-1">
+          <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
             <span className="text-meta text-ink-500">Comments (a rejection or a return must say why)</span>
             <textarea value={comments} onChange={(e) => setComments(e.target.value)} rows={2} className="rounded-lg border border-ink-300 bg-white px-3 py-2 text-dense" />
           </label>

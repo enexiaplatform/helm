@@ -11,7 +11,9 @@ export type PillTone =
   | 'hypothesis' | 'supported' | 'contested' | 'refuted' | 'correlation'
   /* Phase 9 — the management genome. A pattern that recurred in recorded
      episodes, and a lesson someone other than its author has endorsed. */
-  | 'recurring' | 'endorsed';
+  | 'recurring' | 'endorsed'
+  /* Phase 10–12 — what an AI statement IS. An inference is drawn dashed: it is the model's reading, not a kernel fact. */
+  | 'counterfactual' | 'inference' | 'unknown';
 
 const T: Record<PillTone, string> = {
   actual: 'bg-emerald-50 text-emerald-700',
@@ -36,6 +38,9 @@ const T: Record<PillTone, string> = {
   correlation: 'bg-sky-50 text-sky-800',
   recurring: 'bg-cyan-50 text-cyan-800',
   endorsed: 'bg-lime-50 text-lime-800',
+  counterfactual: 'bg-indigo-100 text-indigo-900',
+  inference: 'border border-dashed border-ink-300 bg-white text-ink-600',
+  unknown: 'bg-red-50 text-red-700',
 };
 
 export function Pill({ tone = 'neutral', children, className }: { tone?: PillTone; children: ReactNode; className?: string }) {

@@ -44,6 +44,7 @@ import { PageHeader } from '../components/ui/PageHeader.tsx';
 import { SectionHead } from '../components/ui/SectionHead.tsx';
 import { EmptyState } from '../components/ui/EmptyState.tsx';
 import { Notice } from '../components/ui/Notice.tsx';
+import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.tsx';
 import { FactRow } from '../components/ui/FactRow.tsx';
 import { Pill, type PillTone } from '../components/ui/Pill.tsx';
 import { cn } from '../lib/cn.ts';
@@ -292,7 +293,7 @@ export function TwinPage() {
       ]
     : [];
 
-  const select = 'rounded-lg border border-ink-200 bg-white px-3 py-2 text-ui';
+  const select = 'max-w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-ui';
 
   return (
     <>
@@ -311,7 +312,7 @@ export function TwinPage() {
       )}
 
       <div className="mt-6 flex flex-wrap gap-4">
-        <label className="grid gap-1">
+        <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">Scope</span>
           <select className={select} value={scopeKey} onChange={(e) => setScopeKey(e.target.value)}>
             {ctx.scopes.map((x) => {
@@ -320,19 +321,19 @@ export function TwinPage() {
             })}
           </select>
         </label>
-        <label className="grid gap-1">
+        <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">Read as</span>
           <select className={select} value={viewerKey} onChange={(e) => setViewerKey(e.target.value)}>
             {ctx.viewers.map((v) => <option key={v.key} value={v.key}>{v.label}</option>)}
           </select>
         </label>
-        <label className="grid gap-1">
+        <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">State</span>
           <select className={select} value={aId} onChange={(e) => setAId(e.target.value)}>
             {snapshots.map((x) => <option key={x.id} value={x.id}>{x.spec.label}</option>)}
           </select>
         </label>
-        <label className="grid gap-1">
+        <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">Compared with</span>
           <select className={select} value={bId} onChange={(e) => setBId(e.target.value)}>
             {snapshots.map((x) => <option key={x.id} value={x.id}>{x.spec.label}</option>)}
@@ -465,6 +466,7 @@ export function TwinPage() {
                   ))}
                 </div>
               )}
+              <IntelligencePanel task="EXPLAIN_TWIN_CHANGE" params={{ fromId: a.id, toId: b.id }} viewer={viewer} label="Explain what changed" detail="A grounded reading of the change above: each statement is classed as a source fact or a model result and points at the twin item it rests on." />
             </section>
           )}
 

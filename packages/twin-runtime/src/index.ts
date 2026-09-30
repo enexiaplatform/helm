@@ -47,4 +47,4 @@ export {
   Q4_ACTUAL_FULFILMENT_COST,
   Q4_ACTUAL_GM_PCT,
 } from './meridianTwin.ts';
-export type { MeridianTwinDeps, MeridianTwinStory } from './meridianTwin.ts';
+export type { MeridianTwinDeps, MeridianTwinHooks, MeridianTwinStory } from './meridianTwin.ts';

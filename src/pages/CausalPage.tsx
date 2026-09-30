@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { ClaimExplanation, ClaimView, CorrelationFinding, EvidenceAssessment, ModelDependency, ProjectedCausalView, QuestionInvestigation, Traversal } from '@helm/causal-runtime';
+import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.tsx';
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
 import {
@@ -180,7 +181,7 @@ export function CausalPage() {
   const questions = questionsState && questionsState.key === key ? questionsState.value : [];
   const deps = depsState && depsState.key === key ? depsState.value : [];
   const explanation = explainState && explainState.key === `${selected}|${key}` && selectedVisible ? explainState : null;
-  const select = 'rounded-lg border border-ink-200 bg-white px-3 py-2 text-ui';
+  const select = 'max-w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-ui';
   const supported = claims?.claims.filter((v) => v.evaluation.status === 'SUPPORTED').length ?? 0;
 
   return (
@@ -200,13 +201,13 @@ export function CausalPage() {
       )}
 
       <div className="mt-6 flex flex-wrap items-end gap-4">
-        <label className="grid gap-1">
+        <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">Read as</span>
           <select className={select} value={viewerKey} onChange={(e) => setViewerKey(e.target.value)}>
             {ctx.viewers.map((v) => <option key={v.key} value={v.key}>{v.label}</option>)}
           </select>
         </label>
-        <label className="grid gap-1">
+        <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">As known on</span>
           <select className={select} value={lensKey} onChange={(e) => setLensKey(e.target.value)}>
             {ctx.lenses.map((l) => <option key={l.key} value={l.key}>{l.label}</option>)}
@@ -358,6 +359,7 @@ export function CausalPage() {
                     { label: 'Author', value: v.claim.authoredByLabel },
                   ]}
                 />
+                <IntelligencePanel task="SUMMARIZE_CAUSAL_EVIDENCE" params={{ causeKey: v.claim.causeKey, effectKey: v.claim.effectKey }} viewer={viewer} label="Summarize the evidence" detail="The evidence for and against every claim about this cause and effect, each keeping its own status. A hypothesis stays a hypothesis." />
                 {ex.conditions.map((c, i) => <p key={i} className="mt-2 font-mono text-meta text-ink-600">{c.statement}</p>)}
                 {ex.confounders.map((c) => (
                   <p key={c.variableKey} className="mt-2 text-dense text-ink-700">

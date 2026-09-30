@@ -1,22 +1,23 @@
-import type { ReactNode, MouseEvent } from 'react';
+import { useState, type ReactNode, type MouseEvent } from 'react';
 import { HelmLockup } from '../brand/HelmLogo.tsx';
 import { cn } from '../../lib/cn.ts';
 
 export interface NavItem { key: string; label: string; group?: 'Management' | 'Kernel' }
 export const HELM_NAV: NavItem[] = [
-  { key: 'attention', label: 'Attention', group: 'Management' },
+  { key: 'cockpit', label: 'Cockpit', group: 'Management' },
+  { key: 'reviews', label: 'Reviews' },
   { key: 'decisions', label: 'Decisions' },
-  { key: 'scenarios', label: 'Scenarios' },
-  { key: 'economics', label: 'Economics' },
-  { key: 'operations', label: 'Operations' },
-  { key: 'memory', label: 'Memory' },
-  { key: 'ontology', label: 'Ontology', group: 'Kernel' },
-  { key: 'value-graph', label: 'Value Graph' },
-  { key: 'calculations', label: 'Calculations' },
-  { key: 'governance', label: 'Governance' },
+  { key: 'memory', label: 'Decision memory' },
+  { key: 'scenarios', label: 'Scenarios', group: 'Kernel' },
   { key: 'twin', label: 'Twin' },
   { key: 'causal', label: 'Causal' },
+  { key: 'counterfactuals', label: 'Counterfactuals' },
   { key: 'genome', label: 'Genome' },
+  { key: 'governance', label: 'Governance' },
+  { key: 'sources', label: 'Sources' },
+  { key: 'ontology', label: 'Ontology' },
+  { key: 'value-graph', label: 'Value Graph' },
+  { key: 'calculations', label: 'Calculations' },
 ];
 
 interface Props {
@@ -25,6 +26,7 @@ interface Props {
   /** Real addresses, so a nav item can be opened in a new tab. */
   hrefFor?: (key: string) => string;
   items?: NavItem[];
+  /** Attention conditions in the latest current state — the one place brass shows in the nav. */
   openSignals?: number;
   orgName: string;
   /** More than one organization → the org box becomes a picker. */
@@ -40,7 +42,7 @@ interface Props {
   error?: string | null;
   onSignOut?: () => void;
   onSettings?: () => void;
-  /** instrument pages (Scenarios, Value Graph, Ontology, Calculations, Governance) run full width */
+  /** instrument pages (Scenarios, Twin, Causal, Counterfactuals, Genome, Governance, Sources, Ontology, Value Graph, Calculations) run full width */
   wide?: boolean;
   children: ReactNode;
 }
@@ -49,15 +51,36 @@ interface Props {
    brass = current page, 18% paper = idle. Brass count pill on Attention only.
    Main area has a thin mono strip (demo notice + the two clocks) instead of a banner. */
 export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items = HELM_NAV, openSignals = 0, orgName, orgs = [], activeOrgId, onOrgChange, userLabel, demo, effectiveAsOf, recordedThrough, error, onSignOut, onSettings, wide, children }: Props) {
+  // Below 768px the sidebar is a menu behind a bar: the content keeps the whole width instead of being squeezed beside it.
+  const [menuOpen, setMenuOpen] = useState(false);
   const go = (k: string) => (e: MouseEvent) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
     e.preventDefault();
+    setMenuOpen(false);
     onNavigate(k);
   };
   return (
-    <div className="flex min-h-screen bg-paper">
-      <aside className="sticky top-0 z-40 flex h-screen w-sidebar shrink-0 flex-col self-start overflow-y-auto bg-navy text-paper">
-        <div className="px-[22px] pb-[22px] pt-[26px]"><HelmLockup height={26} tone="dark" /></div>
+    <div className="flex min-h-screen flex-col bg-paper md:flex-row">
+      <div className="flex items-center justify-between bg-navy px-5 py-3 text-paper md:hidden">
+        <HelmLockup height={22} tone="dark" />
+        <button
+          type="button"
+          aria-expanded={menuOpen}
+          aria-controls="helm-nav"
+          onClick={() => setMenuOpen((o) => !o)}
+          className="rounded-lg border border-chrome-line px-3 py-1 text-dense font-medium transition-colors ease-helm hover:bg-chrome-hover"
+        >
+          {menuOpen ? 'Close' : 'Menu'}
+        </button>
+      </div>
+      <aside
+        id="helm-nav"
+        className={cn(
+          'z-40 w-full shrink-0 flex-col overflow-y-auto bg-navy text-paper md:sticky md:top-0 md:flex md:h-screen md:w-sidebar md:self-start',
+          menuOpen ? 'flex' : 'hidden',
+        )}
+      >
+        <div className="hidden px-[22px] pb-[22px] pt-[26px] md:block"><HelmLockup height={26} tone="dark" /></div>
         <div className="mx-[14px] mb-2 grid gap-px rounded-lg border border-chrome-line px-3 py-[9px]">
           <span className="font-sans text-tag font-medium uppercase text-chrome-muted">Organization</span>
           {orgs.length > 1 && onOrgChange ? (
@@ -90,7 +113,7 @@ export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items =
                 >
                   <span className={cn('h-[6px] w-[6px] rounded-full', on ? 'bg-brass-400' : 'bg-paper/20')} />
                   <span className="flex-1">{it.label}</span>
-                  {it.key === 'attention' && openSignals > 0 && (
+                  {it.key === 'cockpit' && openSignals > 0 && (
                     <span className="rounded-full bg-brass-400 px-[7px] font-mono text-[11px] font-bold leading-[18px] text-navy">{openSignals}</span>
                   )}
                 </a>
@@ -108,15 +131,15 @@ export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items =
       </aside>
       <main className="min-w-0 flex-1">
         {(demo || effectiveAsOf) && (
-          <div className="flex flex-wrap justify-between gap-x-6 gap-y-2 border-b border-ink-200 px-page-x py-3 font-mono text-meta text-ink-500">
+          <div className="flex flex-wrap justify-between gap-x-6 gap-y-2 border-b border-ink-200 px-5 py-3 font-mono text-meta text-ink-500 md:px-page-x">
             <span>{demo ? 'Demo organization · local sample data, nothing syncs' : orgName}</span>
             {effectiveAsOf && <span>Effective {effectiveAsOf} · recorded through {recordedThrough}</span>}
           </div>
         )}
         {error && (
-          <p role="alert" className="border-b border-red-200 bg-red-50 px-page-x py-3 text-dense text-red-700">{error}</p>
+          <p role="alert" className="border-b border-red-200 bg-red-50 px-5 py-3 text-dense text-red-700 md:px-page-x">{error}</p>
         )}
-        <div className={wide ? 'px-page-x pb-[72px] pt-8' : 'mx-auto max-w-management px-page-x pb-[72px] pt-page-y'}>{children}</div>
+        <div className={wide ? 'px-5 pb-[72px] pt-8 md:px-page-x' : 'mx-auto max-w-management px-5 pb-[72px] pt-page-y md:px-page-x'}>{children}</div>
       </main>
     </div>
   );

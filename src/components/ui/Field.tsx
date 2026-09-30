@@ -7,7 +7,7 @@ export const controlClass =
 
 /** The compact control for toolbars and inline filters. */
 export const controlSmClass =
-  'rounded-lg border border-ink-300 bg-white px-[10px] py-[6px] text-dense text-ink-950 placeholder:text-ink-400 focus-visible:border-accent-500';
+  'max-w-full rounded-lg border border-ink-300 bg-white px-[10px] py-[6px] text-dense text-ink-950 placeholder:text-ink-400 focus-visible:border-accent-500';
 
 /* Label 12/500 ink-600 over any control, with an optional hint beneath. */
 export function Field({ label, hint, className, children }: { label: string; hint?: string; className?: string; children: ReactNode }) {

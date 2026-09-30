@@ -1,0 +1,29 @@
+{
+  "name": "@helm/counterfactual-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "HELM Counterfactual Engine: ex-post alternative worlds anchored to the historical decision boundary, two retrospective lenses (as known then, with hindsight) kept apart, model-based estimates labelled as such with causal support judged separately from the Causal Graph, layered comparison of expected, actual and alternative — with no regret score, no verdict and no fake certainty.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./postgres": "./src/postgres.ts",
+    "./conformance": "./src/conformance.ts"
+  },
+  "helm": {
+    "layer": "kernel",
+    "pure": false,
+    "ioBoundary": "src/postgres.ts"
+  },
+  "dependencies": {
+    "@helm/shared": "0.1.0",
+    "@helm/ontology": "0.1.0",
+    "@helm/graph-store": "0.1.0",
+    "@helm/value-graph": "0.1.0",
+    "@helm/propagation-engine": "0.1.0",
+    "@helm/scenario-runtime": "0.1.0",
+    "@helm/decision-runtime": "0.1.0",
+    "@helm/authority-runtime": "0.1.0",
+    "@helm/twin-runtime": "0.1.0",
+    "@helm/causal-runtime": "0.1.0"
+  }
+}

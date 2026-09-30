@@ -31,7 +31,7 @@ export type GenomeLens = TwinLens;
 export type GenomeScope = CausalScope;
 
 /** A pointer to something that already exists — the episode holds references, never copies. */
-export type GenomeRefKind = CausalRefKind | 'CAUSAL_CLAIM' | 'MANAGEMENT_EPISODE' | 'MANAGEMENT_PATTERN';
+export type GenomeRefKind = CausalRefKind | 'CAUSAL_CLAIM' | 'MANAGEMENT_EPISODE' | 'MANAGEMENT_PATTERN' | 'COUNTERFACTUAL_CASE';
 export type GenomeRef = {
   readonly kind: GenomeRefKind;
   readonly id: string;
@@ -85,6 +85,8 @@ export const episodeRefRoles = [
   'CAUSAL_CONTEXT',
   'GOVERNANCE_EVALUATION',
   'OUTCOME_REVIEW',
+  /** A counterfactual case reviewing this episode's own decision — beside, never inside, how management decided and what happened (ADR-0029 §9). */
+  'COUNTERFACTUAL_CASE',
 ] as const;
 export type EpisodeRefRole = (typeof episodeRefRoles)[number];
 

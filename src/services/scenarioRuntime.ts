@@ -12,8 +12,6 @@
  */
 
 import {
-  buildMeridianScenarios,
-  createInMemoryScenarioStore,
   createScenarioRuntime,
   meridianConstraintsV1,
   meridianStateFrame,
@@ -30,7 +28,6 @@ import {
   periodContaining,
   periodKey,
   systemClock,
-  uuidIdGen,
   type Period,
   type QuantityUnit,
   type Scope,
@@ -53,12 +50,6 @@ export type ScenarioWorkspace = {
   scenarioIdsByKey: Readonly<Record<string, string>>;
 };
 
-/**
- * The business instant the canonical Meridian data describes. The demo forks
- * here so its numbers are the ones the docs and tests state.
- */
-const CANONICAL_EFFECTIVE = '2026-09-19T12:00:00.000Z';
-
 let demoWorkspace: Promise<ScenarioWorkspace> | null = null;
 
 function buildRuntime(graphs: HelmGraphs, store: ScenarioStore): ScenarioRuntime {
@@ -74,36 +65,26 @@ function buildRuntime(graphs: HelmGraphs, store: ScenarioStore): ScenarioRuntime
   });
 }
 
-/** Demo: canonical scenarios built and simulated once, in memory. */
+/** Demo: the scenario workspace of the ONE demonstration world (the twin's), with its canonical futures already simulated. */
 function getDemoWorkspace(scope: Scope): Promise<ScenarioWorkspace> {
   if (demoWorkspace) return demoWorkspace;
   demoWorkspace = (async () => {
     const graphs = await getDemoGraphs();
-    const runtime = buildRuntime(graphs, createInMemoryScenarioStore({ clock: systemClock, idGen: uuidIdGen }));
-    const fork: ForkPoint = {
-      effectiveAsOf: CANONICAL_EFFECTIVE,
-      recordedThrough: systemClock.now().toISOString(),
-      policy: 'SOURCE_TRUTH',
-    };
-    const built = await buildMeridianScenarios(runtime, scope, graphs.nodeHandles ?? {}, { fork });
-    if (!built.ok) throw new Error(`canonical scenarios failed: ${built.error.message}`);
-    const baseline = await runtime.executeBaseline(scope, { fork, periods: [Q4_2026], notes: 'demo baseline' });
-    if (!baseline.ok) throw new Error(`baseline failed: ${baseline.error.message}`);
-    const scenarioIdsByKey: Record<string, string> = {};
-    for (const [key, { scenario }] of Object.entries(built.value)) {
-      const run = await runtime.execute(scope, scenario.id);
-      if (!run.ok) throw new Error(`scenario ${scenario.key} failed: ${run.error.message}`);
-      scenarioIdsByKey[key] = scenario.id;
-    }
+    const { resolveTwinContext } = await import('./twinRuntime.ts');
+    const twin = await resolveTwinContext('demo', scope);
+    const k = twin?.kernel;
+    if (!k?.demoWorld || !k.scenarioIds) throw new Error('the demonstration world is unavailable');
+    const baselines = await k.scenarios.listRuns(scope);
+    const latestBaseline = baselines.ok ? baselines.value.filter((r) => r.stateKind === 'BASELINE').at(-1) : undefined;
     return {
-      runtime,
+      runtime: k.scenarios,
       graphs,
       scope,
       mode: 'demo' as const,
-      defaultFork: fork,
+      defaultFork: k.demoWorld.fork,
       periodChoices: [Q4_2026, Q1_2027],
-      baselineRunId: baseline.value.run.id,
-      scenarioIdsByKey,
+      baselineRunId: latestBaseline?.id ?? null,
+      scenarioIdsByKey: k.scenarioIds,
     };
   })();
   return demoWorkspace;

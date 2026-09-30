@@ -18,7 +18,7 @@ React 19 + Vite + TypeScript + Tailwind 3. Tokens live ONLY in `tailwind.config.
 ## Layout principles (the v2 fix for "generic dashboard")
 1. **Headlines answer, not label.** Management pages open with a serif sentence stating the situation ("Two signals cannot wait. Four need a look this week."), not the page name.
 2. **Rules, not boxes.** Group content with `SectionHead` (serif title over a 2px `border-ink-950` rule) and rows separated by 1px `border-ink-200` hairlines. Never nest cards. White cards are only for: evidence grids, the metric side panel, link cards.
-3. **Severity decides treatment.** Critical items get full editorial rows (`SignalArticle`); lesser items get one scannable line (`SignalLine`). Don't render everything at the same weight.
+3. **Severity decides treatment.** Conditions that cannot wait get a full editorial row (serif title, cause, evidence); lesser ones get one scannable line. Don't render everything at the same weight — and never sum them into one score.
 4. **Two columns on management pages:** main `flex-[1_1_560px]` + aside `max-w-[360px]`, gap 40px, wrapping below ~960px. Content max width 1240px, padding 36 × 40.
 5. **One primary button per view.**
 
@@ -29,11 +29,12 @@ React 19 + Vite + TypeScript + Tailwind 3. Tokens live ONLY in `tailwind.config.
 - No emoji, no exclamation marks, no marketing adjectives. Loading = present-progressive sentence.
 
 ## Components (src/components)
-`brand/HelmLogo` (HelmLockup, HelmSymbol, HelmWordmark, HelmAppIcon) · `shell/AppShell` (`wide` for instrument pages) · `ui/{Button, Pill, PageHeader, SectionHead, FactRow, MetricList, TextField}` · `attention/{SignalArticle, SignalLine, EvidenceGrid}` · `decision/{CommitmentBanner, CriteriaMatrix, AssumptionList, ChallengeList, DecisionRow, GovernancePanel}` · `scenario/{ScenarioCompare, OverrideList, FeasibilityList, LineageTree}` · `memory/MemoryEntry` · `graph/{NodeIndex, NodeDetail}`. Compose pages from these; see `src/pages/*.v2.example.tsx`.
+`brand/HelmLogo` (HelmLockup, HelmSymbol, HelmWordmark, HelmAppIcon) · `shell/AppShell` (`wide` for instrument pages) · `ui/{Button, Pill, PageHeader, SectionHead, FactRow, MetricList, TextField}` · `decision/{CommitmentBanner, CriteriaMatrix, AssumptionList, ChallengeList, DecisionRow, GovernancePanel}` · `scenario/{ScenarioCompare, OverrideList, FeasibilityList, LineageTree}` · `review/PackView` · `intelligence/{AnswerView, IntelligencePanel, CouncilPanel, AskHelm}` · `memory/MemoryEntry` · `graph/{NodeIndex, NodeDetail}`. Compose pages from these; see `src/pages/CockpitPage.tsx` and `ReviewsPage.tsx` for management pages and `TwinPage.tsx` for an instrument page.
+- AI output is always rendered through `AnswerView`: statement class visible, evidence citable, what was removed and withheld said out loud, and the notice that it is interpretation, not enterprise truth. The council is progressive disclosure — the brief first, the perspectives behind it — and shows tensions side by side with no winner.
 
 ## Registers
-- Management pages: 1240px cap, kicker "Management · …", headline = computed sentence (serif 44).
-- Instrument pages (Scenarios, Value Graph, Ontology, Calculations, Governance, Twin, Causal, Genome): `AppShell wide`, kicker "Kernel instrument · …", serif 28 title naming the object, raw enums, runs and fingerprints visible.
+- Management pages (Cockpit, Reviews, Decisions): 1240px cap, kicker "Management · …", headline = computed sentence (serif 44).
+- Instrument pages (Scenarios, Value Graph, Ontology, Calculations, Governance, Twin, Causal, Genome, Counterfactuals, Sources): `AppShell wide`, kicker "Kernel instrument · …", serif 28 title naming the object, raw enums, runs and fingerprints visible.
 - Brand graphics (chart grid, brass heading line) appear only on Auth.
 
 ## Logo

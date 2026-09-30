@@ -65,6 +65,10 @@ c.check('classes-derived', /sensitivity_classes text\[\] NOT NULL CHECK \(sensit
 c.check('references-only', !/\b(numeric|double precision|real)\b/.test(episodes) && !/\b(numeric|double precision|real)\b/.test(table('helm_genome_episode_refs')), 'an episode or its reference row stores a number: an episode copies nothing');
 const refs = table('helm_genome_episode_refs');
 c.check('ref-roles', /role text NOT NULL CHECK \(role IN \('SITUATION_SNAPSHOT', 'COMMITTED_FUTURE', 'OUTCOME_SNAPSHOT', 'CAUSAL_CONTEXT', 'GOVERNANCE_EVALUATION', 'OUTCOME_REVIEW'\)\)/.test(refs), 'the reference roles are not the six of ADR-0028');
+// ADR-0029 widens the set by one — a counterfactual case of the episode's own decision — in the counterfactual migration.
+const cfPath = join(process.cwd(), 'supabase', 'migrations', '20260930120000_helm_counterfactuals.sql');
+const cfSql = existsSync(cfPath) ? readFileSync(cfPath, 'utf8').replace(/--[^\r\n]*/g, ' ') : '';
+c.check('ref-roles', /helm_genome_episode_refs_role_check\s+CHECK \(role IN \('SITUATION_SNAPSHOT', 'COMMITTED_FUTURE', 'OUTCOME_SNAPSHOT', 'CAUSAL_CONTEXT', 'GOVERNANCE_EVALUATION', 'OUTCOME_REVIEW', 'COUNTERFACTUAL_CASE'\)\)/.test(cfSql), 'the reference roles are not the seven of ADR-0028 and ADR-0029');
 c.check('ref-once', /helm_genome_episode_refs_once ON public\.helm_genome_episode_refs \(episode_id, role, \(ref->>'id'\)\)/.test(sql), 'the same reference can be bound twice in one role');
 
 const patterns = table('helm_genome_patterns');

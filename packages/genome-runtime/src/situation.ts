@@ -13,6 +13,7 @@ import type { Decision, DecisionCommitment, DecisionStore } from '@helm/decision
 import type { ScenarioRuntime } from '@helm/scenario-runtime';
 import type { AuthorityRuntime } from '@helm/authority-runtime';
 import { applicabilityOf, type CausalGraph } from '@helm/causal-runtime';
+import type { CounterfactualRuntime } from '@helm/counterfactual-runtime';
 import { classificationOf, readStructure, sensitivityOfMetric, type SensitivityClass, type StructureView, type TwinRuntime } from '@helm/twin-runtime';
 import type { FeatureAgreement } from './port.ts';
 import { GenomeErrors, featureNames, type FeatureName, type GenomeLens, type GenomeScope, type SituationFeatures } from './types.ts';
@@ -25,6 +26,8 @@ export type GenomeSources = {
   readonly authority: AuthorityRuntime;
   readonly twin: TwinRuntime;
   readonly causal: CausalGraph;
+  /** Read-only: an episode may reference a counterfactual case; the genome validates it and never writes one. */
+  readonly counterfactual: CounterfactualRuntime;
 };
 
 const ms = (t: string) => Date.parse(t);

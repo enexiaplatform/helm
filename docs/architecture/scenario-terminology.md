@@ -32,7 +32,7 @@ comparable — which was the trap Phase 4 §15 called out.
 | --- | --- |
 | *Version* (of a scenario) | Ambiguous between the revision, the model version and the engine version. All three exist; each is named. |
 | *Snapshot* | Suggests copied data. A revision pins a **boundary**, not a copy. |
-| *What-if* | Fine in conversation; too loose for a type. The pre-kernel CVP page used it for something much smaller (see [scenario-engine-assessment](scenario-engine-assessment.md)). |
+| *What-if* | Fine in conversation; too loose for a type. The pre-kernel CVP page used it for something much smaller (see [scenario-engine-assessment](../archive/scenario-engine-assessment.md)). |
 | *Best case / worst case* | Implies an ordering HELM does not compute. Scenarios are named for what they change, not for how good they look. |
 | *Recommendation* | Phase 4 produces none. The verify contract `verify:phase-boundary` fails the build if the word starts appearing in scenario code. |
 

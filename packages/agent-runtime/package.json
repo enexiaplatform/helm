@@ -1,0 +1,18 @@
+{
+  "name": "@helm/agent-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "HELM Multi-Agent Management: specialised management perspectives (commercial, finance, supply chain, operations, risk, strategy, people, enterprise value) over the SAME enterprise truth, instantiated only where HELM holds data for them. Each returns observations, concerns, supporting evidence, challenged assumptions, trade-offs, unknowns and questions; the orchestrator surfaces agreement, disagreement and missing evidence and never votes, ranks, chooses, approves, commits or executes.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "helm": {
+    "layer": "agents",
+    "pure": false
+  },
+  "dependencies": {
+    "@helm/shared": "0.1.0",
+    "@helm/intelligence-runtime": "0.1.0"
+  }
+}

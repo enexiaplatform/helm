@@ -22,7 +22,7 @@ import { fail, ok, type Clock, type Result, type Scope } from '@helm/shared';
 import type { Decision, DecisionAlternative, DecisionAssumption, DecisionChallenge, DecisionCommitment, DecisionCriterion, DecisionEvidence, DecisionOutcomeReview } from '@helm/decision-runtime';
 import { canSeeDecision, type OrgUnit } from '@helm/authority-runtime';
 import { applicabilityOf as causalApplicability, claimsReferencing, type ClaimView } from '@helm/causal-runtime';
-import { isCleared, type StructureView, type TwinViewer } from '@helm/twin-runtime';
+import { isCleared, type SensitivityClass, type StructureView, type TwinViewer } from '@helm/twin-runtime';
 import {
   GENOME_PATTERN_POLICY,
   conditionsHold,
@@ -36,6 +36,7 @@ import { agreements, boundaryOf, checkFeatures, classesOf, deriveSituation, stru
 import type {
   EpisodeClassification,
   EpisodeCausal,
+  EpisodeCounterfactual,
   EpisodeOutcome,
   EpisodeProcess,
   EpisodeView,
@@ -292,6 +293,21 @@ export function createManagementGenome(opts: ManagementGenomeOptions): Managemen
         const p = rec.patterns.find((x) => x.id === e.patternId);
         return p ? [{ patternId: p.id, title: p.title, stance: e.stance }] : [];
       });
+    const counterfactuals: EpisodeCounterfactual[] = [];
+    for (const r of refs.filter((x) => x.role === 'COUNTERFACTUAL_CASE')) {
+      // A case not yet known at the lens did not exist then: it is simply not listed.
+      const cv = await sources.counterfactual.getCase(scope, r.ref.id, lens);
+      if (!cv.ok) continue;
+      counterfactuals.push({
+        caseId: cv.value.case.id,
+        title: cv.value.case.title,
+        question: cv.value.case.question,
+        interventionLabel: cv.value.interventionLabel,
+        status: cv.value.status,
+        lenses: { asKnownThen: cv.value.worlds.asKnownThen !== null, withHindsight: cv.value.worlds.withHindsight !== null },
+        reviews: cv.value.reviews.length,
+      });
+    }
     const status = facts.value.reviews.length > 0 ? 'COMPLETED' : 'OPEN';
     return ok({
       episode,
@@ -302,6 +318,7 @@ export function createManagementGenome(opts: ManagementGenomeOptions): Managemen
       process: processOf(facts.value),
       outcome: outcome.value,
       causal: causal.value,
+      counterfactuals,
       refs,
       patterns: patternLinks,
       statement:
@@ -464,7 +481,7 @@ export function createManagementGenome(opts: ManagementGenomeOptions): Managemen
         scope: sc.value,
         situation: derived.value.features,
         boundary: derived.value.boundary,
-        sensitivityClasses: classesOf(derived.value.features.values.expectedMetric),
+        sensitivityClasses: [...new Set([...classesOf(derived.value.features.values.expectedMetric), ...(input.carriesClasses ?? [])])].sort() as SensitivityClass[],
         visibility: input.visibility ?? 'ORG_WIDE',
         grantedUnitIds: [...(input.grantedUnitIds ?? [])].sort(),
         authoredBy: scope.actorId,
@@ -497,6 +514,7 @@ export function createManagementGenome(opts: ManagementGenomeOptions): Managemen
         CAUSAL_CONTEXT: 'CAUSAL_CLAIM',
         GOVERNANCE_EVALUATION: 'EVALUATION',
         OUTCOME_REVIEW: 'OUTCOME_REVIEW',
+        COUNTERFACTUAL_CASE: 'COUNTERFACTUAL_CASE',
       };
       if (ref.kind !== expectKind[role]) return invalid(`A ${role} reference points at a ${expectKind[role]}, not a ${ref.kind}.`);
       const T0 = ms(e.boundary.recordedThrough);
@@ -518,6 +536,15 @@ export function createManagementGenome(opts: ManagementGenomeOptions): Managemen
         const reviews = await sources.decisions.listOutcomeReviews(scope, e.decisionId);
         if (!reviews.ok) return reviews;
         if (!reviews.value.some((r) => r.id === ref.id)) return invalid("That outcome review does not belong to this episode's decision.");
+      }
+      if (role === 'COUNTERFACTUAL_CASE') {
+        const cv = await sources.counterfactual.getCase(scope, ref.id);
+        if (!cv.ok) return cv;
+        if (cv.value.case.decisionId !== e.decisionId) return invalid("That counterfactual case reviews another decision, not this episode's.");
+        const extra = cv.value.case.sensitivityClasses.filter((k) => !e.sensitivityClasses.includes(k));
+        if (extra.length > 0) {
+          return invalid(`That counterfactual case carries ${extra.join(', ')}, which this episode does not: an episode is read whole, so it can reference only what its readers may read.`);
+        }
       }
       const bound = await store.insertEpisodeRef(scope, { episodeId, role, ref, note: note ?? null, boundBy: scope.actorId });
       if (!bound.ok) return bound;

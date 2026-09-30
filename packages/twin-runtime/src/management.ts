@@ -477,6 +477,8 @@ export async function composeManagement(
         statement: g.statement,
       },
       refs: [
+        // Governance is ABOUT a commitment even before anyone has evaluated it: an unevaluated commitment must still be a twin item.
+        ref('COMMITMENT', commitment.id, commitment.fingerprint, decision.title),
         ...(e ? [ref('EVALUATION', e.id, e.fingerprint, e.result)] : []),
         ...g.requirements.map((r) => ref('REQUIRED_APPROVAL', r.requirement.id, null, r.requirement.roleLabel)),
         ...g.requirements.flatMap((r) => r.acts.map((a) => ref('APPROVAL_ACT', a.id, a.actedAt, a.decision))),

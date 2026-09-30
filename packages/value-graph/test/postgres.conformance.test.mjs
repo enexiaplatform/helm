@@ -109,7 +109,7 @@ if (!configured) {
       // The shared suite arranges cross-org fixtures by writing as scopeB. Against
       // a real database the principal is not a member of org B, so RLS refuses the
       // arrange step — which is itself correct behaviour, verified separately by
-      // the SQL-level isolation proof (see phase-2-implemented.md §Security).
+      // the SQL-level isolation proof (see docs/architecture/layers/value-graph.md §Security).
       skip: [
         'organization A cannot see organization B value nodes',
         'a value link cannot span two organizations',

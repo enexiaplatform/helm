@@ -1,0 +1,25 @@
+{
+  "name": "@helm/integration-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "HELM Integration Fabric: source-agnostic adapters, identity mapping, idempotent ingestion with sync checkpoints, schema-drift detection and governed DRY_RUN writeback. The source system owns the fact; HELM references, canonicalizes, models and interprets it — and never overwrites source truth with model truth.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./postgres": "./src/postgres.ts",
+    "./conformance": "./src/conformance.ts"
+  },
+  "helm": {
+    "layer": "integration",
+    "pure": false,
+    "ioBoundary": "src/postgres.ts"
+  },
+  "dependencies": {
+    "@helm/shared": "0.1.0",
+    "@helm/ontology": "0.1.0",
+    "@helm/graph-store": "0.1.0",
+    "@helm/value-graph": "0.1.0",
+    "@helm/decision-runtime": "0.1.0",
+    "@helm/authority-runtime": "0.1.0"
+  }
+}

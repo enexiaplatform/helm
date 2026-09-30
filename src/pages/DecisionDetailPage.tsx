@@ -9,7 +9,7 @@
  * author; nothing here ranks, scores or suggests an option.
  *
  * Replaces the pre-kernel decision analysis (retired in Phase 5 — see
- * docs/architecture/decision-engine-assessment.md).
+ * docs/archive/decision-engine-assessment.md).
  */
 
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -27,6 +27,8 @@ import { FactRow } from '../components/ui/FactRow.tsx';
 import { Pill, type PillTone } from '../components/ui/Pill.tsx';
 import { Notice } from '../components/ui/Notice.tsx';
 import { EmptyState } from '../components/ui/EmptyState.tsx';
+import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.tsx';
+import { useDefaultViewer } from '../components/intelligence/useDefaultViewer.ts';
 import { CommitmentBanner } from '../components/decision/CommitmentBanner.tsx';
 import { CriteriaMatrix, type MatrixAlt, type MatrixCell, type MatrixRow } from '../components/decision/CriteriaMatrix.tsx';
 import { AssumptionList } from '../components/decision/AssumptionList.tsx';
@@ -83,6 +85,7 @@ function toCell(e: CriterionEvaluation | undefined): MatrixCell {
 
 export function DecisionDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const aiViewer = useDefaultViewer();
   const mode = useHelmStore((s) => s.mode);
   const activeOrgId = useHelmStore((s) => s.activeOrgId);
   const userId = useHelmStore((s) => s.userId);
@@ -218,6 +221,9 @@ export function DecisionDetailPage() {
       )}
 
       <Readiness readiness={readiness} />
+
+      <IntelligencePanel task="SUMMARIZE_ASSUMPTIONS" params={{ decisionId: decision.id }} viewer={aiViewer} label="Summarize the unresolved assumptions" detail="The assumptions this decision rests on, which are unresolved or challenged, and the questions that would settle them, grounded in the decision's own records." />
+      {commitment && <IntelligencePanel task="EXPLAIN_DECISION" params={{ decisionId: decision.id }} viewer={aiViewer} label="Explain why management chose this" detail="The rationale, the accepted trade-offs and the governance state: records, never a verdict on the decision." />}
 
       {/* ------------------------------------------------- why it is on the table */}
       <section className="mt-10">

@@ -12,24 +12,16 @@
  */
 
 import { buildSeedRegistry, type OntologyRegistry } from '@helm/ontology';
-import {
-  createInMemoryGraphStore,
-  buildCanonicalScenario,
-  type GraphStore,
-} from '@helm/graph-store';
+import type { GraphStore } from '@helm/graph-store';
 import { createPostgresGraphStore } from '@helm/graph-store/postgres';
 import {
   buildSeedValueRegistry,
-  buildCanonicalScenarioExtension,
-  buildCanonicalValueChain,
-  createInMemoryValueGraph,
   type ValueGraph,
   type ValueMetricRegistry,
 } from '@helm/value-graph';
 import { createPostgresValueGraph } from '@helm/value-graph/postgres';
 import {
   createCalculationRegistry,
-  createInMemoryCalculationStore,
   createPropagationEngine,
   meridianValueModelV1_1,
   type CalculationRegistry,
@@ -37,7 +29,7 @@ import {
   type PropagationEngine,
 } from '@helm/propagation-engine';
 import { createPostgresCalculationStore } from '@helm/propagation-engine/postgres';
-import { asOrgId, asUserId, systemClock, uuidIdGen, type Scope } from '@helm/shared';
+import { asOrgId, asUserId, systemClock, type Scope } from '@helm/shared';
 import { supabaseClient } from '../lib/supabaseClient.ts';
 
 export const registry: OntologyRegistry = buildSeedRegistry();
@@ -118,49 +110,21 @@ let demoStore: GraphStore | null = null;
 let demoReady: Promise<HelmGraphs> | null = null;
 
 /**
- * The demo graphs, built once per session: the Phase 1 entity graph and the
- * Phase 2 value layer over it. Never syncs — both are memory only, so nothing
+ * The demo graphs: the graphs of the ONE demonstration world the twin builds — the canonical entity graph and value chain, then
+ * the story lived through the kernels (decisions, governance, ingestion, reviews). Every demo page reads this world, so the
+ * Cockpit, the decisions, the value graph and the calculations can never describe different enterprises. Memory only: nothing
  * here can reach the shared database.
  */
 export function getDemoGraphs(): Promise<HelmGraphs> {
   if (demoReady) return demoReady;
   demoReady = (async () => {
-    const scope = demoScope();
-    const graphStore = createInMemoryGraphStore({
-      registry,
-      clock: systemClock,
-      idGen: uuidIdGen,
-    });
-    const entities = await buildCanonicalScenario(graphStore, scope);
-    if (!entities.ok) {
-      throw new Error(`demo graph failed to build: ${entities.error.code} ${entities.error.message}`);
-    }
-
-    const valueGraph = createInMemoryValueGraph({
-      metrics: valueMetrics,
-      ontology: registry,
-      graphStore,
-      clock: systemClock,
-      idGen: uuidIdGen,
-    });
-    const values = await buildCanonicalValueChain(valueGraph, graphStore, scope);
-    if (!values.ok) {
-      throw new Error(`demo value chain failed: ${values.error.code} ${values.error.message}`);
-    }
-    const extension = await buildCanonicalScenarioExtension(valueGraph, graphStore, scope, values.value.nodeIds);
-    if (!extension.ok) {
-      throw new Error(`demo scenario extension failed: ${extension.error.code} ${extension.error.message}`);
-    }
-
-    const store = createInMemoryCalculationStore({ clock: systemClock, idGen: uuidIdGen });
-    demoStore = graphStore;
-    return {
-      graphStore,
-      valueGraph,
-      engine: buildEngine(graphStore, valueGraph, store),
-      store,
-      nodeHandles: { ...values.value.nodeIds, ...extension.value.nodeIds },
-    };
+    // Dynamic: the twin builds on this module's registry and calculations.
+    const { resolveTwinContext } = await import('./twinRuntime.ts');
+    const twin = await resolveTwinContext('demo', demoScope());
+    const k = twin?.kernel;
+    if (!k || !k.demoWorld || !k.valueGraph) throw new Error('the demonstration world is unavailable');
+    demoStore = k.graph;
+    return { graphStore: k.graph, valueGraph: k.valueGraph, engine: k.demoWorld.engine, store: k.demoWorld.calcStore, nodeHandles: k.nodeIds };
   })();
   return demoReady;
 }

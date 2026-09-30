@@ -14,12 +14,12 @@
  *
  * Cloud mode composes over the Postgres stores under the signed-in user's RLS
  * and stores snapshots in helm_twin_snapshots. It has not been exercised end to
- * end (docs/architecture/phase-7-implemented.md, "Cloud-path status").
+ * end (docs/architecture/layers/management-twin.md, "Cloud-path status").
  */
 
 import { createInMemoryGraphStore, buildCanonicalScenario, type GraphStore } from '@helm/graph-store';
-import { createInMemoryValueGraph, buildCanonicalValueChain, buildCanonicalScenarioExtension } from '@helm/value-graph';
-import { createInMemoryCalculationStore, createPropagationEngine } from '@helm/propagation-engine';
+import { createInMemoryValueGraph, buildCanonicalValueChain, buildCanonicalScenarioExtension, type ValueGraph } from '@helm/value-graph';
+import { createInMemoryCalculationStore, createPropagationEngine, type CalculationStore, type PropagationEngine } from '@helm/propagation-engine';
 import { buildMeridianScenarios, createInMemoryScenarioStore, createScenarioRuntime, meridianConstraintsV1, meridianStateFrame, type ScenarioRuntime } from '@helm/scenario-runtime';
 import { createDecisionRuntime, createInMemoryDecisionStore, type DecisionRuntime, type DecisionStore } from '@helm/decision-runtime';
 import { createPostgresDecisionStore } from '@helm/decision-runtime/postgres';
@@ -42,6 +42,7 @@ import {
 import { createPostgresAuthorityStore } from '@helm/authority-runtime/postgres';
 import {
   createInMemoryTwinStore,
+  canSeeSnapshot,
   createTwinRuntime,
   runMeridianTwinStory,
   type ComposedSnapshot,
@@ -59,6 +60,7 @@ import {
   type TwinViewer,
 } from '@helm/twin-runtime';
 import { createPostgresTwinStore } from '@helm/twin-runtime/postgres';
+import { createInMemoryReviewStore, createMeridianReviewDriver, createReviewRuntime, type MeridianReviewDriver, type ReviewRuntime, type ReviewSources } from '@helm/review-runtime';
 import { seqIdGen, systemClock, type Clock, type Scope, type UserId } from '@helm/shared';
 import { supabaseClient } from '../lib/supabaseClient.ts';
 import { calculations, getCloudGraphs, registry, valueMetrics } from './ontologyGraph.ts';
@@ -80,6 +82,7 @@ export type TwinContext = {
   /** The kernel handles the layers above the twin (the causal graph, the genome) build on. */
   readonly kernel: {
     readonly graph: GraphStore;
+    readonly valueGraph: ValueGraph | null;
     readonly clock: Clock & { jumpTo?(iso: string): void };
     readonly decisionStore: DecisionStore;
     readonly authorityStore: AuthorityStore;
@@ -90,6 +93,17 @@ export type TwinContext = {
     readonly nodeIds: Readonly<Record<string, string>> | null;
     /** Demo: the canonical scenarios by key. Null in the cloud. */
     readonly scenarioIds: Readonly<Record<string, string>> | null;
+    /**
+     * Demo: the engine, calculation store and fork of the one demonstration world — so the scenario, decision, governance,
+     * value-graph and calculation pages read the SAME enterprise the twin, the causal graph and the Cockpit do. Null in the cloud.
+     */
+    readonly demoWorld: { readonly engine: PropagationEngine; readonly calcStore: CalculationStore; readonly fork: { readonly effectiveAsOf: string; readonly recordedThrough: string; readonly policy: 'SOURCE_TRUTH' } } | null;
+    /**
+     * Demo: the management review runtime, built BEFORE the story so that Review 1 is lived inside it — opened with the twin's
+     * first snapshot, closed once the commitment is governed. The causal graph, genome and counterfactual engine are attached to
+     * its sources as they come to exist; Review 2 is run after them. Null in the cloud.
+     */
+    readonly demoReview: { readonly review: ReviewRuntime; readonly driver: MeridianReviewDriver; readonly sources: ReviewSources } | null;
   };
 };
 
@@ -130,8 +144,9 @@ function getDemoTwin(scope: Scope): Promise<TwinContext> {
     const chain = must(await buildCanonicalValueChain(valueGraph, graph, scope), 'value chain');
     const ext = must(await buildCanonicalScenarioExtension(valueGraph, graph, scope, chain.nodeIds), 'extension');
     const nodeIds = { ...chain.nodeIds, ...ext.nodeIds };
+    const calcStore = createInMemoryCalculationStore({ clock, idGen });
     const engine = must(
-      createPropagationEngine({ registry: calculations, valueGraph, graphStore: graph, ontology: registry, store: createInMemoryCalculationStore({ clock, idGen }), clock }),
+      createPropagationEngine({ registry: calculations, valueGraph, graphStore: graph, ontology: registry, store: calcStore, clock }),
       'engine',
     );
     const scenarios = createScenarioRuntime({
@@ -181,6 +196,16 @@ function getDemoTwin(scope: Scope): Promise<TwinContext> {
       constraints: meridianConstraintsV1,
     };
     const twin = createTwinRuntime({ store: createInMemoryTwinStore({ clock, idGen }), sources, clock });
+    const reviewSources: ReviewSources = { twin, decisions: decisionStore };
+    const review = createReviewRuntime({ store: createInMemoryReviewStore({ clock, idGen }), sources: reviewSources, clock });
+    const reviewDriver = createMeridianReviewDriver({
+      review,
+      decisions: decisionStore,
+      gm: scopeAs(scope, MERIDIAN_DEMO_USERS.countryGM),
+      periods: ['2026-Q4'],
+      vietnamUnitId: 'unit-vn',
+      advanceTo: (iso) => clock.jumpTo(iso),
+    });
     const story = must(
       await runMeridianTwinStory({
         admin: scope,
@@ -199,6 +224,7 @@ function getDemoTwin(scope: Scope): Promise<TwinContext> {
         nodeIds,
         advanceTo: (iso) => clock.jumpTo(iso),
         units: { vietnam: 'unit-vn', pharma: 'unit-vn-pharma', industrial: 'unit-vn-industrial' },
+        hooks: reviewDriver.hooks,
       }),
       'the twin story',
     );
@@ -208,6 +234,7 @@ function getDemoTwin(scope: Scope): Promise<TwinContext> {
       must(await twin.grantClearance(scope, { userId, sensitivity, validFrom: '2026-01-01T00:00:00.000Z', validTo: null, reason: 'Demo clearance' }), 'clearance');
     await grant(MERIDIAN_DEMO_USERS.countryGM, 'FINANCIAL_SENSITIVE');
     await grant(MERIDIAN_DEMO_USERS.countryGM, 'COMMERCIAL_CONFIDENTIAL');
+    await grant(MERIDIAN_DEMO_USERS.countryGM, 'STRATEGIC_RESTRICTED');
     await grant(MERIDIAN_DEMO_USERS.financeDirector, 'FINANCIAL_SENSITIVE');
     const clearances = must(await twin.listClearances(scope), 'clearances');
     const preset = (key: keyof typeof MERIDIAN_DEMO_USERS, seat: string): TwinViewerPreset => {
@@ -232,7 +259,7 @@ function getDemoTwin(scope: Scope): Promise<TwinContext> {
         preset('industrialHead', 'Industrial BU Head'),
       ],
       units: MERIDIAN_DEMO_UNITS,
-      kernel: { graph, clock, decisionStore, authorityStore, scenarios, authority, decisions, governance, nodeIds, scenarioIds },
+      kernel: { graph, valueGraph, clock, decisionStore, authorityStore, scenarios, authority, decisions, governance, nodeIds, scenarioIds, demoWorld: { engine, calcStore, fork }, demoReview: { review, driver: reviewDriver, sources: reviewSources } },
     };
   })();
   return demoTwin;
@@ -290,6 +317,7 @@ async function getCloudTwin(scope: Scope): Promise<TwinContext | null> {
     units,
     kernel: {
       graph: graphs.graphStore,
+      valueGraph: graphs.valueGraph,
       clock: systemClock,
       decisionStore,
       authorityStore,
@@ -299,6 +327,8 @@ async function getCloudTwin(scope: Scope): Promise<TwinContext | null> {
       governance: null,
       nodeIds: null,
       scenarioIds: null,
+      demoWorld: null,
+      demoReview: null,
     },
   };
 }
@@ -340,6 +370,19 @@ export async function explainView(ctx: TwinContext, snapshotId: string, itemKey:
 
 export async function differenceView(ctx: TwinContext, fromId: string, toId: string, fromKey: string, toKey: string): Promise<DifferenceExplanation> {
   return must(await ctx.twin.explainDifference(ctx.scope, fromId, toId, fromKey, toKey), 'difference');
+}
+
+/** Attention conditions in the latest current state a reader may see — the count the nav shows. Null viewer: the first preset (the admin in the demo, you in the cloud). */
+export async function attentionCount(mode: 'demo' | 'cloud', scope: Scope): Promise<number> {
+  const ctx = await resolveTwinContext(mode, scope);
+  if (!ctx) return 0;
+  const viewer = (ctx.viewers.find((v) => v.key === 'countryGM') ?? ctx.viewers[0])?.viewer;
+  if (!viewer) return 0;
+  const all = must(await ctx.twin.listSnapshots(ctx.scope), 'snapshots');
+  const last = [...all].filter((s) => s.spec.kind === 'CURRENT').reverse().find((s) => canSeeSnapshot(viewer, s, ctx.units).visible);
+  if (!last) return 0;
+  const projected = await ctx.twin.projectForViewer(ctx.scope, last.id, viewer, ctx.units);
+  return projected.ok ? projected.value.items.filter((i) => i.kind === 'ATTENTION').length : 0;
 }
 
 export async function buildCurrentSnapshot(ctx: TwinContext, twinScope: TwinScope): Promise<ComposedSnapshot> {

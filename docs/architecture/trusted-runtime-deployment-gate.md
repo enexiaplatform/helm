@@ -2,27 +2,27 @@
 
 **Status** OPEN — `helm-authority` is **not deployed** · **Opened** 2026-09-29 ·
 **Architecture** [ADR-0024](../adr/0024-trusted-authority-runtime.md) (accepted) ·
-**Record** [phase-7-implemented.md](phase-7-implemented.md)
+**Record** [management-twin.md](layers/management-twin.md)
 
 The trusted authority runtime is **architecturally accepted** but **not
 deployment-qualified**. The shared Supabase project holds Memoire's live
 production data; it must not be the first environment in which this authority
 boundary is integration-tested.
 
-This gate is a hard precondition for pilot use, production governance, the
-Country GM Cockpit (Phase 14), and any claim that HELM's authority enforcement
-is production-ready. It does not invalidate the Phase 7 architecture, and the
+This gate is a hard precondition for pilot use, production governance, use of
+the Country GM Cockpit on real data, and any claim that HELM's authority
+enforcement is production-ready. It does not invalidate the architecture, and the
 twin continues to treat the trusted service as the canonical cloud path.
 
 ## Current maturity
 
 | Layer | State |
 | --- | --- |
-| Kernel | Phase 9 complete |
-| Shared database schema | Phase 7, 8 and 9 migrations applied and verified (rolled-back proofs: 24 refusals / 12 controls; 31 refusals / 10 controls; 52 refusals / 28 controls; 0 failures) |
+| Kernel and management layers | Complete in memory: ontology → value graph → propagation → scenarios → decisions → authority → twin → causal → counterfactual → genome, plus integration, reviews, AI and council (890 tests, 877 pass, 13 skipped, 0 fail; 70 contracts; mutation suite; see [helm-architecture.md §11](helm-architecture.md)) |
+| Shared database schema | Every migration through `20260930150000` applied and proven by rolled-back server-side proofs (each with a control); the Memoire function fingerprint is unchanged; no fixture left behind |
 | Trusted authority implementation | Built and contract-tested (`verify:authority-server`, 14 service tests, 4 mutations caught) |
 | Trusted authority deployment | **NOT DEPLOYED** |
-| Postgres conformance | **9 suites SKIPPED** — no isolated authenticated environment (the causal store added in Phase 8, the genome store in Phase 9) |
+| Postgres conformance | **13 suites SKIPPED** — no isolated authenticated environment: graph, value graph, propagation, scenario, decision, authority, twin, causal, counterfactual, genome, integration, review and AI-run stores |
 | Cloud end-to-end readiness | **NOT YET PROVEN** |
 | Production / pilot readiness | **BLOCKED** by this gate |
 
@@ -46,7 +46,12 @@ twin continues to treat the trusted service as the canonical cloud path.
   gate passes.
 
 Both bear on whether HELM's governance guarantees hold outside the in-memory
-reference environment. Other Phase 7 debt is ordinary backlog.
+reference environment. **The blocker count is still two.** The number of skipped
+suites grew from nine to thirteen because every layer that persists (counterfactual
+worlds, the integration ledger, management reviews, the AI audit) ships its own
+conformance suite, and none of them can run without the environment blocker B
+describes; they are marked SKIPPED with the variables they need, never passed.
+Other debt is ordinary backlog.
 
 ## Conditions — all must pass, in an isolated environment
 
@@ -57,7 +62,8 @@ reference environment. Other Phase 7 debt is ordinary backlog.
    admin, a non-member).
 4. Every previously skipped Postgres conformance suite is executed: graph,
    value graph, calculations, scenario store, decision store, authority store,
-   twin store, causal store, genome store.
+   twin store, causal store, counterfactual store, genome store, integration
+   store, review store and AI-run store.
 5. Zero conformance failures.
 6. The cloud Decision → Commitment → Authority Evaluation → Approval path is
    executed end to end through the deployed `helm-authority` function.
@@ -102,5 +108,5 @@ runtime) and must be deployed with JWT verification enabled.
 2. Recorded evaluations and approval acts are immutable history and are not
    removed.
 3. Do not restore client write privileges on the authority tables as a
-   rollback step; that reopens the Phase 6 gap ADR-0024 closed.
+   rollback step; that reopens the gap ADR-0024 closed.
 4. Confirm Memoire objects are unchanged (condition 10 checks).

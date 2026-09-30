@@ -89,7 +89,7 @@ a year into months, allocating a flow across a boundary — is deliberately abse
 Multi-period runs execute one independent propagation per period. Revenue
 recognition schedules, carry-over of unserved demand, and cumulative metrics
 across periods all need that arithmetic and all remain out of scope
-([phase-4-implemented](../architecture/phase-4-implemented.md), debt table).
+([phase-4-implemented](../architecture/layers/scenario-runtime.md), debt table).
 
 ## Alternatives considered
 

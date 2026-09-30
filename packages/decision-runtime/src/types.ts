@@ -124,7 +124,7 @@ export const decisionTransitions: Readonly<Record<DecisionState, readonly Decisi
 /**
  * How the pre-kernel lifecycle maps onto this one. `pending_approval`,
  * `approved` and `rejected` have NO kernel equivalent on purpose — see
- * docs/architecture/decision-engine-assessment.md.
+ * docs/archive/decision-engine-assessment.md.
  */
 export const legacyStateMapping: Readonly<Record<string, DecisionState | null>> = {
   draft: 'DRAFT',

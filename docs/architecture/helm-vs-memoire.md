@@ -35,9 +35,9 @@ It produces **Management Truth**.
 
 ### 2.1 The rules that follow
 
-1. **HELM never writes to a Memoire-owned entity table.** The single exception
-   is appending a `commercial_events` row as decision provenance (§4.2) — an
-   append to an event log, never a mutation of a record.
+1. **HELM never writes to Memoire.** No insert, upsert, update or delete on any
+   Memoire-owned table, from anywhere (`verify:memoire-boundary`). HELM once appended
+   a `commercial_events` row as decision provenance; that write is **retired** (§4.2).
 2. **HELM never builds a commercial execution screen.** No account list, no
    pipeline board, no activity logger, no quotation editor.
 3. **Memoire never imports HELM code**, and has no knowledge HELM exists beyond
@@ -103,7 +103,7 @@ An implication worth stating plainly: HELM's org-level view of commercial data i
 currently limited to what its *individual signed-in users* can see in Memoire. A
 true org-wide commercial read requires Memoire to adopt the shared org layer —
 already anticipated by its `scope` seam
-([discovery-findings.md §6](discovery-findings.md#6-memoire--what-the-sibling-codebase-teaches)).
+([discovery-findings.md §6](../archive/discovery-findings.md#6-memoire--what-the-sibling-codebase-teaches)).
 Until then, org-wide commercial aggregates come from the connector's event
 stream, not from live cross-user queries.
 
@@ -124,35 +124,28 @@ an opportunity later moves from 70% to 20%, the decision was not wrong — it wa
 made on 70%. Without the snapshot, every retrospective becomes hindsight bias,
 and the genome learns the wrong lesson.
 
-### 4.2 Write: provenance only
+### 4.2 Write: none — a dry run
 
-When an approved decision starts executing, HELM appends one
-`commercial_events` row into the deciding user's Memoire workspace:
+HELM does not write into Memoire. When a decision is committed and governance
+permits it, the commitment carries **action intents** naming the system that will do
+the work; for Memoire, the integration fabric turns an explicit intent into a
+**dry-run write-back request**: the payload a live write *would* send, the
+commitment fingerprint, an idempotency key, and a receipt that says `sent: false`
+([ADR-0030](../adr/0030-integration-fabric.md)). The schema pins the mode to
+`DRY_RUN`, and the adapter has no method that sends.
 
-```
-event_type:   'helm_decision_approved'
-source_type:  'system_rule'
-source_id:    <decision id>
-source_url:   'helm://decision/<id>'
-summary:      'HELM decision: <title> — chosen: <alternative>'
-structured_payload: { helmDecisionId, decisionType, chosenAlternative,
-                      expectedOutcome, actions[] }
-idempotency_key: 'helm-decision-<id>'
-```
+HELM does not update an opportunity's stage, value, probability or close date — even
+when a decision implies one. It tells the manager what to change; the manager changes
+it in Memoire. Anything else makes two systems authoritative for one field. A live
+write-back would be a separate, explicitly authorized decision and a later migration.
 
-Memoire's timeline shows *why* something changed commercially, with a link back,
-and needs no HELM-specific code to do it. The `idempotency_key` makes replay
-safe.
+### 4.3 Events: the contract and the transport
 
-This is the **only** write. HELM does not update an opportunity's stage, value,
-probability or close date — even when a decision implies one. It tells the
-manager what to change; the manager changes it in Memoire. Anything else makes
-two systems authoritative for one field.
-
-### 4.3 Events: the direction Phase 13 takes this
-
-Today's bridge is direct database reads. The target is an event contract, so
-Memoire (and later ERP, Finance, SCM) publish and HELM subscribes:
+Today Memoire is read through the user's own RLS by the integration fabric's reader
+(`createMemoireOpportunityReader`), rows strictly after a checkpoint. The contract a
+source system follows is the `SourceAdapter` port
+([kernel-interfaces §7](kernel-interfaces.md)); the event names below are the vocabulary
+a publishing source would use:
 
 ```
 account.updated              opportunity.created
@@ -181,7 +174,7 @@ Signs the boundary is eroding, each one a reason to stop:
 - HELM computing a commercial forecast instead of consuming Memoire's.
 - Memoire importing anything from HELM.
 - A `supabaseClient.from('accounts')` call inside a kernel package.
-- HELM writing to any Memoire table other than appending `commercial_events`.
+- HELM writing to any Memoire table at all.
 
 The last two are mechanically detectable and are what `verify:memoire-boundary`
 asserts.

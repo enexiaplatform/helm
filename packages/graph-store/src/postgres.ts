@@ -13,7 +13,7 @@
  *
  * Traversal note: implemented as bounded level-by-level BFS with one batched
  * query per level, rather than a recursive CTE. See docs/architecture/
- * phase-1-implemented.md for the reasoning and the trigger for revisiting it.
+ * docs/architecture/layers/ontology-and-graph-store.md for the reasoning and the trigger for revisiting it.
  */
 
 import {

@@ -6,7 +6,7 @@
  * is adapter-independent by construction. The Postgres adapter is held to the
  * same suite by packages/graph-store/test/postgres.conformance.test.mjs once
  * test credentials are configured, and its RLS behaviour is separately proven
- * server-side (see docs/architecture/phase-1-implemented.md).
+ * server-side (see docs/architecture/layers/ontology-and-graph-store.md).
  *
  *   1. The canonical enterprise graph builds, and builds idempotently.
  *   2. Traversal is bounded — an unbounded walk is refused, not clamped.

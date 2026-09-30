@@ -1,0 +1,32 @@
+{
+  "name": "@helm/intelligence-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "HELM AI Intelligence Runtime: a provider-neutral, governed layer above the kernel. The AI retrieves, explains, compares and drafts through read-only domain tools that respect the caller's access, and every enterprise statement it produces is classified and grounded in kernel evidence — or removed, qualified or marked as inference. It never writes enterprise truth, approves, commits or executes.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./postgres": "./src/postgres.ts",
+    "./conformance": "./src/conformance.ts"
+  },
+  "helm": {
+    "layer": "intelligence",
+    "pure": false,
+    "ioBoundary": "src/postgres.ts"
+  },
+  "dependencies": {
+    "@helm/shared": "0.1.0",
+    "@helm/ontology": "0.1.0",
+    "@helm/graph-store": "0.1.0",
+    "@helm/value-graph": "0.1.0",
+    "@helm/propagation-engine": "0.1.0",
+    "@helm/scenario-runtime": "0.1.0",
+    "@helm/decision-runtime": "0.1.0",
+    "@helm/authority-runtime": "0.1.0",
+    "@helm/twin-runtime": "0.1.0",
+    "@helm/causal-runtime": "0.1.0",
+    "@helm/counterfactual-runtime": "0.1.0",
+    "@helm/genome-runtime": "0.1.0",
+    "@helm/review-runtime": "0.1.0"
+  }
+}

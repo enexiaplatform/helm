@@ -5,5 +5,5 @@
  * was built.
  */
 
-export { buildGenomeStack, buildGenomeStory, at, unwrap, expectFail, USERS, MEMBERSHIP, UNITS, ADMIN, DEMO_UNITS } from '../../packages/genome-runtime/test/harness.mjs';
+export { buildGenomeStack, buildGenomeStory, buildGenomeWithCounterfactuals, at, unwrap, expectFail, USERS, MEMBERSHIP, UNITS, ADMIN, DEMO_UNITS } from '../../packages/genome-runtime/test/harness.mjs';
 export { contract } from './twinStack.mjs';

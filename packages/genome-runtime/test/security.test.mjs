@@ -25,8 +25,16 @@ before(async () => {
 });
 
 describe('sensitivity: an episode carries the classes of the metrics it expected to move', () => {
-  it('the Rohto episode is FINANCIAL: gross margin and cash impact are margin-grade', () => {
-    assert.deepEqual([...g.episodes.E1.episode.sensitivityClasses].sort(), ['FINANCIAL_SENSITIVE', 'GENERAL_MANAGEMENT']);
+  it('the Rohto episode is FINANCIAL and COMMERCIAL_CONFIDENTIAL: margin-grade metrics, and a tender it declared at opening', () => {
+    assert.deepEqual([...g.episodes.E1.episode.sensitivityClasses].sort(), ['COMMERCIAL_CONFIDENTIAL', 'FINANCIAL_SENSITIVE', 'GENERAL_MANAGEMENT']);
+    assert.deepEqual([...g.episodes.E2.episode.sensitivityClasses].sort(), ['FINANCIAL_SENSITIVE', 'GENERAL_MANAGEMENT']);
+  });
+
+  it('a viewer cleared for FINANCIAL only reads four episodes: the Rohto episode needs the commercial class too, and is withheld whole', async () => {
+    const p = await project(viewer(USERS.countryGM, ['FINANCIAL_SENSITIVE']));
+    assert.equal(p.episodes.length, 4);
+    assert.ok(!ids(p.episodes, (v) => v.episode.decisionId).has(s.story.decisionId));
+    assert.equal(p.withheld.episodes, 1);
   });
 
   it('a viewer without the clearance sees no episode — and no pattern or lesson resting on them; the statement says so', async () => {
@@ -39,7 +47,7 @@ describe('sensitivity: an episode carries the classes of the metrics it expected
   });
 
   it('with the clearance the same viewer reads them; an admin reads everything', async () => {
-    const gm = await project(viewer(USERS.countryGM, ['FINANCIAL_SENSITIVE']));
+    const gm = await project(viewer(USERS.countryGM, ['FINANCIAL_SENSITIVE', 'COMMERCIAL_CONFIDENTIAL']));
     assert.equal(gm.episodes.length, 5);
     assert.equal(gm.patterns.length, 3);
     assert.equal(gm.lessons.length, 2);
@@ -52,7 +60,7 @@ describe('sensitivity: an episode carries the classes of the metrics it expected
 describe('read whole or not at all', () => {
   it('an episode resting on a decision the viewer cannot see is withheld, and so is every pattern and lesson that rests on it', async () => {
     const blind = (id) => id !== s.story.decisionId;
-    const p = await project(viewer(USERS.countryGM, ['FINANCIAL_SENSITIVE']), blind);
+    const p = await project(viewer(USERS.countryGM, ['FINANCIAL_SENSITIVE', 'COMMERCIAL_CONFIDENTIAL']), blind);
     assert.ok(!ids(p.episodes, (v) => v.episode.decisionId).has(s.story.decisionId));
     assert.equal(p.episodes.length, 4);
     assert.equal(p.patterns.length, 0, 'P1, P2 and P3 all link the Rohto episode');
@@ -62,7 +70,7 @@ describe('read whole or not at all', () => {
 
   it('withholding one unrelated decision leaves what does not rest on it', async () => {
     const blind = (id) => id !== g.episodes.E3.episode.decisionId;
-    const p = await project(viewer(USERS.countryGM, ['FINANCIAL_SENSITIVE']), blind);
+    const p = await project(viewer(USERS.countryGM, ['FINANCIAL_SENSITIVE', 'COMMERCIAL_CONFIDENTIAL']), blind);
     assert.equal(p.episodes.length, 4);
     assert.equal(p.patterns.length, 2, 'P2 and P3 never link the Thailand episode; P1 links it as context, so P1 is withheld');
     assert.deepEqual(ids(p.patterns, (v) => v.pattern.id), new Set([g.patterns.P2.pattern.id, g.patterns.P3.pattern.id]));
@@ -104,11 +112,11 @@ describe('who may read follows the decision-visibility rule, not a shortcut', ()
 
   it('with each demonstration decision shared with the Pharma unit: the GM above and Pharma read it (cleared); Industrial and the uncleared analyst do not', async () => {
     const read = readerFor(await buildGenomeStory({ shareWith: [{ unitId: UNITS.pharma, label: 'Pharma BU' }] }));
-    const gm = await read(viewer(USERS.countryGM, ['FINANCIAL_SENSITIVE']));
+    const gm = await read(viewer(USERS.countryGM, ['FINANCIAL_SENSITIVE', 'COMMERCIAL_CONFIDENTIAL']));
     assert.equal(gm.episodes.length, 5, 'the Country GM reads every episode, each resting on a decision shared with the unit below');
     assert.equal(gm.patterns.length, 3);
     assert.equal(gm.lessons.length, 2);
-    const analyst = await read(viewer(USERS.pharmaAnalyst, ['FINANCIAL_SENSITIVE']));
+    const analyst = await read(viewer(USERS.pharmaAnalyst, ['FINANCIAL_SENSITIVE', 'COMMERCIAL_CONFIDENTIAL']));
     assert.equal(analyst.episodes.length, 5, 'a cleared member of the Pharma unit reads them too');
     const uncleared = await read(viewer(USERS.pharmaAnalyst));
     assert.equal(uncleared.episodes.length, 0, 'the decision is visible, but the episode carries FINANCIAL_SENSITIVE and the analyst is not cleared');
@@ -119,7 +127,7 @@ describe('who may read follows the decision-visibility rule, not a shortcut', ()
 
   it('unshared, the same decisions stay with the people who made them: not even the cleared Country GM reads the episodes', async () => {
     const read = readerFor(await buildGenomeStory());
-    const gm = await read(viewer(USERS.countryGM, ['FINANCIAL_SENSITIVE']));
+    const gm = await read(viewer(USERS.countryGM, ['FINANCIAL_SENSITIVE', 'COMMERCIAL_CONFIDENTIAL']));
     assert.equal(gm.episodes.length, 0);
     assert.equal(gm.patterns.length, 0, 'a pattern resting on an unreadable episode is withheld whole');
     assert.equal(gm.lessons.length, 0);

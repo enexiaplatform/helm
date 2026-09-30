@@ -34,11 +34,14 @@ import {
   type SimilarSituations,
 } from '@helm/genome-runtime';
 import { createPostgresGenomeStore } from '@helm/genome-runtime/postgres';
+import { createPostgresCounterfactualStore } from '@helm/counterfactual-runtime/postgres';
+import { createInMemoryCounterfactualStore, type CounterfactualRuntime, type MeridianCounterfactualStory } from '@helm/counterfactual-runtime';
 import type { TwinViewer } from '@helm/twin-runtime';
 import { MERIDIAN_DEMO_USERS, buildCallOffScenario } from '@helm/authority-runtime';
 import { asEntityId, seqIdGen, type Scope, type UserId } from '@helm/shared';
 import { supabaseClient } from '../lib/supabaseClient.ts';
 import { decisionVisibility, resolveCausalContext, type CausalContext } from './causalRuntime.ts';
+import { counterfactualOver, liveDemoCounterfactualStory } from './counterfactualRuntime.ts';
 import type { TwinViewerPreset } from './twinRuntime.ts';
 import type { PillTone } from '../components/ui/Pill.tsx';
 
@@ -51,6 +54,8 @@ export type GenomeContext = {
   readonly causal: CausalContext;
   /** Demo: the canonical management episodes. Null in the cloud. */
   readonly story: MeridianGenomeStory | null;
+  /** The counterfactual runtime the genome references cases through — and, in the demo, the canonical review. */
+  readonly counterfactual: { readonly runtime: CounterfactualRuntime; readonly story: MeridianCounterfactualStory | null };
   readonly viewers: readonly TwinViewerPreset[];
   /** Moments the explorer can read the genome AS OF. Null lens = now. */
   readonly lenses: readonly GenomeLensPreset[];
@@ -65,9 +70,9 @@ const must = <T>(r: { ok: true; value: T } | { ok: false; error: { message: stri
 
 const at = (iso: string): GenomeLens => ({ effectiveAsOf: iso, recordedThrough: iso });
 
-function sourcesOf(c: CausalContext) {
+function sourcesOf(c: CausalContext, counterfactual: CounterfactualRuntime) {
   const k = c.twin.kernel;
-  return { graph: k.graph, decisions: k.decisionStore, scenarios: k.scenarios, authority: k.authority, twin: c.twin.twin, causal: c.causal };
+  return { graph: k.graph, decisions: k.decisionStore, scenarios: k.scenarios, authority: k.authority, twin: c.twin.twin, causal: c.causal, counterfactual };
 }
 
 function getDemoGenome(scope: Scope): Promise<GenomeContext> {
@@ -79,9 +84,10 @@ function getDemoGenome(scope: Scope): Promise<GenomeContext> {
     const twinStory = causal.twin.story;
     const e = k.governance!.entities;
     const claims = causal.story.claims;
+    const counterfactual = counterfactualOver(causal, createInMemoryCounterfactualStore({ clock: k.clock, idGen: seqIdGen('cf') }));
     const genome = createManagementGenome({
       store: createInMemoryGenomeStore({ clock: k.clock, idGen: seqIdGen('gn') }),
-      sources: sourcesOf(causal),
+      sources: sourcesOf(causal, counterfactual),
       clock: k.clock,
     });
     // The planned Rohto call-off is one of the demonstration decisions; its computed future is built here,
@@ -115,6 +121,12 @@ function getDemoGenome(scope: Scope): Promise<GenomeContext> {
       }),
       'the genome story',
     );
+    // The counterfactual review comes after the outcome it reviews; the Rohto episode then REFERENCES its first case.
+    const cfStory = await liveDemoCounterfactualStory(causal, counterfactual, scope);
+    must(
+      await genome.bindRef(scope, story.episodes.E1.episode.id, 'COUNTERFACTUAL_CASE', { kind: 'COUNTERFACTUAL_CASE', id: cfStory.cases.CF1.case.id, pin: null, label: cfStory.cases.CF1.case.title }, 'Expedite instead of reallocating (demo)'),
+      'binding the counterfactual case to the Rohto episode',
+    );
     const T = MERIDIAN_GENOME_TIMES;
     return {
       genome,
@@ -122,6 +134,7 @@ function getDemoGenome(scope: Scope): Promise<GenomeContext> {
       mode: 'demo' as const,
       causal,
       story,
+      counterfactual: { runtime: counterfactual, story: cfStory },
       viewers: causal.viewers,
       lenses: [
         { key: 'now', label: 'Now', lens: null },
@@ -136,12 +149,13 @@ function getDemoGenome(scope: Scope): Promise<GenomeContext> {
 async function getCloudGenome(scope: Scope): Promise<GenomeContext | null> {
   const causal = await resolveCausalContext('cloud', scope);
   if (!causal || !supabaseClient) return null;
+  const counterfactual = counterfactualOver(causal, createPostgresCounterfactualStore({ client: supabaseClient }));
   const genome = createManagementGenome({
     store: createPostgresGenomeStore({ client: supabaseClient }),
-    sources: sourcesOf(causal),
+    sources: sourcesOf(causal, counterfactual),
     clock: causal.twin.kernel.clock,
   });
-  return { genome, scope, mode: 'cloud', causal, story: null, viewers: causal.viewers, lenses: [{ key: 'now', label: 'Now', lens: null }] };
+  return { genome, scope, mode: 'cloud', causal, story: null, counterfactual: { runtime: counterfactual, story: null }, viewers: causal.viewers, lenses: [{ key: 'now', label: 'Now', lens: null }] };
 }
 
 export async function resolveGenomeContext(mode: 'demo' | 'cloud', scope: Scope): Promise<GenomeContext | null> {

@@ -65,8 +65,8 @@ export async function buildTwinStack() {
 }
 
 /** The canonical story over a fresh stack. */
-export async function buildStory() {
-  const s = await buildTwinStack();
+export async function buildStory({ stack = null, hooks } = {}) {
+  const s = stack ?? (await buildTwinStack());
   const story = unwrap(
     await runMeridianTwinStory({
       admin: s.scope,
@@ -85,6 +85,7 @@ export async function buildStory() {
       nodeIds: s.nodeIds,
       advanceTo: (iso) => s.clock.jumpTo(iso),
       units: UNITS,
+      hooks,
     }),
     'twin story',
   );

@@ -288,7 +288,7 @@ async function story(d: MeridianGenomeDeps): Promise<MeridianGenomeStory> {
   d.advanceTo(T.episodes);
   const reviewsOf = async (decisionId: string) => unwrap(await d.decisionStore.listOutcomeReviews(d.admin, decisionId), 'reviews');
   const e1Open = unwrap(
-    await genome.openEpisode(gm, { decisionId: d.twin.decisionId, title: 'Rohto Q4 allocation (demo)', scope: rohtoInPharma, situationSnapshotId: d.twin.S0, authoredByLabel: 'Country GM Vietnam (demo)' }),
+    await genome.openEpisode(gm, { decisionId: d.twin.decisionId, title: 'Rohto Q4 allocation (demo)', scope: rohtoInPharma, situationSnapshotId: d.twin.S0, carriesClasses: ['COMMERCIAL_CONFIDENTIAL'], authoredByLabel: 'Country GM Vietnam (demo)' }),
     'open E1',
   );
   const bind = async (episodeId: string, role: Parameters<ManagementGenome['bindRef']>[2], ref: Parameters<ManagementGenome['bindRef']>[3], note?: string) =>

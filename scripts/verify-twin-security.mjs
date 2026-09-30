@@ -1,7 +1,7 @@
 /**
  * verify:twin-security — who may read which management state (ADR-0025).
  * The kernel statement of the RLS the migration installs; the live-database
- * proof (24 refusals, 12 controls) is in docs/architecture/phase-7-implemented.md.
+ * proof (24 refusals, 12 controls) is in docs/architecture/layers/management-twin.md.
  *
  *   1. A BU-scoped snapshot is invisible across BUs; the Country GM reads the
  *      country and both BUs; nobody reads up the tree.

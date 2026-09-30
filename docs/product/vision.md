@@ -123,8 +123,8 @@ about earns its place by connecting to value creation.
 A decision in HELM is a durable, auditable object with a full lifecycle:
 
 ```
-Context → Options → Simulation → Recommendation → Decision → Approval
-        → Action → Outcome → Learning
+Context → Alternatives → Scenarios → Evaluation against stated criteria → Decision
+        → Authority → Commitment → Action → Outcome → Learning
 ```
 
 Expected outcome is recorded **before** approval. Actual outcome is recorded
@@ -132,8 +132,11 @@ after. The pairing of the two, plus the reasoning and assumptions that produced
 the choice, is what lets an organization compound managerial judgement instead
 of resetting it every time a manager changes role.
 
-AI may prepare, explain, simulate and recommend. **AI never silently executes a
-high-impact decision.** A named human with verified authority does.
+AI may retrieve, explain, compare and draft — and ask the question that would settle
+what is unresolved. It never recommends, never writes enterprise truth and never
+executes: a named human with verified authority decides
+([ADR-0032](../adr/0032-governed-intelligence-runtime.md),
+[ADR-0033](../adr/0033-agent-council.md)).
 
 ## 7. Non-negotiable product standards
 
@@ -145,10 +148,11 @@ sees the source, the formula, the inputs, the timestamp, the assumptions, the
 confidence, and the upstream dependencies. No number appears in HELM that
 cannot answer that question.
 
-**Every recommendation is explainable.** What happened, why, what is affected,
-what happens if nothing is done, what options exist, what the trade-offs are,
-what is assumed, how confident we are, who can decide, what to monitor
-afterwards.
+**Every statement is explainable — and none is a recommendation.** What happened, why
+management believes so, what is affected, what happens if nothing is done, what
+alternatives exist, what each one gives up, what is assumed, how confident the
+evidence allows us to be, who can decide, what to watch afterwards. HELM shows the
+trade-off space and evaluates management's own criteria; choosing is management's.
 
 **Deterministic before probabilistic.** Rules, formulas and thresholds first;
 models later, behind the same contracts. An LLM is never the source of a
@@ -159,13 +163,11 @@ enforceable. It never dissolves it.
 
 ## 8. Where HELM is today
 
-Honest status, from [discovery-findings.md](../architecture/discovery-findings.md):
-
-HELM has a working decision workspace — eight deterministic engines, an
-auditable decision lifecycle, a signal inbox, scenario comparison, and a real
-Memoire bridge. What it does not yet have is the layer that makes it *enterprise
-management infrastructure* rather than a very good management-accounting app:
-the ontology, the value graph, and propagation across functions.
-
-That foundation is Phases 1–3 and it comes before any new surface.
-See [roadmap.md](../architecture/roadmap.md).
+HELM is built as one stack — sources, integration, ontology, value graph, propagation,
+scenarios, decisions, authority, twin, causal graph, counterfactuals, genome, management
+reviews, governed AI and a council of perspectives — with the Country GM Cockpit and the
+instrument pages on top. The honest status, including what is not proven, is in
+[the architecture](../architecture/helm-architecture.md) (§11) and
+[roadmap and readiness](../architecture/roadmap.md): complete and verified in memory,
+schema applied to the shared database, **not production-ready** until the
+[deployment gate](../architecture/trusted-runtime-deployment-gate.md) is lifted.

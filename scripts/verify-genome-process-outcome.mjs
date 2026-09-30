@@ -16,7 +16,7 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEMO_UNITS, MEMBERSHIP, USERS, buildGenomeStory, contract, unwrap } from './lib/genomeStack.mjs';
+import { DEMO_UNITS, MEMBERSHIP, USERS, buildGenomeStory, buildGenomeWithCounterfactuals, contract, unwrap } from './lib/genomeStack.mjs';
 
 const c = contract('verify:genome-process-outcome');
 const s = await buildGenomeStory();
@@ -111,6 +111,19 @@ for (const f of readdirSync(dir).filter((x) => x.endsWith('.ts') && x !== 'merid
   const w = /\.(recordObservation|execute|executeBaseline|addOverride|createScenario|commit|createCommitment|recordApproval|recordOutcomeReview|createClaim|reviseClaim|recordEvidence|linkEvidence|supportClaim|declareGovernanceProfile|appendEvent|setState|saveSnapshot|buildSnapshot|register\w*|upsertValueNode|createValueNode|appendStep|createRelationship|upsertEntity)\s*\(/.exec(code);
   c.check('no-write-below', !w, `${f} calls ${w?.[1]} — the genome never changes what it remembers`);
   c.check('no-inference', !/\b(mlPredict|regression|clustering|kmeans|embedding|cosineSimilarity|levenshtein)\b/i.test(code), `${f} uses a statistical similarity or learning technique`);
+}
+
+// ---- what might have happened otherwise is a different question: a bound counterfactual case changes neither section.
+{
+  const plain = await buildGenomeStory();
+  const withCf = await buildGenomeWithCounterfactuals();
+  const a = unwrap(await plain.genome.getEpisode(plain.scope, plain.genomeStory.episodes.E1.episode.id), 'plain E1');
+  const b = unwrap(await withCf.genome.getEpisode(withCf.scope, withCf.genomeStory.episodes.E1.episode.id), 'E1 with a counterfactual');
+  c.check('counterfactual-apart', b.counterfactuals.length === 1 && a.counterfactuals.length === 0, 'the counterfactual case is not listed in its own section');
+  c.check('counterfactual-apart', JSON.stringify(a.process) === JSON.stringify(b.process), 'a bound counterfactual case changed how management decided');
+  c.check('counterfactual-apart', JSON.stringify(a.outcome) === JSON.stringify(b.outcome), 'a bound counterfactual case changed what happened');
+  c.check('counterfactual-apart', !/counterfactual/i.test(JSON.stringify(b.process)) && !/counterfactual/i.test(JSON.stringify(b.outcome)), 'a counterfactual appears inside the process or outcome section');
+  c.check('counterfactual-apart', offending(b.counterfactuals).length === 0 && !/regret|verdict|better|worse/i.test(JSON.stringify(b.counterfactuals)), 'the counterfactual section of an episode carries a score, a regret or a verdict');
 }
 
 c.finish('genome operations leave decisions, snapshots, claims, formulas, runs and observations identical; a terrible outcome recorded later changes only the outcome section; no score, rank, weight or verdict at any depth; no inference method; nothing written below');

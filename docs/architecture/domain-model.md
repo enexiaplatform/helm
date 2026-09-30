@@ -17,7 +17,7 @@ available:
 
 The semantic tier is the ontology. The quantitative tier is the value graph plus
 propagation. The managerial tier is decisions, authority, outcomes and lessons —
-and it is the tier HELM has already built.
+and it is kept by the layers above the value graph (§4).
 
 ## 2. Semantic tier — the ontology core
 
@@ -81,7 +81,7 @@ Five properties of this design carry most of its value:
 **Temporal validity.** `valid_from` / `valid_to` mean an entity is never
 destroyed by an update — it is closed and superseded. "What did the graph look
 like when that decision was made?" is a query, not an archaeology project. This
-is what makes counterfactual analysis (Phase 10) possible at all.
+is what makes counterfactual analysis possible at all.
 
 **Provenance.** `source_system` + `source_ref` + `observed_at` on every row.
 The audit answer to "why this number?" bottoms out in a named system at a named
@@ -198,84 +198,84 @@ helm_calculations(code, version, expression_kind, definition jsonb,
 A calculation declares its inputs and output metric, so the propagation engine
 derives execution order from the registry rather than from hand-written call
 sequences. `expression_kind` starts as `deterministic_formula` and is the
-extension point for `monte_carlo`, `optimization` and `ml_model` later
-([ADR-0008](../adr/0008-deterministic-before-ai.md)) — identical contract,
-different implementation.
+extension point for a stochastic implementation later
+([ADR-0008](../adr/0008-deterministic-before-ai.md)) — identical contract, different
+implementation. HELM never optimizes: it quantifies trade-offs; managers resolve them.
 
 Every execution writes a `helm_calculation_runs` row plus per-node
 `helm_calculation_trace` entries: inputs, formula version, output, confidence,
 timestamp. **This is the table that answers "why 4.2B revenue at risk?"** and it
 is why §17 auditability is a schema property rather than a UI feature.
 
-## 4. Managerial tier — mostly built already
+## 4. Managerial tier
 
-This tier exists and works today. Its objects are documented in
-[implemented-mvp.md](implemented-mvp.md); what changes in Phases 5–10 is that
-they gain connections *downward* into the value graph.
+Above the value graph, each layer keeps its own records — all `helm_*`, all org-scoped
+with RLS, and every one that is history is append-only with a database-stamped record
+time. The full list of append-only tables is asserted in `verify:schema`.
 
-| Object | Table | Change ahead |
+| Family | Records (tables) | Layer reference |
 | --- | --- | --- |
-| Signal | `helm_signals` | gains `value_node_id`, so an alert points at the chain that produced it |
-| Decision | `helm_decisions` | gains `scenario_id` per option and an entity-scope reference |
-| Alternative | `helm_decision_alternatives` | financial lines become value-graph overrides, not free-typed numbers |
-| Assumption | `helm_decision_assumptions` | links to the causal hypothesis or calculation input it constrains |
-| Action | `helm_actions` | unchanged |
-| Event | `helm_decision_events` | unchanged (append-only) |
-| Approval rule | `helm_approval_rules` | **superseded** by `helm_authority_rules` (Phase 6) |
-| Scenario | `helm_scenarios` | baseline+variants JSON becomes graph overrides |
-| Cost object / inventory / process | as-is | projected into `helm_entities` |
+| Scenarios | scenarios, revisions, overrides, runs, constraint results | [scenario-runtime](layers/scenario-runtime.md) |
+| Decisions | decisions, revisions, alternatives, criteria, assessments, assumptions, challenges, evidence, commitments, commitment snapshots, action intents (`helm_actions`), outcome reviews, decision events | [decision-runtime](layers/decision-runtime.md) |
+| Authority | decision types, policies and rules (versioned), role occupancy, delegations, governance profiles, visibility grants, evaluations, required approvals, approval acts | [authority-runtime](layers/authority-runtime.md) |
+| Twin | snapshots (five kinds, two-time lens), sensitivity clearances | [management-twin](layers/management-twin.md) |
+| Causal | variables, claims, claim revisions, evidence, evidence links, correlation findings, questions and candidates | [causal-graph](layers/causal-graph.md) |
+| Counterfactual | cases, worlds, reviews | [counterfactual-worlds](layers/counterfactual-worlds.md) |
+| Genome | episodes and their references, patterns, revisions, evidence, lessons, lesson reviews | [management-genome](layers/management-genome.md) |
+| Integration | sync ledger, dry-run write-back requests | [integration-fabric](layers/integration-fabric.md) |
+| Reviews | reviews, items, closures | [management-reviews](layers/management-reviews.md) |
+| AI | AI runs (the audit) | [intelligence-runtime](layers/intelligence-runtime.md) |
 
-New in later phases: `helm_causal_hypotheses` + `helm_causal_evidence` (P8),
-`helm_twin_snapshots` (P7), `helm_genome_*` (P9), `helm_counterfactuals` (P10),
-`helm_objectives` / `helm_risks` / `helm_constraints` as management entities (P1
-ontology types, P7 state).
+A decision holds no numbers of its own: an alternative references the scenario run that
+computed its future, so "why did we choose this?" resolves through the rationale, the
+criteria and the chosen future state down to a source fact.
 
-## 5. How the two model shapes reconcile
+The pre-kernel tables of the first application — signals, cost objects, economics rows,
+inventory items, processes, approval rules — are **not used**. Attention is the twin's
+rule-based conditions; margins, inventory and capacity are value nodes and governed
+calculations; approval is the authority runtime. The tables remain in the shared database
+(migrations are additive and never drop) and nothing reads them.
 
-The existing model is decision-centric; the brief's model is value-centric. They
-are not in conflict — they are two ends of the same chain, and the missing
-middle is what Phases 1–3 build:
+## 5. How the shapes reconcile
+
+The first application was decision-centric; HELM is value-centric. They are two ends of
+one chain, and the layers in between are what make the chain explain itself:
 
 ```mermaid
 flowchart LR
-    subgraph NEW["Phases 1–3 (to build)"]
-        ONT[Ontology] --> VG[Value Graph] --> PROP[Propagation]
-    end
-    subgraph EXIST["Already built"]
-        SIG[Signals] --> DEC[Decisions] --> OUT[Outcomes] --> LES[Lessons]
-        SCEN[Scenarios]
-        ENG["8 pure engines"]
-    end
-    PROP --> SIG
-    PROP --> SCEN --> DEC
-    ENG -.->|"become registered calculations"| PROP
-    LES -.->|"recalibrate weights + confidence"| VG
+    ONT[Ontology] --> VG[Value graph] --> PROP[Propagation] --> SCEN[Scenarios] --> DEC[Decisions]
+    DEC --> AUTH[Authority] --> TWIN[Twin]
+    TWIN --> CAUS[Causal] --> CF[Counterfactual] --> GEN[Genome] --> REV[Reviews]
+    SRC[Sources] --> INT[Integration] --> ONT
 ```
 
-Two integration moves define the whole restructure:
+Two moves defined the restructure, and both are done:
 
-1. **The eight engines become registered calculations.** `cvp.ts`,
-   `inventory.ts`, `capacity.ts`, `economics.ts` already are pure functions from
-   inputs to outputs — exactly what `helm_calculations` describes. They are
-   wrapped, not rewritten. `signals.ts` becomes a consumer of propagated values
-   instead of a consumer of hand-assembled silo inputs.
-2. **Lessons feed back into the graph.** When an outcome review finds an
-   assumption failed, that is evidence against a causal hypothesis and a reason
-   to adjust a link's weight or confidence. The learning loop closes on the
-   model, not on a wiki page. This is the compounding mechanism in §2.7, and it
-   only works because links carry confidence as data.
+1. **The engines became governed calculations.** What was an arithmetic function over
+   hand-assembled silo inputs is a registered calculation over value nodes, executed in
+   exact decimals with a trace. The pre-kernel engines themselves were then deleted.
+2. **The learning loop closes through people, not by itself.** A failed assumption can be
+   recorded as evidence against a causal claim, and the claim's status is *derived* from
+   the evidence policy; an episode, a pattern and a lesson are authored and reviewed. No
+   layer adjusts a link weight, a formula or an authority rule because of what it saw.
 
 ## 6. Invariants
 
-1. An entity's `natural_key` is unique per `(org_id, type_code)` — ingestion is
-   idempotent by construction.
+1. An entity's canonical key is unique per `(org_id, type)` — ingestion is idempotent by
+   construction.
 2. A relationship's endpoints must satisfy its type's domain constraints.
-3. `valid_to IS NULL` means current; history is closed, never deleted.
+3. History is closed, never deleted; statuses are derived at a lens, never stored.
 4. A derived observation's confidence never exceeds the minimum of its inputs'.
-5. Every derived observation references the `calculation_run_id` that produced
-   it. No orphan numbers.
+5. Every derived observation references the calculation run that produced it. No orphan
+   numbers.
 6. `scenario_id IS NULL` is reality. A scenario never mutates reality.
-7. Decision status changes only through the decision-engine state machine, and
-   every transition writes an append-only event.
-8. A decision requiring authority above the actor's cannot reach `approved` —
-   enforced in the engine *and* in RLS.
+7. Decision state changes only through the decision runtime, and every transition writes
+   an append-only event.
+8. Authority is a separate, immutable evaluation bound to the commitment fingerprint,
+   written only by the trusted service; an approval comes from the caller, from a seat or
+   delegation they held, and never from the committer when independence is required.
+9. Objects that summarize others are read whole or not at all.
+10. A source value and a model estimate of the same quantity sit side by side; neither
+    overwrites the other.
+11. The AI reads as the caller and writes nothing; an agent perspective is not decision
+    authority; HELM writes to no source system.

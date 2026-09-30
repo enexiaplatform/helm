@@ -10,194 +10,130 @@ on named people. **No manager may be assumed entitled to every dataset.**
    application code. A compromised or buggy client cannot cross it.
 2. **Deny by default.** No policy means no access. New tables are unreachable
    until a policy grants reach.
-3. **Least visibility.** Scope narrows by org, then unit, then function, then
-   role, then sensitivity class.
-4. **Authority ≠ visibility.** Seeing a decision and being able to approve it are
+3. **Least visibility.** Scope narrows by org, then unit, then decision, then
+   sensitivity class.
+4. **Visibility ≠ authority.** Seeing a decision and being able to approve it are
    separate checks with separate rules.
-5. **History is immutable.** Audit trails have no UPDATE or DELETE policy.
-6. **AI inherits, never widens.** An agent's context is built from its principal's
-   scope. An agent cannot see what its principal cannot.
+5. **History is immutable.** Records are inserted, never updated or deleted by a
+   client; a guard trigger refuses both and the database stamps the record time.
+6. **AI inherits, never widens.** The AI reads as the person asking. It cannot see
+   what they cannot, and it cannot write.
+7. **Summaries are read whole.** An object that summarizes others carries every
+   class and unit of what it holds and is withheld whole from a viewer who lacks one.
 
-## 2. Implemented today
+## 2. Mechanisms
 
 ```mermaid
 flowchart TB
     U[auth.users — shared with Memoire] --> M[organization_memberships<br/>role: admin>manager>member>viewer]
-    M --> H1[is_org_member org]
-    M --> H2[org_role_rank org]
-    H2 --> H3[has_org_role org, min_role]
+    M --> H1[is_org_member · has_org_role]
+    U --> UM[org_unit_memberships → visible_org_units<br/>subtree-inclusive]
+    U --> CL[clearances<br/>time-bounded, admin-granted]
+    UM --> DV[can_see_decision]
+    CL --> HC[has_clearance]
     H1 --> P[RLS policies on every helm_* table]
-    H3 --> P
-    U --> UM[org_unit_memberships<br/>unit, is_manager]
-    UM --> H4[helm_visible_org_units org<br/>subtree-inclusive]
-    H4 --> H5[helm_can_see_decision decision]
-    H5 --> P
+    DV --> P
+    HC --> P
+    P --> RW[row-based read rules<br/>read whole or not at all]
 ```
 
-- Every HELM table carries `org_id`.
-- Policies call `SECURITY DEFINER` helpers (`is_org_member`, `has_org_role`,
-  `org_role_rank`) so membership lookups never recurse through the membership
-  table's own policies. Helper `EXECUTE` is revoked from `anon`.
-- Roles are **ranked**, and policies compare ranks — a new role slots in without
-  a policy rewrite.
-- Write requires `member`+; delete and governance writes require `manager`+;
-  structural change requires `admin`.
-- `helm_decision_events` has INSERT and SELECT policies only. The **absence** of
-  UPDATE and DELETE is the guarantee.
-- Org creation goes through a `SECURITY DEFINER` RPC so the creator becomes admin
-  atomically, avoiding the chicken-and-egg of inserting the first membership into
-  an org you are not yet a member of.
+- **Tenant.** Every HELM table carries `org_id`; policies call `SECURITY DEFINER`
+  helpers so membership lookups never recurse through the membership table's own
+  policies. Roles are ranked (`admin > manager > member > viewer`); write needs
+  `member`+, governance writes `manager`+, structure `admin`.
+- **Private helpers.** HELM's helpers live in `helm_private`; `EXECUTE` is revoked
+  from `PUBLIC` and `anon` ([ADR-0025](../adr/0025-sensitivity-and-scenario-visibility.md)).
+  The five shared-core helpers in `public` are Memoire's.
+- **Units.** Unit visibility is subtree-inclusive: membership of a region grants its
+  countries.
+- **Decisions.** A decision is readable by admins, its creator, and members of a unit
+  it is shared with or of any unit above ([ADR-0022](../adr/0022-decision-authority-graph.md)).
+  A scenario bound to a decision is captured by it; runs, values and steps follow the
+  scenario and their class.
+- **Sensitivity.** Five compartments — `GENERAL_MANAGEMENT`, `FINANCIAL_SENSITIVE`,
+  `COMMERCIAL_CONFIDENTIAL`, `HR_RESTRICTED`, `STRATEGIC_RESTRICTED` — held on value
+  metrics and nodes, granted to people as time-bounded clearances, enforced in RLS
+  (`helm_private.has_clearance`) and in each layer's projection, which **states what
+  was withheld**. HR classes are reserved; no HR data exists.
+- **Read whole.** A causal claim (its unit audience, its variables' and evidence's
+  classes, every decision it rests on), a genome episode, a counterfactual case and a
+  management review are read only by someone who can read all of it. A genome pattern
+  or lesson only when every episode it rests on is readable. A review item that rests
+  on a decision the viewer cannot see is withheld from a review they can read.
+- **Row-based policies.** Read policies are written over the row's own columns, so
+  `INSERT … RETURNING` works; the by-id wrappers are used only by *other* tables'
+  policies. `verify:schema` forbids a policy that re-reads its own row by id (the
+  defect that once made the twin unable to save a snapshot and members unable to
+  create decisions).
+- **Append-only.** `verify:schema` lists every append-only table (history, audit,
+  decision records, causal, genome, counterfactual, integration, review and AI-run
+  tables): none permits DELETE or UPDATE to a client, `authenticated` holds only
+  SELECT and INSERT, and a BEFORE guard refuses the rest and stamps `recorded_at`.
+- **Authority is computed where the client cannot reach** ([ADR-0024](../adr/0024-trusted-authority-runtime.md)):
+  only the trusted service writes evaluations, requirements and approval acts; it
+  refuses client-supplied facts and re-derives the consequences' calculation trace.
+  Client writes to those tables are revoked.
+- **Cross-boundary reads are safe by construction.** HELM reads Memoire *as the
+  signed-in user*: Memoire's RLS applies unchanged, no service-role key is used in the
+  browser and none bypasses a policy. HELM never writes a Memoire object.
 
-### 2.1 Cross-boundary reads are safe by construction
+## 3. AI and agents
 
-HELM reads Memoire data **as the signed-in user**. Memoire's RLS
-(`auth.uid() = user_id`) therefore applies unchanged: HELM cannot surface
-commercial data the user could not already see in Memoire. No service-role key
-is used in the browser, and none is used to bypass a policy.
+The AI reads as the caller ([ADR-0032](../adr/0032-governed-intelligence-runtime.md),
+[ADR-0033](../adr/0033-agent-council.md)):
 
-## 3. Known gaps and the phase that closes each
+1. **Context is kernel-assembled.** The AI never queries the database; it calls a
+   catalogue of `READ_ONLY` tools that use each layer's own projection for the caller.
+2. **The provider is handed plain JSON** — no function, runtime, store or client.
+3. **Citations are validated.** Evidence ids are run-local; a statement citing anything
+   else is downgraded, and a figure no cited evidence returned is removed.
+4. **Nothing widens.** A caller below a clearance or without decision visibility is
+   handed less, and told so.
+5. **Every run is audited** — asker, template and version, prompt hash, provider
+   identity, tool calls, evidence references, grounding report — with no place to keep
+   a reasoning trace. A person reads their own runs; an admin reads all.
+6. **Agents are perspectives**, not principals: each is handed a subset of the *caller's*
+   evidence and none can act.
+
+## 4. Known gaps
 
 Stated plainly, because an undocumented gap is the dangerous kind.
 
-| Gap | Impact today | Closes in |
+| Gap | Impact | Status |
 | --- | --- | --- |
-| ~~No unit-level RLS on decisions.~~ **Closed in Phase 6** for every decision table: a decision is readable by org admins, its creator, and members of a unit it is shared with or of any unit above it (`helm_can_see_decision`, subtree-inclusive over `org_unit_memberships`). Proven server-side with users in two BUs and a country GM. | — | ✅ Phase 6 |
-| ~~Scenarios, value graph and calculations are still org-visible.~~ **Closed in Phase 7** ([ADR-0025](../adr/0025-sensitivity-and-scenario-visibility.md)): a scenario bound to a decision is captured by it; runs, values and steps follow the scenario and their class. Proven server-side. | — | ✅ Phase 7 |
-| **Functional visibility is by unit only.** A function is modelled as an org unit (`department`) and a cross-functional decision gets one grant per unit; there is no per-field or per-metric function rule. | Coarse, but not over-broad for decisions | Phase 7 |
-| ~~No sensitivity classes.~~ **Closed in Phase 7**: five compartments on metrics and value nodes, admin-granted time-bounded clearances, per-item enforcement in RLS and in the twin, withheld items stated. HR classes are reserved; no HR data exists. | — | ✅ Phase 7 |
-| ~~There is no authority model.~~ **Closed in Phase 6** ([ADR-0022](../adr/0022-decision-authority-graph.md)): role occupancy, versioned DOA policies, consequence-based rules, delegation, evaluations bound to the commitment fingerprint, approval acts tied to identity and seat. `helm_approval_rules` is RETIRED. | — | ✅ Phase 6 |
-| ~~Authority verdicts are computed in the client.~~ **Closed in Phase 7** ([ADR-0024](../adr/0024-trusted-authority-runtime.md)): only the trusted service writes evaluations, requirements and approval acts; it refuses client-supplied facts and re-derives the consequences' calculation trace. | — | ✅ Phase 7 (kernel and schema) |
-| **The trusted service is not deployed.** The `helm-authority` edge function is built but not deployed; client writes are revoked, so the cloud decision page cannot record a verdict until it is. | Cloud governance flow unavailable | **pilot blocker** — [deployment gate](trusted-runtime-deployment-gate.md) |
-| **SECURITY DEFINER helpers in `public`.** ~~Phase 6's three helpers were callable over RPC.~~ Moved to `helm_private` in Phase 7, `EXECUTE` revoked from `PUBLIC` and `anon`. The five shared-core helpers remain in `public` (Memoire's). | shared-core helpers only | ✅ Phase 7 for HELM's |
-| **Causal knowledge could leak a restricted decision or class.** ~~Open~~ **Closed in Phase 8** ([ADR-0026](../adr/0026-enterprise-causal-graph.md)): a causal claim is read whole or not at all — its unit audience, its own, its variables' and its evidence's classes, and every decision it rests on; the rule is row-based so `INSERT … RETURNING` works. Proven server-side (31 refusals, 10 controls). | — | ✅ Phase 8 |
-| **The genome could leak a restricted decision, class or unit.** ~~Open~~ **Closed in Phase 9** ([ADR-0028](../adr/0028-management-genome.md)): an episode is read whole or not at all — its unit audience, every sensitivity class it carries and the decision it wraps; a pattern or lesson only when every episode it rests on is readable, otherwise it is withheld whole, title included. Row-based, so `INSERT … RETURNING` works. Proven server-side (52 refusals, 28 controls, each refusal matched to its reason). No person is a feature or a view. | — | ✅ Phase 9 (kernel and schema) |
-| ~~Read policies re-read their own row by id~~ **Closed** (`20260930100000_helm_rls_row_visibility.sql`): `helm_decisions`, `helm_scenarios`, `helm_scenario_runs` and `helm_twin_snapshots` refused `INSERT … RETURNING`, so the cloud twin could not save a snapshot and members could not create decisions or scenarios. The rules are unchanged, now written over the row's columns; `verify:schema` forbids the pattern; the twin tables lost the default UPDATE/DELETE privilege. | — | ✅ fixed; cloud path still unproven (Blocker B) |
-| **Field-level redaction is per twin item only.** Twin items and value observations are redacted by class; decision rows are still row-shaped. | Cannot share a decision while hiding its amount | later |
-| **No AI access controls.** Nothing to control — there is no AI. Must exist before Phase 11. | none yet | Phase 11 |
+| **The trusted authority service is not deployed.** `helm-authority` is built and contract-tested; client writes are revoked, so the cloud decision page cannot record a verdict until it is. | cloud governance flow unavailable | **pilot blocker A** — [deployment gate](trusted-runtime-deployment-gate.md) |
+| **Postgres conformance suites have never run in an isolated, authenticated environment** (13 suites). RLS is proven by rolled-back server-side proofs run as the database owner, each with a control, not from authenticated clients. | cloud persistence unproven | **pilot blocker B** |
+| **No egress policy for an external model provider.** No such provider exists; the reference provider makes no network call. A real one must not receive a sensitive class without per-organization configuration, and that control does not exist yet. | none today | must exist before a language-model provider is connected |
+| **Functional visibility is by unit only.** A function is an org unit (`department`); a cross-functional decision gets one grant per unit. | coarse, not over-broad | backlog |
+| **Field-level redaction is per twin item only.** Decision rows are row-shaped. | cannot share a decision while hiding its amount | backlog |
+| **Entity-type classes are not modelled**; classes live on metrics and nodes. | an entity's existence is not class-gated | backlog |
+| **No rate or cost limits on AI runs.** | none with the reference provider | before a real provider |
 
-**Phases 6 and 7 are therefore security phases as much as governance and state phases.** The
-Country GM Cockpit (Phase 14) must not ship before it, because a cockpit's whole
-purpose is presenting cross-functional data to a scoped role.
+Closed (each with a live server-side proof): unit-level decision visibility; scenario
+and value visibility; sensitivity classes; the authority model; client-computed
+verdicts; public `SECURITY DEFINER` helpers; causal, genome, counterfactual and review
+leakage of restricted decisions, classes or units; policies that re-read their own row.
 
-## 4. Target model
+## 5. Operational security
 
-### 4.1 Five-dimensional scope
+- No service-role key in any client bundle. Browser code uses the anon key; RLS does
+  the work.
+- Secrets via environment only; `.env` is gitignored (`.env.example` is the template).
+- Demo mode is fully in-memory and **never** writes to the cloud.
+- Migrations are additive and `helm_*` only; none alters or drops a Memoire object, and
+  the Memoire function fingerprint is checked unchanged after every live migration.
+- Live migrations follow the protocol: pre-flight → repo/live diff → named parts →
+  post-flight → rolled-back server proof with a control → advisors. No fixtures are left.
 
-```ts
-type Scope = {
-  orgId: OrgId;              // hard tenant wall — RLS
-  actorId: UserId;
-  role: OrgRole;             // admin > manager > member > viewer
-  orgUnitIds: OrgUnitId[];   // unit subtree visibility — RLS (P6)
-  functions: string[];       // functional visibility — RLS (P6)
-};
-```
-
-Resolved once per session, server-side, and passed into every kernel call. There
-is no ambient tenant and no client-supplied scope.
-
-Unit visibility is **subtree-inclusive**: membership of a `Region` grants its
-countries. Computed by recursive CTE in a `SECURITY DEFINER` helper
-(`visible_org_units(org_id)`), so policies stay single-expression and cheap.
-
-### 4.2 Sensitivity classes
-
-Every entity type and value metric carries a class:
-
-| Class | Example | Visible to |
-| --- | --- | --- |
-| `operational` | inventory position, capacity | any member |
-| `commercial` | customer margin, opportunity value | commercial + management in scope |
-| `financial` | BU EBITDA, working capital | finance + management in scope |
-| `strategic` | M&A scenario, market exit | admin + named roles |
-| `personal` | compensation, performance | HR + named roles only |
-
-Enforced at the graph-store adapter, so a traversal cannot leak a node the actor
-may not see — even through a path they are otherwise allowed to walk. Filtering
-in the UI would be theatre.
-
-**As implemented in Phase 7** ([ADR-0025](../adr/0025-sensitivity-and-scenario-visibility.md)):
-the classes are `GENERAL_MANAGEMENT`, `FINANCIAL_SENSITIVE`,
-`COMMERCIAL_CONFIDENTIAL`, `HR_RESTRICTED`, `STRATEGIC_RESTRICTED`, held as
-compartments (not levels) on value metrics and nodes, enforced in RLS on
-observations, calculation steps and twin items (`helm_private.has_clearance`),
-and in the twin's projection, which states what was withheld. Entity-type
-classes are not yet modelled.
-
-### 4.3 Authority as data
-
-```
-helm_authority_rules(
-  id, org_id, action_type, decision_type,
-  scope_org_unit_id, scope_country_entity_id, scope_function,
-  amount_min, amount_max, currency,
-  risk_max, required_role_entity_id,
-  approval_chain_role_ids[], escalation_role_ids[],
-  valid_from, valid_to, active
-)
-```
-
-`AuthorityEngine.evaluate()` returns the rule that matched **and the rationale**,
-so "you cannot approve this" is always accompanied by "because", "who can", and
-"what the escalation path is". An authority denial with no explanation is a
-usability defect and a support cost.
-
-Rules are versioned by validity window: a decision approved last year is judged
-against the authority that existed then.
-
-### 4.4 Defence in depth for approvals
-
-The authority check will run in **two independent layers**:
-
-1. An `AuthorityEngine` consulted by the Decision Runtime before a commitment is
-   recorded, producing a rationale, a chain and an escalation path.
-2. An RLS policy on `helm_decision_commitments` restricting the INSERT to actors
-   satisfying the matched rule.
-
-Duplication is deliberate. Layer 1 can be bypassed by a direct API call; layer 2
-cannot be bypassed at all.
-
-**Superseded by ADR-0022.** Phase 6 keeps the commitment as history and does
-not refuse its INSERT: refusing it would destroy the record of an unauthorized
-act. Instead the authority evaluation is a separate, immutable record, and the
-database's own guards check what can be checked without re-running the kernel —
-the evaluated fingerprint is the commitment's, the actor is its committer, an
-`AUTHORIZED` basis is a rule the actor held at the act, and an approval comes
-from the caller, from a seat or delegation they held, never from the committer
-when independence is required.
-
-## 5. AI access controls (must precede Phase 11)
-
-1. **Context is kernel-assembled.** An agent never queries the database; it
-   receives a `GroundedContext` built under its principal's scope.
-2. **Agents are scope-narrowed.** A Finance Agent receives `financial` and
-   `operational` classes; it does not receive `personal`.
-3. **Citations are validated.** A response referencing an id absent from its
-   context is rejected, not flagged.
-4. **No egress of sensitive classes** to an external model provider without
-   explicit org-level configuration, recorded per organization.
-5. **Every AI call is logged** with purpose, principal, scope, provider, model,
-   and the context id set — so "what did the model see?" is answerable after the
-   fact.
-
-## 6. Operational security
-
-- No service-role key in any client bundle. Browser code uses the anon key; RLS
-  does the work.
-- Secrets via environment only; `.env` is gitignored (`.env.example` is the
-  template).
-- Demo mode is fully in-memory and **never** writes to the cloud — the same rule
-  Memoire enforces with `verify:sample-live-separation`.
-- Migrations are additive; no migration alters or drops a Memoire table.
-
-## 7. Contract tests
+## 6. Contracts
 
 | Script | Asserts |
 | --- | --- |
-| `verify:rls-coverage` | every `helm_*` table has RLS enabled and ≥1 policy per needed operation |
-| `verify:append-only` | `helm_decision_events` (and later audit tables) have no UPDATE/DELETE policy |
-| `verify:org-scope` | every `helm_*` table has `org_id` and every policy predicate references it |
-| `verify:no-service-key` | no service-role key reachable from client code |
-| `verify:additive-migrations` | no migration contains `DROP`/`ALTER` against a Memoire table |
-| `verify:memoire-boundary` | no kernel package reads a Memoire table; no write beyond `commercial_events` append |
-| `verify:demo-isolation` | demo mode performs no network write |
+| `verify:schema` | RLS on every `helm_*` table with a policy per needed operation; org-scoped policies; append-only tables permit no DELETE; no policy re-reads its own row; no destructive migration |
+| `verify:*-schema` (value, scenario, decision, authority, twin, causal, genome, counterfactual, integration, review, intelligence) | each layer's tables: append-only, database record time, no stored status or score, pinned modes, read-whole helpers |
+| `verify:*-security` (decision-visibility, twin, causal, genome, counterfactual, review) | who may read what, by unit, class and decision; visibility is not authority |
+| `verify:authority-server` | the trusted service exists, refuses client facts and re-derives the trace |
+| `verify:intelligence-governed`, `verify:council` | READ_ONLY catalogue, reads as the caller, plain-JSON provider, no write, no vote |
+| `verify:memoire-boundary` | no kernel package touches a Memoire table; the app reads Memoire only through the bridge; no migration touches a Memoire object |
+| `verify:boundaries` | dependencies point one way; concepts confined to their homes; no AI or agent write; eval-free; additive migrations |
+| `verify:architecture` | apps → packages → shared; kernel purity (no I/O, ambient clock or randomness) |

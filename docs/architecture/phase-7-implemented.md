@@ -297,6 +297,10 @@ The rest of this table is ordinary backlog.
 | Twin snapshots are built on request | No schedule; a `CURRENT` snapshot exists when someone builds one. |
 | Unindexed foreign keys | 10 new INFOs; tables are empty. |
 
+## 10a. Addendum — a defect found in Phase 8
+
+The Phase 8 live proof showed the twin's SELECT policy re-read its own row by id, so `helm_save_twin_snapshot` (and `INSERT … RETURNING` on decisions, scenarios and runs) was refused by RLS. Fixed in `20260930100000_helm_rls_row_visibility.sql`; see [phase-8-implemented.md](phase-8-implemented.md) §3.
+
 ## 11. What Phase 7 does not do
 
 No causal graph or causal inference (attribution is arithmetic dependency and

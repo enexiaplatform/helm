@@ -35,12 +35,15 @@ twin continues to treat the trusted service as the canonical cloud path.
 - **Blocker B** — the Postgres conformance suites have never run against an
   isolated, authenticated environment. The Phase 8 live proof showed why this
   matters: it found that RLS refused `INSERT … RETURNING` for the causal
-  tables (fixed before the proof passed), and that **Phase 7's
-  `helm_save_twin_snapshot` has the same defect** — the cloud twin cannot save
-  a snapshot even as an org admin — and the twin tables still carry the
-  default UPDATE/DELETE privilege. Both remain open; causal claims are
-  decision-relevant in the demo, but their cloud persistence is unproven until
-  this gate passes.
+  tables, and that the same defect made **Phase 7's
+  `helm_save_twin_snapshot`** — and member inserts into `helm_decisions`,
+  `helm_scenarios` and `helm_scenario_runs` — fail even for an org admin. All
+  are fixed (migration `20260930100000_helm_rls_row_visibility.sql`, proved
+  server-side, and `verify:schema` now forbids the pattern), but a defect that
+  a rolled-back proof found and 500 kernel tests did not is exactly what an
+  isolated authenticated run exists to find. Causal claims are
+  decision-relevant in the demo; their cloud persistence is unproven until this
+  gate passes.
 
 Both bear on whether HELM's governance guarantees hold outside the in-memory
 reference environment. Other Phase 7 debt is ordinary backlog.

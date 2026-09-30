@@ -209,6 +209,28 @@ for (const block of combined.matchAll(/DO\s+\$\$([\s\S]*?)\$\$\s*;/g)) {
   }
 }
 
+// (4b) A read policy never re-reads its OWN row by id. A STABLE helper that
+// looks the row up again cannot see a row inserted in the same statement, and
+// Postgres applies SELECT policies to INSERT … RETURNING — so every client
+// write that reads its record back is refused. Found live in Phase 8 on four
+// tables. Only the LAST definition of each policy counts (later migrations
+// replace earlier ones).
+{
+  const last = new Map();
+  for (const p of policies) last.set(`${p.table}|${p.name}`, p);
+  for (const p of last.values()) {
+    if (!p.table.startsWith('helm_') || (p.command !== 'SELECT' && p.command !== 'ALL')) continue;
+    const m = /helm_private\.([a-z_]+)\(\s*id\s*\)/i.exec(p.body);
+    if (m) {
+      fail(
+        'rls-returning',
+        `policy "${p.name}" on "${p.table}" calls helm_private.${m[1]}(id), re-reading its own row — ` +
+          'INSERT … RETURNING is refused; pass the row\'s columns to a …_row_visible rule instead',
+      );
+    }
+  }
+}
+
 /** Does this policy grant `command`? FOR ALL grants every command. */
 const grants = (p, command) => p.command === command || p.command === 'ALL';
 

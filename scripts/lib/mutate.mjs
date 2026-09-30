@@ -764,6 +764,13 @@ const MUTATIONS = [
     from: "REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE",
     to: "REVOKE REFERENCES, TRIGGER ON TABLE",
   },
+  {
+    verifier: "verify-schema.mjs",
+    invariant: "a read policy never re-reads its own row by id (INSERT … RETURNING)",
+    file: "supabase/migrations/20260930100000_helm_rls_row_visibility.sql",
+    from: "USING (public.is_org_member(org_id) AND helm_private.twin_snapshot_row_visible(org_id, built_by, granted_unit_ids));",
+    to: "USING (public.is_org_member(org_id) AND helm_private.can_see_twin_snapshot(id));",
+  },
 ];
 
 const only = process.argv[2] ?? '';

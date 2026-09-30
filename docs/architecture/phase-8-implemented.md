@@ -101,11 +101,15 @@ orgs, units, decision, variables, claims and evidence verified back at zero.
    new public tables; RLS matched no row, but the privilege is now revoked
    (part 6).
 
-**The same RETURNING defect exists in Phase 7.** A rolled-back check confirmed
-`helm_save_twin_snapshot` is refused by RLS even for an org admin, so the cloud
-twin cannot save a snapshot, and the twin tables still carry the default
-UPDATE/DELETE privilege. Not changed here (it is Phase 7's migration); recorded
-under Blocker B in the deployment gate.
+**The same RETURNING defect existed in Phases 6 and 7** (four tables:
+`helm_decisions`, `helm_scenarios`, `helm_scenario_runs`, `helm_twin_snapshots`);
+a rolled-back check confirmed `helm_save_twin_snapshot` was refused even for an
+org admin. Fixed in its own additive migration,
+`20260930100000_helm_rls_row_visibility.sql` (same rules, row-based; the twin
+tables lose the default UPDATE/DELETE privilege), proved server-side (5
+refusals, 9 controls including member inserts read back through RETURNING and
+the captured-scenario and BU-restriction rules unchanged), and now forbidden
+by `verify:schema` (`rls-returning`).
 
 **Advisors afterwards.** Security: no new findings (the causal helpers live in
 `helm_private`); the five shared-core helper WARNs and leaked-password
@@ -223,8 +227,7 @@ invariants** across 28 contracts (32 of them Phase 8); every one is caught.
   claims are shown beside decisions and the twin in the demo; in the cloud their
   persistence is unproven, and the Phase 7 twin save defect above shows why the
   gate matters.
-- Debt: the Phase 7 RETURNING defect and twin-table privileges; entity-type
-  sensitivity classes; unindexed foreign keys (INFO); no cloud UI to author
+- Debt: entity-type sensitivity classes; unindexed foreign keys (INFO); no cloud UI to author
   claims (the demo authors them through the kernel).
 
 ## 11. What Phase 8 does not do

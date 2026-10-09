@@ -131,6 +131,26 @@ export function CalculationsPage() {
     };
   }, [mode, activeOrgId, userId, myRole]);
 
+  // --- the last baseline run on record, so a reload does not claim nothing has ever run ---
+  useEffect(() => {
+    if (!loaded) return;
+    let cancelled = false;
+    (async () => {
+      const runs = await loaded.engine.listRuns(loaded.scope, 20);
+      if (cancelled || !runs.ok) return;
+      const last = runs.value.find((r) => r.context.scenarioEntityId === null && r.context.scenarioRevisionId === null);
+      if (!last) return;
+      const trace = await loaded.engine.getTrace(loaded.scope, last.id);
+      if (cancelled || !trace.ok) return;
+      const summary = { CALCULATED: 0, UNCHANGED: 0, BLOCKED: 0, FAILED: 0, SKIPPED: 0 } as Record<StepStatus, number>;
+      for (const st of trace.value) summary[st.status] += 1;
+      setResult((current) => current ?? { run: last, steps: trace.value, written: [], summary, uncomputable: [] });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loaded]);
+
   // --- value node labels, so a trace reads as positions rather than uuids ---
   useEffect(() => {
     if (!loaded) return;
@@ -327,17 +347,27 @@ export function CalculationsPage() {
                   .join(' · ')
               }
             />
+            {busy && <p className="mt-3 text-base text-ink-600">Running the model over every value position it can compute…</p>}
             {!result ? (
-              <p className="mt-3 text-base text-ink-600">
-                Nothing has been run yet. Running the model writes DERIVED observations and an append-only trace; it never
-                overwrites a stated fact.
-              </p>
+              !busy && (
+                <p className="mt-3 text-base text-ink-600">
+                  Nothing has been run yet. Running the model writes DERIVED observations and an append-only trace; it never
+                  overwrites a stated fact.
+                </p>
+              )
             ) : (
               <>
                 <p className="helm-meta mt-3">
                   run {result.run.id} · modelling {result.run.context.effectiveAsOf} · knowledge through{' '}
                   {result.run.context.recordedThrough} · {result.run.context.preference} · {result.run.status}
                 </p>
+                {steps.length === 0 && (
+                  <p className="mt-3 max-w-reading text-base text-red-700">
+                    This run computed nothing: no value position carries a result of these calculations. A model result needs
+                    a position to live on — an expected revenue needs an opportunity that has both a value and a probability.
+                    Check the inputs on the <a href="/value-graph" className="underline">value graph</a>.
+                  </p>
+                )}
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[760px] border-collapse">
                     <thead>

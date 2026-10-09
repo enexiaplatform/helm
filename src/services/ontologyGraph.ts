@@ -23,6 +23,7 @@ import { createPostgresValueGraph } from '@helm/value-graph/postgres';
 import {
   createCalculationRegistry,
   createPropagationEngine,
+  ensureDerivedPositions,
   meridianValueModelV1_1,
   type CalculationRegistry,
   type CalculationStore,
@@ -152,9 +153,27 @@ export function getCloudGraphs(): HelmGraphs | null {
   return {
     graphStore,
     valueGraph,
-    engine: buildEngine(graphStore, valueGraph, store),
+    engine: withDerivedPositions(buildEngine(graphStore, valueGraph, store), graphStore, valueGraph),
     store,
     nodeHandles: null,
+  };
+}
+
+/**
+ * The cloud world arrives from Memoire with source facts only — no position for a model result to live on — so a run over
+ * it computed nothing (the audit of 2026-10-09). Before any run that writes, the positions the registry's same-subject
+ * calculations define are ensured: structure only, idempotent, every value still computed by the engine with its trace.
+ */
+function withDerivedPositions(engine: PropagationEngine, graphStore: GraphStore, valueGraph: ValueGraph): PropagationEngine {
+  return {
+    ...engine,
+    async execute(scope, request) {
+      if (!request.dryRun) {
+        const ensured = await ensureDerivedPositions({ registry: calculations, valueGraph, graphStore, ontology: registry }, scope, { horizon: request.horizon ?? 'quarter' });
+        if (!ensured.ok) return ensured;
+      }
+      return engine.execute(scope, request);
+    },
   };
 }
 

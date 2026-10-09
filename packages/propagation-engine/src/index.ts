@@ -11,6 +11,8 @@ export * from './dependencyGraph.ts';
 export * from './port.ts';
 export { createPropagationEngine, ENGINE_VERSION } from './engine.ts';
 export type { PropagationEngineOptions } from './engine.ts';
+export { ensureDerivedPositions } from './positions.ts';
+export type { DerivedPosition, DerivedPositionDeps, DerivedPositionReport } from './positions.ts';
 export { createInMemoryCalculationStore } from './inMemoryStore.ts';
 export type { InMemoryCalculationStoreOptions } from './inMemoryStore.ts';
 export {

@@ -222,6 +222,9 @@ export function createPostgresCalculationStore(
           period_end: run.context.period?.end ?? null,
           period_grain: run.context.period?.grain ?? null,
           scenario_revision_id: run.context.scenarioRevisionId,
+          // Both ends of a run come from the same clock: started_at defaulting to the server's now() while completeRun
+          // stamps the injected clock let a run "complete" before it started (2026-10-09, run 7de54cfe).
+          started_at: clock.now().toISOString(),
           completed_at: run.completedAt,
           replay_of_run_id: run.replayOfRunId,
           notes: run.notes,

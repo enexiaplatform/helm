@@ -21,7 +21,10 @@ import { SectionHead } from '../components/ui/SectionHead.tsx';
 import { EmptyState } from '../components/ui/EmptyState.tsx';
 import { DecisionRow, type DecisionRowView } from '../components/decision/DecisionRow.tsx';
 import type { PillTone } from '../components/ui/Pill.tsx';
-import { displayDate, readable, resolveDecisionContext } from '../services/decisionRuntime.ts';
+import { displayDate, readable, resolveDecisionContext, type DecisionWorkspaceContext } from '../services/decisionRuntime.ts';
+import { FrameDecisionModal } from '../components/decision/DecisionAuthoring.tsx';
+import { Button } from '../components/ui/Button.tsx';
+import { asUserId } from '@helm/shared';
 import { loadDecisionSummaries, type DecisionSummary } from '../services/decisionWorkspace.ts';
 import { latestCommitmentId, resolveGovernanceContext } from '../services/authorityRuntime.ts';
 
@@ -94,8 +97,11 @@ export function DecisionsPage() {
   const mode = useHelmStore((s) => s.mode);
   const activeOrgId = useHelmStore((s) => s.activeOrgId);
   const userId = useHelmStore((s) => s.userId);
+  const userEmail = useHelmStore((s) => s.userEmail);
   const myRole = useHelmStore((s) => s.myRole);
   const [items, setItems] = useState<DecisionSummary[] | null>(null);
+  const [ctx, setCtx] = useState<DecisionWorkspaceContext | null>(null);
+  const [framing, setFraming] = useState(false);
   const [governed, setGoverned] = useState<Governed>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -117,6 +123,7 @@ export function DecisionsPage() {
           setError('The decision runtime is unavailable in this mode.');
           return;
         }
+        setCtx(ctx);
         const loaded = await loadDecisionSummaries(ctx);
         const states: Record<string, { state: string; waitingOn: string[] }> = {};
         if (gov) {
@@ -161,20 +168,33 @@ export function DecisionsPage() {
     reviewed.length > 0 && `${word(reviewed.length)} ${plural(reviewed.length, 'has', 'have')} been looked at again.`,
   ].filter(Boolean);
   const headline = items.length === 0 ? 'No decision has been framed yet.' : sentences.join(' ') || 'Every decision here was cancelled.';
+  const frame = ctx ? (
+    <Button variant="primary" onClick={() => setFraming(true)}>
+      Frame a decision
+    </Button>
+  ) : null;
 
   return (
     <>
-      <PageHeader
-        kicker="Management · Decisions"
-        title={headline}
-        lede="One management question each — the alternatives considered, the futures computed for them, what mattered, who disagreed and what was committed. HELM preserves the reasoning; it does not do the deciding."
-      />
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <PageHeader
+          kicker="Management · Decisions"
+          title={headline}
+          lede="One management question each — the alternatives considered, the futures computed for them, what mattered, who disagreed and what was committed. HELM preserves the reasoning; it does not do the deciding."
+        />
+        {items.length > 0 && frame}
+      </div>
       {items.length === 0 ? (
         <EmptyState
           className="mt-9"
           title="No decisions yet"
-          detail="A decision starts with a question — not a topic. Frame one from a signal on Attention, or branch the futures it would choose between on Scenarios first."
-          action={<Link to="/scenarios">Go to scenarios →</Link>}
+          detail="A decision starts with a question — not a topic. Frame it here; bind the futures it chooses between now, or branch them on Scenarios first and add them as alternatives later."
+          action={
+            <span className="flex flex-wrap items-center gap-4">
+              {frame}
+              <Link to="/scenarios">Branch futures on Scenarios →</Link>
+            </span>
+          }
         />
       ) : (
         <div className="mt-9 grid gap-9">
@@ -189,6 +209,17 @@ export function DecisionsPage() {
               </section>
             ))}
         </div>
+      )}
+      {framing && ctx && (
+        <FrameDecisionModal
+          ctx={ctx}
+          author={{ label: userEmail ?? 'Management', userId: userId ? asUserId(userId) : null }}
+          onClose={() => setFraming(false)}
+          onFramed={(id) => {
+            setFraming(false);
+            navigate(`/decisions/${id}`);
+          }}
+        />
       )}
     </>
   );

@@ -33,6 +33,7 @@ import { CommitmentBanner } from '../components/decision/CommitmentBanner.tsx';
 import { CriteriaMatrix, type MatrixAlt, type MatrixCell, type MatrixRow } from '../components/decision/CriteriaMatrix.tsx';
 import { AssumptionList } from '../components/decision/AssumptionList.tsx';
 import { ChallengeList } from '../components/decision/ChallengeList.tsx';
+import { DecisionAuthoring } from '../components/decision/DecisionAuthoring.tsx';
 import { cn } from '../lib/cn.ts';
 import {
   displayConfidence,
@@ -89,6 +90,7 @@ export function DecisionDetailPage() {
   const mode = useHelmStore((s) => s.mode);
   const activeOrgId = useHelmStore((s) => s.activeOrgId);
   const userId = useHelmStore((s) => s.userId);
+  const userEmail = useHelmStore((s) => s.userEmail);
   const myRole = useHelmStore((s) => s.myRole);
 
   const [ctx, setCtx] = useState<DecisionWorkspaceContext | null>(null);
@@ -342,6 +344,15 @@ export function DecisionDetailPage() {
       </div>
 
       <Evidence workspace={workspace} />
+
+      {!commitment && revision.state === 'DRAFT' && (
+        <DecisionAuthoring
+          ctx={ctx}
+          workspace={workspace}
+          author={{ label: userEmail ?? 'Management', userId: userId ? asUserId(userId) : null }}
+          onChanged={() => void reload(ctx, decision.id, revisionId)}
+        />
+      )}
 
       {commitment ? (
         <CommitmentRecord workspace={workspace} explanation={explanation} />

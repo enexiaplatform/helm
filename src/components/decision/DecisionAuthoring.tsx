@@ -9,11 +9,13 @@
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import type {
-  CriterionStyle,
-  DecisionTriggerType,
-  DecisionWorkspace,
-  ReadinessReport,
+import {
+  decisionTransitions,
+  type CriterionStyle,
+  type DecisionState,
+  type DecisionTriggerType,
+  type DecisionWorkspace,
+  type ReadinessReport,
 } from '@helm/decision-runtime';
 import type { Scenario, ScenarioRun } from '@helm/scenario-runtime';
 import type { UserId } from '@helm/shared';
@@ -199,7 +201,7 @@ export function FrameDecisionModal({
 
 // ================================================ preparing an open decision
 
-type Panel = 'alternative' | 'criterion' | 'assumption' | 'commit' | null;
+type Panel = 'alternative' | 'criterion' | 'assumption' | 'assess' | 'commit' | null;
 
 /** The measurable metrics a criterion may read, by name. */
 const CRITERION_METRICS = ['ExpectedRevenue', 'OpportunityValue', 'OpportunityProbability', 'GrossMargin', 'GrossMarginPct', 'CashImpact', 'RevenueAtRisk', 'DemandCoverage'];
@@ -229,7 +231,11 @@ export function DecisionAuthoring({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
-  const { revision } = workspace;
+  const { revision, decision } = workspace;
+  // Where the preparation stands is management's to say: DRAFT → INVESTIGATING / MODELLING → READY_FOR_DECISION. Only
+  // READY_FOR_DECISION can be committed, and commit itself is the step to COMMITTED, so it is not offered here.
+  const moves = decisionTransitions[decision.state].filter((s) => s !== 'COMMITTED');
+  const readable = (s: DecisionState) => s.replaceAll('_', ' ').toLowerCase();
 
   /** Runs one act, then reloads the workspace; a refusal is shown in the runtime's own words. */
   const act = async (what: string, fn: () => Promise<{ ok: boolean; error?: { message: string } }>) => {
@@ -267,16 +273,29 @@ export function DecisionAuthoring({
     <section className="mt-10">
       <SectionHead title="Prepare the decision" meta={`r${revision.revisionNumber} · draft`} caveat="each act is yours, recorded with your name" />
       <ReadinessLine readiness={workspace.readiness} />
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="text-dense text-ink-700">
+          It is <span className="font-mono">{readable(decision.state)}</span>
+          {decision.state !== 'READY_FOR_DECISION' ? ' — only a decision marked ready for decision can be committed.' : ' — it can be committed.'}
+        </span>
+        {moves.map((m) => (
+          <Button key={m} size="sm" variant={m === 'READY_FOR_DECISION' ? 'primary' : 'secondary'} disabled={busy} onClick={() => void act(`Marked ${readable(m)}.`, () => ctx.runtime.setState(ctx.scope, decision.id, m))}>
+            {m === 'CANCELLED' ? 'Cancel the decision' : `Mark ${readable(m)}`}
+          </Button>
+        ))}
+      </div>
       <div className="mt-4 flex flex-wrap gap-2">
         {tab('alternative', '+ Alternative')}
         {tab('criterion', '+ Criterion')}
         {tab('assumption', '+ Assumption')}
+        {workspace.criteria.some((c) => c.style === 'QUALITATIVE') && tab('assess', 'Assess')}
         {tab('commit', 'Commit')}
       </div>
       <div className="mt-4">
         {open === 'alternative' && <AlternativeForm ctx={ctx} busy={busy} onSubmit={(input) => act('Alternative added.', () => ctx.runtime.addAlternative(ctx.scope, revision.id, input))} />}
         {open === 'criterion' && <CriterionForm ctx={ctx} busy={busy} author={author} onSubmit={(input) => act('Criterion written down.', () => ctx.runtime.addCriterion(ctx.scope, revision.id, input))} />}
         {open === 'assumption' && <AssumptionForm busy={busy} author={author} onSubmit={(input) => act('Assumption written down.', () => ctx.runtime.addAssumption(ctx.scope, revision.id, input))} />}
+        {open === 'assess' && <AssessForm workspace={workspace} busy={busy} author={author} onSubmit={(input) => act('Assessment recorded.', () => ctx.runtime.recordAssessment(ctx.scope, input))} />}
         {open === 'commit' && <CommitForm workspace={workspace} busy={busy} author={author} onSubmit={(input) => act('Committed.', () => ctx.runtime.commit(ctx.scope, revision.id, input))} />}
       </div>
       {busy && <p className="mt-3 text-dense text-ink-600">Recording it…</p>}
@@ -530,6 +549,64 @@ function AssumptionForm({
   );
 }
 
+/** A person's judgement of one alternative against one qualitative criterion, with a reason. HELM never makes one. */
+function AssessForm({
+  workspace,
+  busy,
+  author,
+  onSubmit,
+}: {
+  workspace: DecisionWorkspace;
+  busy: boolean;
+  author: Author;
+  onSubmit: (input: Parameters<DecisionWorkspaceContext['runtime']['recordAssessment']>[1]) => void;
+}) {
+  const criteria = workspace.criteria.filter((c) => c.style === 'QUALITATIVE');
+  const alternatives = workspace.alternatives.filter((a) => a.status !== 'WITHDRAWN');
+  const [criterionId, setCriterionId] = useState(criteria[0]?.id ?? '');
+  const [alternativeId, setAlternativeId] = useState(alternatives[0]?.id ?? '');
+  const [rating, setRating] = useState<'STRONG_SUPPORT' | 'SUPPORT' | 'NEUTRAL' | 'CONCERN' | 'STRONG_CONCERN'>('NEUTRAL');
+  const [rationale, setRationale] = useState('');
+  return (
+    <FormShell
+      busy={busy}
+      label="Record the assessment"
+      onSubmit={() => onSubmit({ criterionId, alternativeId, rating, rationale: rationale.trim(), author: { kind: 'PERSON', label: author.label, userId: author.userId } })}
+    >
+      <Field label="Criterion">
+        <select className={controlClass} value={criterionId} onChange={(e) => setCriterionId(e.target.value)}>
+          {criteria.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Alternative">
+        <select className={controlClass} value={alternativeId} onChange={(e) => setAlternativeId(e.target.value)}>
+          {alternatives.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Your judgement" className="sm:col-span-2">
+        <select className={controlClass} value={rating} onChange={(e) => setRating(e.target.value as typeof rating)}>
+          <option value="STRONG_SUPPORT">strongly supports it</option>
+          <option value="SUPPORT">supports it</option>
+          <option value="NEUTRAL">neither</option>
+          <option value="CONCERN">raises a concern</option>
+          <option value="STRONG_CONCERN">raises a strong concern</option>
+        </select>
+      </Field>
+      <Field label="Why" className="sm:col-span-2">
+        <input className={controlClass} value={rationale} onChange={(e) => setRationale(e.target.value)} required minLength={8} />
+      </Field>
+    </FormShell>
+  );
+}
+
 function CommitForm({
   workspace,
   busy,
@@ -548,7 +625,8 @@ function CommitForm({
   const [tradeOff, setTradeOff] = useState('');
   const [acknowledge, setAcknowledge] = useState(false);
   const openChallenges = workspace.challenges.filter((c) => c.status === 'OPEN');
-  const blocked = workspace.readiness.state === 'NOT_READY';
+  const notReadyState = workspace.decision.state !== 'READY_FOR_DECISION';
+  const blocked = workspace.readiness.state === 'NOT_READY' || notReadyState;
   const choice = candidates.find((a) => a.id === chosen);
   return (
     <FormShell
@@ -566,7 +644,8 @@ function CommitForm({
         })
       }
     >
-      {blocked && <p className="text-dense text-red-700 sm:col-span-2">This decision is not ready: the gaps above block a commitment.</p>}
+      {workspace.readiness.state === 'NOT_READY' && <p className="text-dense text-red-700 sm:col-span-2">This decision is not ready: the gaps above block a commitment.</p>}
+      {notReadyState && <p className="text-dense text-red-700 sm:col-span-2">Mark it ready for decision above first; a commitment is made from that state only.</p>}
       <Field label="The alternative management chooses" className="sm:col-span-2">
         <select className={controlClass} value={chosen} onChange={(e) => setChosen(e.target.value)}>
           {candidates.map((a) => (

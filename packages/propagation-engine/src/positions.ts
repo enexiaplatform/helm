@@ -51,7 +51,8 @@ export type DerivedPositionReport = {
   readonly notSameSubject: readonly string[];
 };
 
-const LIMIT = 5000;
+// PostgREST caps a read at 1000 rows; asking for more would silently return fewer.
+const LIMIT = 1000;
 
 /** A calculation whose every required input is read from the output's own subject. */
 const sameSubjectOnly = (c: CalculationDefinition): boolean =>

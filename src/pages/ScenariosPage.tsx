@@ -32,6 +32,8 @@ import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
 import {
   BRANCH_METRICS,
+  CLOUD_BRANCH_METRICS,
+  rollUp,
   displayConfidence,
   displayDelta,
   displayInstant,
@@ -240,6 +242,11 @@ export function ScenariosPage() {
           {error}
         </Notice>
       )}
+      {busy && (
+        <Notice tone="neutral" label="Working" className="mt-5">
+          HELM is computing and saving. Over live data a simulation reads every position the model touches and can take up to a minute.
+        </Notice>
+      )}
 
       {periods.length > 1 && (
         <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -265,6 +272,7 @@ export function ScenariosPage() {
         <section className="mt-8">
           <SectionHead title="What each future does to the enterprise" caveat="HELM does not rank, score or recommend" />
           <HeadlineCompare
+            mode={ws.mode}
             data={data}
             tree={tree}
             baselineState={baselineState}
@@ -378,6 +386,7 @@ export function ScenariosPage() {
 
 /** Baseline first, then every future in branch order — the same five values each. */
 function HeadlineCompare({
+  mode,
   data,
   tree,
   baselineState,
@@ -386,6 +395,7 @@ function HeadlineCompare({
   onSelect,
   onExplain,
 }: {
+  mode: 'demo' | 'cloud';
   data: ExplorerData;
   tree: { snapshot: ScenarioSnapshot; depth: number }[];
   baselineState: FutureState | null;
@@ -435,13 +445,41 @@ function HeadlineCompare({
     };
   };
 
-  const rows: CompareRow[] = BRANCH_METRICS.map((m) => ({
-    label: m.label,
-    cells: [
-      cellFor(baselineState, m.metricKey, m.subjectHint, false),
-      ...tree.map(({ snapshot: s }) => cellFor(s.latestRun ? data.states[s.latestRun.id] : null, m.metricKey, m.subjectHint, true)),
-    ],
-  }));
+  // The cloud: many opportunities, so each row is the roll-up its metric declares, against the baseline's own roll-up.
+  const rollCell = (state: FutureState | null, metricKey: string, withDelta: boolean): CompareCell => {
+    if (!state) return { value: 'not simulated', title: 'this future has no simulation yet' };
+    const r = rollUp(state, metricKey, period);
+    if (r.value === null) return { value: '—', title: r.note ?? '' };
+    const base = withDelta && baselineState ? rollUp(baselineState, metricKey, period) : null;
+    const diff = base && base.value !== null && base.currency === r.currency ? Number(r.value) - Number(base.value) : null;
+    const metric = state.values.find((v) => v.metricKey === metricKey);
+    const better = metric?.directionality === 'LOWER_IS_BETTER' ? -1 : metric?.directionality === 'HIGHER_IS_BETTER' ? 1 : 0;
+    return {
+      value: displayValue(r.value, r.unit, r.currency),
+      title: `${r.value}${r.currency ? ` ${r.currency}` : ''} · the sum of ${r.counted} position(s)${r.note ? ` · ${r.note}` : ''}`,
+      ...(diff !== null && diff !== 0
+        ? { delta: `${diff > 0 ? '▲' : '▼'} ${displayDelta(String(diff), r.unit, r.currency)}`, interp: (better === 0 ? 'NEUTRAL' : diff * better > 0 ? 'FAVORABLE' : 'UNFAVORABLE') as Interp }
+        : {}),
+    };
+  };
+
+  const rows: CompareRow[] =
+    mode === 'cloud'
+      ? CLOUD_BRANCH_METRICS.map((m) => {
+          const base = baselineState ? rollUp(baselineState, m.metricKey, period) : null;
+          return {
+            label: m.label,
+            meta: base && base.value !== null ? `Σ of ${base.counted} position${base.counted === 1 ? '' : 's'} — summed as the metric declares` : (base?.note ?? undefined),
+            cells: [rollCell(baselineState, m.metricKey, false), ...tree.map(({ snapshot: s }) => rollCell(s.latestRun ? data.states[s.latestRun.id] : null, m.metricKey, true))],
+          };
+        })
+      : BRANCH_METRICS.map((m) => ({
+          label: m.label,
+          cells: [
+            cellFor(baselineState, m.metricKey, m.subjectHint, false),
+            ...tree.map(({ snapshot: s }) => cellFor(s.latestRun ? data.states[s.latestRun.id] : null, m.metricKey, m.subjectHint, true)),
+          ],
+        }));
 
   return <ScenarioCompare cols={cols} rows={rows} selected={selectedId ?? ''} onSelect={onSelect} />;
 }
@@ -562,6 +600,13 @@ function ScenarioDetail({
         )}
       </div>
 
+      {draft && !terminal && (
+        <p className="mt-3 text-meta text-ink-600">
+          Simulating seals r{latestRevision.revisionNumber}: its overrides are then fixed, so the future it computed can always be reproduced. A
+          later change opens r{latestRevision.revisionNumber + 1}.
+        </p>
+      )}
+
       {effective.length === 0 ? (
         <p className="mt-4 text-base text-ink-600">No overrides: this revision simulates the baseline itself.</p>
       ) : (
@@ -671,13 +716,39 @@ function AddOverrideForm({
   const [confidence, setConfidence] = useState('0.7');
   const [rationale, setRationale] = useState('');
 
+  const [query, setQuery] = useState('');
+  const [current, setCurrent] = useState<{ nodeId: string; value: string | null; currency: string | null } | null>(null);
+
   useEffect(() => {
     void listOverridableNodes(ws, periods).then((n) => {
       setNodes(n);
-      setNodeId((current) => current || n[0]?.id || '');
+      setNodeId((c) => c || n[0]?.id || '');
     });
   }, [ws, periods]);
-  const node = nodes.find((n) => n.id === nodeId);
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? nodes.filter((n) => `${n.label} ${n.metricName}`.toLowerCase().includes(q)) : nodes;
+  }, [nodes, query]);
+  // The chosen target, or the first one the search still shows.
+  const targetId = shown.some((n) => n.id === nodeId) ? nodeId : (shown[0]?.id ?? '');
+  const node = nodes.find((n) => n.id === targetId);
+
+  // What the target holds now, so a change is typed against a number the reader can see — and in the currency the
+  // source states it in, not a metric default (an SGD opportunity overridden in VND would not be the same quantity).
+  useEffect(() => {
+    if (!targetId) return;
+    let live = true;
+    void ws.graphs.valueGraph.getLatestObservation(ws.scope, { nodeId: targetId, type: 'ACTUAL' }).then((r) => {
+      if (!live) return;
+      const o = r.ok ? r.value : null;
+      setCurrent({ nodeId: targetId, value: o?.numericValue != null ? String(o.numericValue) : (o?.textValue ?? null), currency: o?.currency ?? null });
+    });
+    return () => {
+      live = false;
+    };
+  }, [ws, targetId]);
+  const now = current && current.nodeId === targetId ? current : null;
+  const currency = node?.unitType === 'currency' ? (now?.currency ?? node.defaultCurrency) : null;
 
   return (
     <form
@@ -691,7 +762,7 @@ function AddOverrideForm({
           operation,
           value,
           unit: node.unitType,
-          currency: node.unitType === 'currency' ? node.defaultCurrency : null,
+          currency,
           period: periodChoice === 'all' ? null : periods.find((p) => periodKey(p) === periodChoice) ?? null,
           provenanceKind,
           rationale,
@@ -699,14 +770,23 @@ function AddOverrideForm({
         });
       }}
     >
-      <Field label="Target (inputs only — outcomes are derived)" className="sm:col-span-2">
-        <select className={controlClass} value={nodeId} onChange={(e) => setNodeId(e.target.value)}>
-          {nodes.map((n) => (
+      <Field label="Find a target" className="sm:col-span-2">
+        <input className={controlClass} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${nodes.length} inputs — a customer, a product, a metric`} />
+      </Field>
+      <Field label={`Target (inputs only — outcomes are derived) · ${shown.length} of ${nodes.length}`} className="sm:col-span-2">
+        <select className={controlClass} value={targetId} onChange={(e) => setNodeId(e.target.value)}>
+          {shown.map((n) => (
             <option key={n.id} value={n.id}>
               {n.label} · {n.unitType}
             </option>
           ))}
         </select>
+        {node && (
+          <span className="mt-1 block font-mono text-meta text-ink-500">
+            now {now ? (now.value === null ? 'no actual reading' : displayValue(now.value, node.unitType, now.currency)) : 'reading…'}
+            {currency ? ` · overrides are stated in ${currency}` : ''}
+          </span>
+        )}
       </Field>
       <Field label="Change">
         <div className="flex gap-2">
@@ -927,6 +1007,20 @@ function Comparison({
 
 // ===================================================== new scenario modal
 
+/** "[Audit] Giảm 20% xác suất Tailin" → "audit-giam-20-xac-suat-tailin". `typing` keeps a trailing hyphen while editing. */
+function slugOf(text: string, typing = false): string {
+  const s = text
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+/, '')
+    .slice(0, 63);
+  return typing ? s : s.replace(/-+$/, '');
+}
+
 function NewScenarioModal({
   ws,
   data,
@@ -938,8 +1032,10 @@ function NewScenarioModal({
   onClose: () => void;
   onCreate: (input: Parameters<ScenarioWorkspace['runtime']['createScenario']>[1]) => Promise<void>;
 }) {
-  const [key, setKey] = useState('');
+  const [keyTyped, setKeyTyped] = useState<string | null>(null);
   const [name, setName] = useState('');
+  // A key is an identifier, not something a manager should have to invent: it follows the name until it is edited.
+  const key = keyTyped ?? slugOf(name);
   const [description, setDescription] = useState('');
   const [parentId, setParentId] = useState('');
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set([periodKey(ws.periodChoices[0])]));
@@ -961,11 +1057,18 @@ function NewScenarioModal({
           });
         }}
       >
-        <Field label="Key" hint="lowercase letters, digits and hyphens — unique in this organization">
-          <input className={controlClass + ' font-mono'} value={key} onChange={(e) => setKey(e.target.value)} required pattern="[a-z0-9][a-z0-9\-]{0,62}" />
-        </Field>
         <Field label="Name">
-          <input className={controlClass} value={name} onChange={(e) => setName(e.target.value)} required />
+          <input className={controlClass} value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        </Field>
+        <Field label="Key" hint="made from the name — lowercase letters, digits and hyphens, unique in this organization">
+          <input
+            className={controlClass + ' font-mono'}
+            value={key}
+            onChange={(e) => setKeyTyped(slugOf(e.target.value, true))}
+            required
+            pattern="[a-z0-9][a-z0-9\-]{0,62}"
+            title="lowercase letters, digits and hyphens, starting with a letter or digit"
+          />
         </Field>
         <Field label="Description">
           <input className={controlClass} value={description} onChange={(e) => setDescription(e.target.value)} />

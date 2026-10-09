@@ -104,7 +104,7 @@ export async function listOverridableNodes(ws: ScenarioWorkspace, periods: reado
     );
     for (const n of plan.nodes) computed.add(n.outputNodeId);
   }
-  const nodes = unwrap(await graphs.valueGraph.findValueNodes(scope, { limit: 500 }));
+  const nodes = unwrap(await graphs.valueGraph.findValueNodes(scope, { limit: 1000 }));
   return nodes
     .filter((n) => !computed.has(n.id))
     .map((n) => {

@@ -283,7 +283,8 @@ async function getCloudTwin(scope: Scope): Promise<TwinContext | null> {
       decisions: decisionStore,
       authority,
       authorityStore,
-      constraints: meridianConstraintsV1,
+      // The Meridian constraints name the demo's subjects; a real organization has none declared yet.
+      constraints: [],
     },
     clock: systemClock,
   });

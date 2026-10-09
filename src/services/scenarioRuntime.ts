@@ -25,15 +25,18 @@ import {
 } from '@helm/scenario-runtime';
 import { createPostgresScenarioStore } from '@helm/scenario-runtime/postgres';
 import {
+  decimal,
   periodContaining,
   periodKey,
+  sumAll,
   systemClock,
+  toString as decimalString,
   type Period,
   type QuantityUnit,
   type Scope,
 } from '@helm/shared';
 import { supabaseClient } from '../lib/supabaseClient.ts';
-import { calculations, getCloudGraphs, getDemoGraphs, type HelmGraphs } from './ontologyGraph.ts';
+import { calculations, getCloudGraphs, getDemoGraphs, valueMetrics, type HelmGraphs } from './ontologyGraph.ts';
 
 export type ScenarioWorkspace = {
   runtime: ScenarioRuntime;
@@ -52,7 +55,12 @@ export type ScenarioWorkspace = {
 
 let demoWorkspace: Promise<ScenarioWorkspace> | null = null;
 
-function buildRuntime(graphs: HelmGraphs, store: ScenarioStore): ScenarioRuntime {
+/**
+ * The Meridian constraints and state frame name the demonstration world's own subjects (opp-8821, SKU-X at the HCMC
+ * warehouse). They are the demo's, never a real organization's: a cloud workspace checked them against Memoire data
+ * and reported "opp-8821 is not in this organization's model" under "Can it be done?" (audit 2026-10-09).
+ */
+function buildRuntime(graphs: HelmGraphs, store: ScenarioStore, world: 'demo' | 'cloud'): ScenarioRuntime {
   return createScenarioRuntime({
     engine: graphs.engine,
     registry: calculations,
@@ -60,8 +68,8 @@ function buildRuntime(graphs: HelmGraphs, store: ScenarioStore): ScenarioRuntime
     graphStore: graphs.graphStore,
     store,
     clock: systemClock,
-    constraints: meridianConstraintsV1,
-    stateFrame: meridianStateFrame,
+    constraints: world === 'demo' ? meridianConstraintsV1 : [],
+    stateFrame: world === 'demo' ? meridianStateFrame : [],
   });
 }
 
@@ -99,7 +107,7 @@ function getCloudWorkspace(scope: Scope): ScenarioWorkspace | null {
   const current = periodContaining(now, 'QUARTER');
   const next = periodContaining(current.end, 'QUARTER');
   return {
-    runtime: buildRuntime(graphs, store),
+    runtime: buildRuntime(graphs, store, 'cloud'),
     graphs,
     scope,
     mode: 'cloud',
@@ -142,6 +150,50 @@ export function pickValue(
     (v) => v.metricKey === metricKey && periodKey(v.period) === periodKey(period),
   );
   return (subjectHint ? inPeriod.find((v) => v.nodeLabel.includes(subjectHint)) : undefined) ?? inPeriod[0];
+}
+
+/**
+ * The cloud branch summary. A real organization has many opportunities, not one Rohto deal, so "Revenue" is the
+ * roll-up the metric itself declares — summed only where its aggregation is SUM and every position is in one currency;
+ * anything else is said, not computed. Nothing is ranked: the same rows, in the same order, for every future.
+ */
+export const CLOUD_BRANCH_METRICS: readonly { label: string; metricKey: string }[] = [
+  { label: 'Expected revenue', metricKey: 'ExpectedRevenue' },
+  { label: 'Pipeline value', metricKey: 'OpportunityValue' },
+  { label: 'Gross margin', metricKey: 'GrossMargin' },
+  { label: 'Cash', metricKey: 'CashImpact' },
+  { label: 'Revenue at risk', metricKey: 'RevenueAtRisk' },
+];
+
+export type RollUp = {
+  readonly value: string | null;
+  readonly unit: QuantityUnit | null;
+  readonly currency: string | null;
+  /** Positions with a value, out of all positions of the metric in the period. */
+  readonly counted: number;
+  readonly positions: number;
+  /** Why there is no total, or what it leaves out. */
+  readonly note: string | null;
+};
+
+export function rollUp(state: FutureState, metricKey: string, period: Period): RollUp {
+  const metric = valueMetrics.metric(metricKey);
+  const all = state.values.filter((v) => v.metricKey === metricKey && periodKey(v.period) === periodKey(period));
+  const none = (note: string): RollUp => ({ value: null, unit: null, currency: null, counted: 0, positions: all.length, note });
+  if (all.length === 0) return none(`No position carries ${metric?.name ?? metricKey} in this state: the model has nothing to compute it from yet.`);
+  if (!metric || metric.aggregation !== 'SUM') return none(`${metric?.name ?? metricKey} is ${metric ? metric.aggregation.toLowerCase().replaceAll('_', ' ') : 'undeclared'}; it is never summed across positions.`);
+  const known = all.filter((v) => v.value !== null);
+  const currencies = new Set(known.map((v) => v.currency));
+  if (currencies.size > 1) return none(`The positions carry ${[...currencies].join(', ')}; HELM does not convert currencies.`);
+  if (known.length === 0) return none(`None of the ${all.length} positions has a value in this state.`);
+  return {
+    value: decimalString(sumAll(known.map((v) => decimal(v.value!)))),
+    unit: known[0]!.unit,
+    currency: known[0]!.currency,
+    counted: known.length,
+    positions: all.length,
+    note: known.length < all.length ? `${all.length - known.length} of ${all.length} positions have no value and are not in the total.` : null,
+  };
 }
 
 // ---------------------------------------------------------- display helpers

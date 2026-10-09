@@ -33,7 +33,13 @@ export function createMemoireOpportunityReader(): MemoireReader {
     async listOpportunities(_scope, after, limit) {
       if (!supabaseClient) return fail('integration.no_client', 'Memoire cannot be read: no database client is configured.');
       let q = supabaseClient.from('opportunities').select(READ_COLUMNS).order('updated_at', { ascending: true }).order('id', { ascending: true }).limit(limit);
-      if (after) q = q.or(`updated_at.gt.${after.updatedAt},and(updated_at.eq.${after.updatedAt},id.gt.${after.id})`);
+      // Postgres keeps microseconds; the cursor is the row's time to the millisecond (as every HELM time is). "After
+      // (T, id)" therefore means a later millisecond, or the same millisecond and a greater id — comparing the raw
+      // column with T would re-read the cursor's own row forever (its .771936 is "greater than" .771).
+      if (after) {
+        const nextMs = new Date(Date.parse(after.updatedAt) + 1).toISOString();
+        q = q.or(`updated_at.gte.${nextMs},and(updated_at.gte.${after.updatedAt},updated_at.lt.${nextMs},id.gt.${after.id})`);
+      }
       const { data, error } = await q;
       if (error) return fail('integration.read_failed', `Reading Memoire opportunities failed: ${error.message}`);
       return ok(((data ?? []) as unknown as MemoireOpportunityRow[]).map((r) => ({ ...r, updated_at: new Date(r.updated_at).toISOString() })));

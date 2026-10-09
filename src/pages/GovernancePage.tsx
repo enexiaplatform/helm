@@ -27,6 +27,7 @@ import { PageHeader } from '../components/ui/PageHeader.tsx';
 import { SectionHead } from '../components/ui/SectionHead.tsx';
 import { EmptyState } from '../components/ui/EmptyState.tsx';
 import { Pill, type PillTone } from '../components/ui/Pill.tsx';
+import { Notice } from '../components/ui/Notice.tsx';
 import { cn } from '../lib/cn.ts';
 
 type Loaded = {
@@ -136,6 +137,15 @@ export function GovernancePage() {
         title={title}
         lede="Who may commit which management decision, over which enterprise scope, under which computed consequences — and whose authority a commitment needs when it goes further. Authority attaches to roles; people occupy them. Nothing here is ranked, weighted or totalled."
       />
+
+      {mode === 'cloud' && !latest && (
+        <Notice tone="warning" label="Nothing governs a commitment here yet" className="mt-6">
+          No delegation-of-authority policy, role or occupancy is recorded for this organization, so every commitment made in{' '}
+          <Link to="/decisions" className="underline">Decisions</Link> carries authority NOT EVALUATED. Recording them is an
+          administrator&rsquo;s act the authority runtime accepts, but this page does not record them yet; and the verdicts and
+          approval acts themselves are written only by the trusted authority service, which is not deployed to this environment.
+        </Notice>
+      )}
 
       <section className="mt-9">
         <SectionHead title="Roles and who occupies them" meta={`${data.occupancies.length} occupancies`} caveat="authority follows the seat, not the person" />

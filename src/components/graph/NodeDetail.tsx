@@ -51,7 +51,7 @@ export function NodeDetail(p: Props) {
       )}
       <div className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-x-10 gap-y-6">
         <Links title="Driven by" items={p.up} empty="A source value — nothing in the graph drives it." onSelect={p.onSelect} />
-        <Links title="Drives" items={p.down} empty="The end of the chain — enterprise value." onSelect={p.onSelect} />
+        <Links title="Drives" items={p.down} empty="Nothing in the graph is linked downstream of it — no position is declared to depend on it yet." onSelect={p.onSelect} />
       </div>
       <div className="mt-8">
         <SectionHead title="Observations" size="section-sm" caveat="each kind kept separate, never blended" className="pb-2" />

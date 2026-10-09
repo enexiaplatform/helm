@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { CaseView, ComparedRow, ComparisonCell, CounterfactualComparison, CounterfactualWorld, ProjectedCounterfactuals, WorldView } from '@helm/counterfactual-runtime';
+import { Link } from 'react-router-dom';
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
 import { caseTone, comparisonOf, counterfactualsForViewer, resolveCounterfactualContext, supportTone, type CounterfactualContext } from '../services/counterfactualRuntime.ts';
@@ -323,7 +324,13 @@ export function CounterfactualsPage() {
           <section>
             <SectionHead title="Cases" meta={projected ? `${projected.cases.length} visible · ${projected.withheld} withheld` : '…'} caveat="a case is read whole or not at all" />
             {projected && projected.withheld > 0 && <p className="mt-3 text-dense text-ink-600">{projected.statement}</p>}
-            {projected && projected.cases.length === 0 && <p className="mt-3 text-ui text-ink-500">No case is known at this point in time, or none is readable by this reader.</p>}
+            {projected && projected.cases.length === 0 && (
+              <p className="mt-3 max-w-reading text-ui text-ink-500">
+                No case is known at this point in time, or none is readable by this reader. A counterfactual is anchored to the
+                boundary of a committed decision, after its outcome is known: commit one in{' '}
+                <Link to="/decisions" className="text-accent-700 underline">Decisions</Link> and record its outcome first.
+              </p>
+            )}
             <ul>
               {(projected?.cases ?? []).map((c) => (
                 <Row key={c.case.id} onClick={() => setSelected(c.case.id)} selected={selected === c.case.id}>

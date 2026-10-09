@@ -97,6 +97,9 @@ export function SourcesPage() {
   const livePhase = useMemoireLive((st) => st.phase);
   const liveListening = useMemoireLive((st) => st.listening);
   const liveSync = useMemoireLive((st) => st.lastSync);
+  const caughtUpAt = useMemoireLive((st) => st.caughtUpAt);
+  // When the reader last asked, and what the live sync held then — so "Sync now" can say what that pass found.
+  const [asked, setAsked] = useState<{ at: string; lastSyncId: string | null } | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -141,6 +144,7 @@ export function SourcesPage() {
 
   const sync = async () => {
     // The live sync runs the same pipeline and also composes the new current state; ask it rather than run beside it.
+    setAsked({ at: new Date().toISOString(), lastSyncId: liveSync?.id ?? null });
     if (wakeMemoireLiveSync()) return;
     setBusy(true);
     try {
@@ -192,6 +196,21 @@ export function SourcesPage() {
                   : 'The proof below ran once when the demo was built.'}
               </span>
             </div>
+            {ctx.mode === 'cloud' && asked && (
+              <p className="mt-2 font-mono text-meta text-ink-600" role="status">
+                {livePhase === 'reading' || livePhase === 'starting'
+                  ? 'Reading Memoire from the last checkpoint…'
+                  : livePhase === 'composing'
+                    ? 'Composing the current state from what changed…'
+                    : livePhase === 'failed'
+                      ? 'The read failed; HELM retries by itself.'
+                      : caughtUpAt && caughtUpAt >= asked.at
+                        ? (liveSync?.id ?? null) !== asked.lastSyncId && liveSync
+                          ? `Read at ${caughtUpAt.slice(11, 16)} UTC — ${liveSync.counts.records} record(s), ${liveSync.counts.observationsRecorded} new observation(s).`
+                          : `Checked at ${caughtUpAt.slice(11, 16)} UTC — nothing in Memoire changed since the last checkpoint.`
+                        : 'Asked for a pass…'}
+              </p>
+            )}
           </section>
 
           <section className="mt-10">

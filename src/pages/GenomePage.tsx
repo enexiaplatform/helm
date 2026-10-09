@@ -436,7 +436,13 @@ export function GenomePage() {
           <section>
             <SectionHead title="Episodes" meta={g ? `${g.episodes.length} visible · ${g.withheld.episodes} withheld` : '…'} caveat="one container per management experience" />
             {g && g.withheld.episodes + g.withheld.patterns + g.withheld.lessons > 0 && <p className="mt-3 text-dense text-ink-600">{g.statement}</p>}
-            {g && g.episodes.length === 0 && <p className="mt-3 text-ui text-ink-500">No episode is known at this point in time, or none is readable by this reader.</p>}
+            {g && g.episodes.length === 0 && (
+              <p className="mt-3 max-w-reading text-ui text-ink-500">
+                No episode is known at this point in time, or none is readable by this reader. An episode wraps a decision that
+                was committed and whose outcome was reviewed — it starts in{' '}
+                <Link to="/decisions" className="text-accent-700 underline">Decisions</Link>. Patterns and lessons rest on episodes.
+              </p>
+            )}
             <ul>
               {(g?.episodes ?? []).map((v) => (
                 <Row key={v.episode.id} onClick={() => setSelected({ kind: 'episode', id: v.episode.id })} selected={selected?.kind === 'episode' && selected.id === v.episode.id}>

@@ -166,6 +166,7 @@ export function TwinPage() {
   const [aId, setAId] = useState<string>('');
   const [bId, setBId] = useState<string>('');
   const [category, setCategory] = useState<ManagementCategory>('ATTENTION');
+  const [filter, setFilter] = useState('');
   const [view, setView] = useState<SnapshotView | null>(null);
   // Async results are keyed by the inputs they were read for; what is shown is derived from that key.
   const [deltaState, setDeltaState] = useState<{ key: string; value: Awaited<ReturnType<typeof compareView>> } | null>(null);
@@ -271,7 +272,10 @@ export function TwinPage() {
   const scopeLabel = ctx.scopes.find((x) => (x.kind === 'ENTERPRISE' ? 'ENTERPRISE' : x.entityId) === scopeKey)?.label ?? 'Enterprise';
   const shown = view?.projection?.items ?? [];
   const byCategory = (c: ManagementCategory) => shown.filter((i) => i.categories.includes(c));
-  const items = byCategory(category);
+  // A lens can hold hundreds of items (177 values for a hundred opportunities): a filter by name, never a ranking.
+  const all = byCategory(category);
+  const needle = filter.trim().toLowerCase();
+  const items = needle ? all.filter((i) => i.label.toLowerCase().includes(needle)) : all;
 
   const openItem = (snapshotId: string, item: TwinItem) =>
     void explainView(ctx, snapshotId, item.key)
@@ -429,8 +433,18 @@ export function TwinPage() {
                       </button>
                     ))}
                   </div>
+                  {all.length > 12 && (
+                    <input
+                      className="mt-3 w-full max-w-[420px] rounded-lg border border-ink-300 bg-white px-3 py-2 text-ui placeholder:text-ink-400"
+                      value={filter}
+                      onChange={(e) => setFilter(e.target.value)}
+                      placeholder={`Filter ${all.length} items by name — a customer, a product, a metric`}
+                      aria-label="Filter items"
+                    />
+                  )}
                   <div className="mt-3">
-                    {items.length === 0 && <p className="py-3 text-ui text-ink-500">Nothing in {CATEGORY_LABEL[category].toLowerCase()} for this reader at this lens.</p>}
+                    {needle && <p className="font-mono text-meta text-ink-500">{items.length} of {all.length} match “{filter.trim()}”</p>}
+                    {items.length === 0 && <p className="py-3 text-ui text-ink-500">Nothing in {CATEGORY_LABEL[category].toLowerCase()}{needle ? ' matches the filter' : ''} for this reader at this lens.</p>}
                     {items.map((i) => (
                       <Row key={i.key} onClick={() => openItem(a.id, i)}>
                         <span className="min-w-0">
@@ -539,7 +553,8 @@ export function TwinPage() {
           )}
         </div>
 
-        <aside className="w-full max-w-[360px] flex-[0_1_360px]">
+        {/* Sticky: an item chosen far down the list traces here, in view — not at the top of a long page. */}
+        <aside className="w-full max-w-[360px] flex-[0_1_360px] self-start lg:sticky lg:top-6 lg:max-h-[calc(100vh-48px)] lg:overflow-y-auto">
           <SectionHead title="Lineage" size="section-sm" />
           {!lineage && <p className="mt-3 text-ui text-ink-500">Choose an item or a change to trace it into the kernel: calculation, scenario, decision, governance, source.</p>}
           {lineage && (

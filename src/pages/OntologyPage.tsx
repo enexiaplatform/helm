@@ -135,6 +135,25 @@ export function OntologyPage() {
     };
   }, [loaded, typeFilter, search]);
 
+  // Who holds each opportunity. "Canister / Tailin / Cons" exists four times; the customer is what tells them apart.
+  const [holders, setHolders] = useState<ReadonlyMap<string, string>>(new Map());
+  useEffect(() => {
+    if (!loaded) return;
+    let cancelled = false;
+    (async () => {
+      const [rels, customers] = await Promise.all([
+        loaded.store.findRelationships(loaded.scope, { relationshipTypeKeys: ['HELD_BY'] }),
+        loaded.store.findEntities(loaded.scope, { entityTypeKeys: ['Customer'], limit: 1000 }),
+      ]);
+      if (cancelled || !rels.ok || !customers.ok) return;
+      const names = new Map(customers.value.map((c) => [String(c.id), c.name]));
+      setHolders(new Map(rels.value.map((r) => [String(r.sourceEntityId), names.get(String(r.targetEntityId)) ?? ''])));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loaded]);
+
   const selected = useMemo(
     () => entities.find((e) => e.id === selectedId) ?? null,
     [entities, selectedId],
@@ -279,6 +298,7 @@ export function OntologyPage() {
                   <span className={cn('truncate text-dense leading-[19px]', e.id === selectedId ? 'font-semibold text-accent-800' : 'text-ink-800')}>
                     {e.name}
                   </span>
+                  {holders.get(String(e.id)) && <span className="truncate text-meta text-ink-600">held by {holders.get(String(e.id))}</span>}
                   <span className="truncate font-mono text-meta text-ink-500">
                     {e.entityTypeKey} · {e.canonicalKey}
                   </span>

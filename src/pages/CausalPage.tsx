@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { ClaimExplanation, ClaimView, CorrelationFinding, EvidenceAssessment, ModelDependency, ProjectedCausalView, QuestionInvestigation, Traversal } from '@helm/causal-runtime';
 import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.tsx';
+import { Link } from 'react-router-dom';
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
 import {
@@ -225,7 +226,13 @@ export function CausalPage() {
         <div className="min-w-0 flex-[1_1_560px]">
           <section>
             <SectionHead title="Questions" meta={`${questions.length}`} caveat="candidates are claims people proposed; HELM never proposes one" />
-            {questions.length === 0 && <p className="mt-3 text-ui text-ink-500">No causal question has been asked at this point in time.</p>}
+            {questions.length === 0 && (
+              <p className="mt-3 max-w-reading text-ui text-ink-500">
+                No causal question has been asked at this point in time. A question is a person&rsquo;s — usually raised when an
+                outcome differs from what a commitment expected. It starts from a decision in{' '}
+                <Link to="/decisions" className="text-accent-700 underline">Decisions</Link>; HELM never proposes a cause.
+              </p>
+            )}
             <ul>
               {questions.map((q) => (
                 <li key={q.question.id} className="border-b border-ink-200 py-4">

@@ -188,13 +188,15 @@ export function createReviewRuntime(opts: ReviewRuntimeOptions): ReviewRuntime {
         previous = p.value;
       }
       const prevClosure = previous ? closures.value.find((c) => c.reviewId === previous!.id) ?? null : null;
-      let periods = input.periods ?? [];
-      if (previous && !input.periods) {
+      // Periods stated > the previous review's > the twin's own default for the lens. An empty list is never passed on:
+      // the first review of a scope has no previous one, and "no periods" would compose a state that reads nothing.
+      let periods: readonly string[] | undefined = input.periods && input.periods.length > 0 ? input.periods : undefined;
+      if (previous && !periods) {
         const ps = await sources.twin.getSnapshot(scope, previous.openingSnapshotId);
         if (ps.ok) periods = ps.value.snapshot.spec.periods;
       }
 
-      const composed = await sources.twin.buildSnapshot(scope, { kind: 'CURRENT', label: `${input.title} — opening state`, scope: input.scope, periods, grantedUnitIds: input.grantedUnitIds ?? [] });
+      const composed = await sources.twin.buildSnapshot(scope, { kind: 'CURRENT', label: `${input.title} — opening state`, scope: input.scope, ...(periods ? { periods } : {}), grantedUnitIds: input.grantedUnitIds ?? [] });
       if (!composed.ok) return composed;
       const lens = composed.value.snapshot.spec.lens;
       const pack = await computePack(sources, scope, {

@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { cadences, type Cadence, type ProjectedReviews, type ReviewPack, type ReviewView } from '@helm/review-runtime';
+import { parsePeriodText, periodContaining, periodKey, quarterPeriod, type Period } from '@helm/shared';
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
 import { packForViewer, reproduce, resolveReviewContext, reviewsForViewer, statusTone, type ReviewContext } from '../services/reviewRuntime.ts';
@@ -34,30 +35,58 @@ const stamp = (iso: string): string => `${iso.slice(0, 10)} ${iso.slice(11, 16)}
 
 type Which = 'PREPARATION' | 'CLOSING';
 
+/** The twin reads value state by quarter: a month reads its quarter, a year its four. */
+function quartersOf(p: Period): string[] {
+  if (p.grain === 'QUARTER') return [periodKey(p)];
+  if (p.grain === 'YEAR') {
+    const y = new Date(p.start).getUTCFullYear();
+    return ([1, 2, 3, 4] as const).map((q) => periodKey(quarterPeriod(y, q)));
+  }
+  return [periodKey(periodContaining(p.start, 'QUARTER'))];
+}
+
 function OpenForm({ ctx, onOpened }: { ctx: ReviewContext; onOpened: (id: string) => void }) {
+  const current = periodKey(periodContaining(new Date(), 'QUARTER'));
   const [cadence, setCadence] = useState<Cadence>('QUARTERLY');
   const [title, setTitle] = useState('');
-  const [period, setPeriod] = useState('');
+  const [period, setPeriod] = useState(current);
   const [err, setErr] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
   const field = 'rounded-lg border border-ink-200 bg-white px-3 py-2 text-ui';
+  const parsed = parsePeriodText(period);
+  const reads = parsed.ok ? quartersOf(parsed.value) : null;
   const submit = async () => {
     const scopeOf = ctx.genome.causal.twin.scopes[0];
     if (!scopeOf) return;
-    const r = await ctx.review.openReview(ctx.scope, { title, cadence, periodLabel: period, scope: scopeOf, grantedUnitIds: ctx.genome.causal.twin.units.filter((u) => u.parentId === null).map((u) => u.id), openedByLabel: ctx.mode === 'demo' ? 'Country GM Vietnam (demo)' : 'Reviewer' });
-    if (r.ok) {
-      setErr(null);
-      onOpened(r.value.review.id);
-    } else setErr(r.error.message);
+    if (!parsed.ok) {
+      setErr(parsed.error.message);
+      return;
+    }
+    setOpening(true);
+    setErr(null);
+    try {
+      const r = await ctx.review.openReview(ctx.scope, { title, cadence, periodLabel: periodKey(parsed.value), periods: reads ?? undefined, scope: scopeOf, grantedUnitIds: ctx.genome.causal.twin.units.filter((u) => u.parentId === null).map((u) => u.id), openedByLabel: ctx.mode === 'demo' ? 'Country GM Vietnam (demo)' : 'Reviewer' });
+      if (r.ok) onOpened(r.value.review.id);
+      else setErr(r.error.message);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOpening(false);
+    }
   };
   return (
     <div className="mt-4 grid gap-3">
       <p className="text-dense text-ink-600">Opening a review composes the twin state now, prepares the pack from the kernel and carries forward what the previous review of this scope left open.</p>
       <div className="flex flex-wrap items-end gap-3">
         <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1"><span className="helm-label">Cadence</span><select className={field} value={cadence} onChange={(e) => setCadence(e.target.value as Cadence)}>{cadences.map((c) => <option key={c} value={c}>{c.toLowerCase()}</option>)}</select></label>
-        <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1"><span className="helm-label">Period</span><input className={field} placeholder="2027-Q2" value={period} onChange={(e) => setPeriod(e.target.value)} /></label>
-        <label className="grid min-w-[220px] flex-1 gap-1"><span className="helm-label">Title</span><input className={field} placeholder="Vietnam quarterly business review — Q2 2027" value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-        <Button variant="secondary" onClick={() => void submit()} disabled={!title.trim() || !period.trim()}>Open the review</Button>
+        <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1"><span className="helm-label">Period</span><input className={field} placeholder={current} value={period} onChange={(e) => setPeriod(e.target.value)} /></label>
+        <label className="grid min-w-[220px] flex-1 gap-1"><span className="helm-label">Title</span><input className={field} placeholder={`${cadence.charAt(0)}${cadence.slice(1).toLowerCase()} business review — ${current}`} value={title} onChange={(e) => setTitle(e.target.value)} /></label>
+        <Button variant="secondary" onClick={() => void submit()} disabled={opening || !title.trim() || !period.trim()}>{opening ? 'Opening the review…' : 'Open the review'}</Button>
       </div>
+      <p className={cn('font-mono text-meta', parsed.ok ? 'text-ink-500' : 'text-red-700')}>
+        {parsed.ok ? `period ${periodKey(parsed.value)} · the opening state reads value state for ${reads!.join(', ')}` : parsed.error.message}
+      </p>
+      {opening && <p className="text-dense text-ink-600">Composing the twin state and preparing the pack from the kernel…</p>}
       {err && <p role="alert" className="text-dense text-red-700">{err}</p>}
     </div>
   );

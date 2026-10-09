@@ -210,6 +210,27 @@ export function periodContaining(at: string | Date, grain: Exclude<PeriodGrain, 
   return quarterPeriod(y, (Math.floor(d.getUTCMonth() / 3) + 1) as 1 | 2 | 3 | 4);
 }
 
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/**
+ * Reads a period the way a person types one — "Q4 2026", "2026 Q4", "q4/26", "Oct 2026", "10/2026",
+ * "2026" — as well as every key `parsePeriodKey` accepts. Only calendar quarters, months and years
+ * are recognised; anything else is refused with what was expected, never guessed at.
+ */
+export function parsePeriodText(text: string): Result<Period> {
+  const t = text.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (t.length === 0) return fail(PeriodErrors.INVALID_PERIOD, 'State a period, such as 2026-Q4.');
+  const strict = parsePeriodKey(t.toUpperCase());
+  if (strict.ok) return strict;
+  const year = (y: string): number => (y.length === 2 ? 2000 + Number(y) : Number(y));
+  let m: RegExpMatchArray | null;
+  if ((m = t.match(/^q([1-4])[\s/\-.]*(\d{4}|\d{2})$/))) return ok(quarterPeriod(year(m[2]!), Number(m[1]) as 1 | 2 | 3 | 4));
+  if ((m = t.match(/^(\d{4})[\s/\-.]*q([1-4])$/))) return ok(quarterPeriod(Number(m[1]), Number(m[2]) as 1 | 2 | 3 | 4));
+  if ((m = t.match(/^([a-z]{3})[a-z]*[\s/\-.]*(\d{4})$/)) && MONTHS.includes(m[1]!)) return ok(monthPeriod(Number(m[2]), MONTHS.indexOf(m[1]!) + 1));
+  if ((m = t.match(/^(\d{1,2})[/\-.](\d{4})$/)) && Number(m[1]) >= 1 && Number(m[1]) <= 12) return ok(monthPeriod(Number(m[2]), Number(m[1])));
+  return fail(PeriodErrors.INVALID_PERIOD, `"${text.trim()}" is not a period HELM can read. Write a quarter (2026-Q4), a month (2026-10) or a year (2026).`);
+}
+
 /** A readable label for an interval that may not be a named period. */
 export function describeInterval(start: string | null, end: string | null): string {
   if (!start || !end) return 'a point in time';

@@ -8,6 +8,7 @@ import {
   makePeriod,
   monthPeriod,
   parsePeriodKey,
+  parsePeriodText,
   periodContaining,
   periodContains,
   periodKey,
@@ -83,5 +84,30 @@ describe('fnv1a64', () => {
     assert.equal(fnv1a64('a'), 'af63dc4c8601ec8c');
     assert.match(fnv1a64('scenario'), /^[0-9a-f]{16}$/);
     assert.notEqual(fnv1a64('0.9'), fnv1a64('0.90'));
+  });
+});
+
+describe('period text as a person types it', () => {
+  const key = (t) => {
+    const r = parsePeriodText(t);
+    assert.ok(r.ok, `${t}: ${r.ok ? '' : r.error.message}`);
+    return periodKey(r.value);
+  };
+  test('quarters in every common order', () => {
+    for (const t of ['2026-Q4', 'Q4 2026', 'q4 2026', '2026 Q4', 'Q4/2026', 'q4-26', ' 2026q4 ']) assert.equal(key(t), '2026-Q4');
+  });
+  test('months by name or number, and years', () => {
+    assert.equal(key('Oct 2026'), '2026-10');
+    assert.equal(key('October 2026'), '2026-10');
+    assert.equal(key('10/2026'), '2026-10');
+    assert.equal(key('2026-10'), '2026-10');
+    assert.equal(key('2026'), '2026');
+  });
+  test('anything else is refused with what was expected, never guessed', () => {
+    for (const t of ['', 'Q5 2026', 'next quarter', '13/2026', 'Foo 2026']) {
+      const r = parsePeriodText(t);
+      assert.equal(r.ok, false, t);
+      assert.match(r.error.message, /period/i);
+    }
   });
 });

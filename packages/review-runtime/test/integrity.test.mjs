@@ -35,6 +35,15 @@ describe('one open review per scope and cadence; a review follows a closed one',
     assert.equal(expectFail(await open({ scope: pharma, cadence: 'WEEKLY', periodLabel: '2027-W22', previousReviewId: a.review.id }), 'other scope').code, 'review.previous_other_scope');
   });
 
+  it('the first review of a scope, opened without stating periods, reads the twin default periods instead of none', async () => {
+    const pharma = s.story.scopes.pharma;
+    const a = unwrap(await s.review.openReview(s.gm, { title: 'First pharma review', cadence: 'MONTHLY', periodLabel: '2026-10', scope: pharma, grantedUnitIds: ['unit-vn'], openedByLabel: 'test' }), 'first review, no periods');
+    assert.equal(a.review.previousReviewId, null);
+    const opening = unwrap(await s.twin.getSnapshot(s.gm, a.review.openingSnapshotId), 'opening snapshot');
+    assert.ok(opening.snapshot.spec.periods.length > 0, 'the opening state reads at least one business period');
+    unwrap(await s.review.closeReview(s.gm, a.review.id, { summary: 'Closed.', dispositions: [], closedByLabel: 'test' }), 'close');
+  });
+
   it('a review of the same scope and cadence, opened after the last closed, follows it by default', async () => {
     const a = unwrap(await open({ cadence: 'WEEKLY', periodLabel: '2027-W30', previousReviewId: null }), 'open');
     unwrap(await s.review.closeReview(s.gm, a.review.id, { summary: 'Closed.', dispositions: [], closedByLabel: 'test' }), 'close');

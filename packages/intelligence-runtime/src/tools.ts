@@ -105,7 +105,9 @@ function evidenceOfItem(item: ItemLike, lens: Lens, section: string | null): Raw
     const obs = String(st['observationType'] ?? '');
     const layer = String(item.layer ?? '');
     const kind: EvidenceKind = obs === 'ASSUMPTION' || obs === 'TARGET' || layer === 'TARGET' ? 'MANAGEMENT_ASSUMPTION' : layer === 'MODELLED' || obs === 'DERIVED' || obs === 'ESTIMATE' || !source || source === 'helm' ? 'MODEL_RESULT' : 'SOURCE_FACT';
-    return { ...ev(kind, ref, String(st['metricName'] ?? item.label), [value, `layer ${layer}`, source ? `source ${source}` : 'computed by HELM', st['period'] ? `period ${String(st['period'])}` : ''], { status: layer || null, section, lens }), dimension: st['dimension'] ? String(st['dimension']) : null, metricKey: st['metricKey'] ? String(st['metricKey']) : null };
+    // The position's own label names its subject ("Opportunity Value — Talin AST / Tailin / Instrument"); the metric name
+    // alone ("Opportunity Value") made thirty answers indistinguishable (audit 2026-10-09).
+    return { ...ev(kind, ref, item.label || String(st['metricName'] ?? ''), [value, `layer ${layer}`, source ? `source ${source}` : 'computed by HELM', st['period'] ? `period ${String(st['period'])}` : ''], { status: layer || null, section, lens }), dimension: st['dimension'] ? String(st['dimension']) : null, metricKey: st['metricKey'] ? String(st['metricKey']) : null };
   }
   if (item.kind === 'ATTENTION') return ev('MODEL_RESULT', ref, item.label, [String(st['statement'] ?? item.reason ?? '')], { status: String(st['condition'] ?? ''), section, lens });
   if (item.kind === 'ASSUMPTION') return ev('MANAGEMENT_ASSUMPTION', ref, item.label, [String(st['statement'] ?? '')], { status: String(st['outcome'] ?? st['status'] ?? ''), section, lens });

@@ -42,6 +42,7 @@ import { displayValue } from '../services/decisionRuntime.ts';
 import type { TwinCausalExplanation } from '@helm/causal-runtime';
 import { causalDifferenceView, resolveCausalContext, statusTone } from '../services/causalRuntime.ts';
 import { PageHeader } from '../components/ui/PageHeader.tsx';
+import { ReaderSelect } from '../components/ui/ReaderSelect.tsx';
 import { SectionHead } from '../components/ui/SectionHead.tsx';
 import { EmptyState } from '../components/ui/EmptyState.tsx';
 import { Notice } from '../components/ui/Notice.tsx';
@@ -347,9 +348,7 @@ export function TwinPage() {
         </label>
         <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">Read as</span>
-          <select className={select} value={viewerKey} onChange={(e) => setViewerKey(e.target.value)}>
-            {ctx.viewers.map((v) => <option key={v.key} value={v.key}>{v.label}</option>)}
-          </select>
+          <ReaderSelect className={select} viewers={ctx.viewers} value={viewerKey} onChange={setViewerKey} />
         </label>
         <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">State</span>

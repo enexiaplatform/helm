@@ -17,6 +17,7 @@ import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
 import { caseTone, comparisonOf, counterfactualsForViewer, resolveCounterfactualContext, supportTone, type CounterfactualContext } from '../services/counterfactualRuntime.ts';
 import { PageHeader } from '../components/ui/PageHeader.tsx';
+import { ReaderSelect } from '../components/ui/ReaderSelect.tsx';
 import { SectionHead } from '../components/ui/SectionHead.tsx';
 import { EmptyState } from '../components/ui/EmptyState.tsx';
 import { Notice } from '../components/ui/Notice.tsx';
@@ -309,7 +310,7 @@ export function CounterfactualsPage() {
       <div className="mt-6 flex flex-wrap items-end gap-4">
         <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">Read as</span>
-          <select className={select} value={viewerKey} onChange={(e) => setViewerKey(e.target.value)}>{ctx.viewers.map((v) => <option key={v.key} value={v.key}>{v.label}</option>)}</select>
+          <ReaderSelect className={select} viewers={ctx.viewers} value={viewerKey} onChange={setViewerKey} />
         </label>
         <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">As known on</span>

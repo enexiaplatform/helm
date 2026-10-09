@@ -31,6 +31,7 @@ import { counterfactualsForViewer, caseTone } from '../services/counterfactualRu
 import { reviewsForViewer } from '../services/reviewRuntime.ts';
 import { resolveIntegrationContext, type IntegrationContext } from '../services/integrationRuntime.ts';
 import { PageHeader } from '../components/ui/PageHeader.tsx';
+import { ReaderSelect } from '../components/ui/ReaderSelect.tsx';
 import { SectionHead } from '../components/ui/SectionHead.tsx';
 import { EmptyState } from '../components/ui/EmptyState.tsx';
 import { Notice } from '../components/ui/Notice.tsx';
@@ -171,11 +172,24 @@ export function CockpitPage() {
     }
   };
 
+  // A state that is not COMPLETE cannot vouch for "nothing needs attention": it may be silent because it cannot see.
+  // The headline says so instead of reassuring (audit 2026-10-09: 28 unclassified customers, headline "Nothing needs…").
+  const gaps = d?.current.snapshot.completenessReasons ?? [];
+  const partial = d ? d.current.snapshot.completeness !== 'COMPLETE' : false;
   const headline = !d
     ? 'Reading what needs your attention…'
     : attention.length === 0 && off.length === 0
-      ? 'Nothing needs your attention this week. What management committed to is where it said it would be.'
+      ? partial
+        ? `No attention condition holds — but the state is ${d.current.snapshot.completeness.toLowerCase()}: ${word(gaps.length).toLowerCase()} ${gaps.length === 1 ? 'thing it cannot read' : 'things it cannot read'} may be hiding one.`
+        : 'Nothing needs your attention this week. What management committed to is where it said it would be.'
       : `${word(attention.length)} ${attention.length === 1 ? 'condition needs' : 'conditions need'} your attention${off.length > 0 ? `; ${word(off.length).toLowerCase()} ${off.length === 1 ? 'commitment sits' : 'commitment readings sit'} away from the committed future` : ''}.`;
+  // Grouped by what the state could not read, so twenty-eight unclassified customers read as one gap, not twenty-eight.
+  const gapGroups: [string, number, string][] = [];
+  for (const g of gaps) {
+    const found = gapGroups.find(([code]) => code === g.code);
+    if (found) found[1] += 1;
+    else gapGroups.push([g.code, 1, g.message]);
+  }
 
   const firstCompose = ic.mode === 'cloud' && !d && (livePhase === 'starting' || livePhase === 'reading' || livePhase === 'composing');
   const proof = d?.integration?.proof ?? null;
@@ -203,16 +217,47 @@ export function CockpitPage() {
       <div className="mt-6 flex flex-wrap items-end gap-4">
         <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">Read as</span>
-          <select className={select} value={viewerKey} onChange={(e) => setViewerKey(e.target.value)}>{ic.reviews.viewers.map((v) => <option key={v.key} value={v.key}>{v.label}</option>)}</select>
+          <ReaderSelect className={select} viewers={ic.reviews.viewers} value={viewerKey} onChange={setViewerKey} />
         </label>
-        <p className="max-w-reading pb-2 text-meta text-ink-500">Switch reader to see how clearance and decision visibility change what is shown — and what is withheld, said out loud.</p>
+        {ic.reviews.viewers.length > 1 && <p className="max-w-reading pb-2 text-meta text-ink-500">Switch reader to see how clearance and decision visibility change what is shown — and what is withheld, said out loud.</p>}
       </div>
+
+      {partial && gapGroups.length > 0 && (
+        <Notice tone="warning" label={`The state is ${d!.current.snapshot.completeness.toLowerCase()}`} className="mt-6">
+          <ul className="grid gap-1">
+            {gapGroups.map(([code, n, example]) => (
+              <li key={code}>
+                <span className="font-mono text-meta">{code.replaceAll('_', ' ').toLowerCase()} · {n}</span> — {n > 1 ? `${n} records, for example: ` : ''}
+                {example}
+              </li>
+            ))}
+          </ul>
+          {gapGroups.some(([code]) => code === 'UNCLASSIFIED_CUSTOMER') && (
+            <p className="mt-2">
+              The state cannot say which customers are strategic, key or standard accounts. The Memoire connector reads
+              opportunities only, so no customer arrives with a class; Memoire&rsquo;s own key-account flag is not mapped into
+              HELM yet.
+            </p>
+          )}
+          <p className="mt-2">
+            Each one is listed in <Link to="/twin" className="underline">the Twin</Link>.
+          </p>
+        </Notice>
+      )}
 
       <div className="mt-9 flex flex-wrap gap-10">
         <div className="min-w-0 flex-[1_1_560px]">
           <section>
             <SectionHead title="What requires your attention" meta={d ? String(attention.length) : '…'} caveat="named conditions with a cause — not a ranking" dot={attention.length > 0 ? 'warning' : undefined} />
-            {d && attention.length === 0 && <p className="mt-3 text-ui text-ink-500">No attention condition holds in the state you may read.</p>}
+            {d && attention.length === 0 && (
+              <p className="mt-3 max-w-reading text-ui text-ink-500">
+                No attention condition holds in the state you may read. The rules watch decisions awaiting commitment, approvals,
+                challenged or disproved assumptions, breached constraints, value deterioration and commitments off their future —
+                this state holds {word(decisions.length).toLowerCase()} {decisions.length === 1 ? 'decision' : 'decisions'},{' '}
+                {word(items.filter((i) => i.kind === 'CONSTRAINT').length).toLowerCase()} constraints and{' '}
+                {word(items.filter((i) => i.kind === 'OBJECTIVE').length).toLowerCase()} objectives for them to watch.
+              </p>
+            )}
             {groups.map(([condition, group]) => (
               <div key={condition} className="mt-5">
                 <p className="flex flex-wrap items-baseline gap-3">

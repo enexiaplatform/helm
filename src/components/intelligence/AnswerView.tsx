@@ -56,19 +56,37 @@ function Statement({ s, evidence }: { s: GroundedStatement; evidence: ReadonlyMa
   );
 }
 
+/** A long section shows its first statements; the rest are one click away — progressive disclosure, nothing dropped. */
+const FIRST = 6;
+
+function Section({ sec, statements, evidence }: { sec: string | null; statements: readonly GroundedStatement[]; evidence: ReadonlyMap<string, EvidenceItem> }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? statements : statements.slice(0, FIRST);
+  return (
+    <div className="mb-3">
+      {sec && <p className="helm-label mt-3">{sec}</p>}
+      <ul>
+        {shown.map((s, i) => <Statement key={`${sec}-${i}`} s={s} evidence={evidence} />)}
+      </ul>
+      {statements.length > FIRST && (
+        <button type="button" onClick={() => setAll((a) => !a)} className="mt-1 text-meta font-medium text-accent-700 hover:underline">
+          {all ? 'Show fewer' : `Show all ${statements.length}`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function AnswerView({ answer }: { answer: IntelligenceAnswer }) {
   const evidence = new Map(answer.evidence.map((e) => [e.id, e]));
   const sections = [...new Set(answer.statements.map((s) => s.section))];
   const g = answer.grounding;
   return (
     <div className="mt-3">
+      {/* What the reading comes to, before the statements it rests on. */}
+      {answer.notes.length > 0 && <p className="mb-2 text-dense text-ink-900">{answer.notes.join(' ')}</p>}
       {sections.map((sec) => (
-        <div key={sec ?? '_'} className="mb-3">
-          {sec && <p className="helm-label mt-3">{sec}</p>}
-          <ul>
-            {answer.statements.filter((s) => s.section === sec).map((s, i) => <Statement key={`${sec}-${i}`} s={s} evidence={evidence} />)}
-          </ul>
-        </div>
+        <Section key={sec ?? '_'} sec={sec} statements={answer.statements.filter((s) => s.section === sec)} evidence={evidence} />
       ))}
       {answer.statements.length === 0 && <p className="text-dense text-ink-600">Nothing the kernel returned supports a statement.</p>}
       {answer.unknowns.length > 0 && (
@@ -87,7 +105,6 @@ export function AnswerView({ answer }: { answer: IntelligenceAnswer }) {
           </ul>
         </div>
       )}
-      {answer.notes.length > 0 && <p className="helm-caveat mt-3">{answer.notes.join(' ')}</p>}
       <p className="mt-3 font-mono text-meta text-ink-500">
         {g.kept} kept · {g.reclassified} reclassified · {g.downgradedToInference} marked as inference · {g.removed} removed · {answer.toolCalls.length} governed tool call(s) · {answer.provider.id} · run {answer.runId}
       </p>

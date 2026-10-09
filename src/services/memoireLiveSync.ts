@@ -57,7 +57,9 @@ export function startMemoireLiveSync(scope: Scope): { live: LiveSync | null; sto
   const contexts = resolveIntegrationContext('cloud', scope).catch(() => null);
 
   const live = createLiveSync({
-    pageSize: 100,
+    // Each record is several sequential reads and writes; a small page moves the checkpoint often, so a window closed
+    // mid-way through a first read resumes where it stopped instead of re-reading everything.
+    pageSize: 20,
     runPage: async (limit) => {
       const ctx = await contexts;
       if (!ctx) return fail('integration.no_client', 'HELM cannot reach the cloud to read Memoire.');

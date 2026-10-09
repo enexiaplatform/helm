@@ -16,6 +16,7 @@ How enterprise source systems reach HELM, and what HELM may propose back.
 | `IdentityMapper` | `identity.ts` | register / resolve aliases by `(system, kind, value)`; a name is never an identity; a conflict is reported, never merged |
 | `SchemaDriftDetector` | `drift.ts` | pure: `NONE` · `ADDITIVE` · `BREAKING`; a numeric column arriving as a string is not drift |
 | `IngestionPipeline` | `pipeline.ts` | checkpoint → drift → translate → write → one ledger row; idempotent by content |
+| `LiveSync` | `live.ts` | [ADR-0034](../../adr/0034-memoire-live-sync.md): a wake (Realtime notice, start, focus, reconnect, 60 s tick) → probe → pipeline pages until caught up → compose a CURRENT state only on change; passes never overlap; a notice is never applied. Wired in `src/services/memoireLiveSync.ts` |
 | `sourceAndModel` | `truth.ts` | source and model claims side by side; states that neither overwrites the other |
 | `WritebackGateway` | `writeback.ts` | `dispatch`, `list` — and nothing that sends |
 | Stores | `inMemoryStore.ts`, `postgres.ts`, `conformance.ts` | `appendSync`, `listSyncs`, `checkpointOf` (derived), `insertWriteback`, `findWriteback`, `listWritebacks` |
@@ -37,6 +38,14 @@ record time stamped by the database.
 
 Re-reading everything from a blank checkpoint changes nothing; a changed value is a
 new observation; a record without a currency is quarantined and holds the checkpoint.
+
+In the cloud nobody presses anything ([ADR-0034](../../adr/0034-memoire-live-sync.md)):
+while HELM is open, a Supabase Realtime notice that one of the reader's opportunities
+changed wakes the live sync, which runs these same steps and composes a new CURRENT
+enterprise state for the Cockpit and the Twin when what HELM holds changed. The only
+statement HELM makes about a Memoire table is adding `opportunities` to the
+`supabase_realtime` publication (`20261008090000_helm_memoire_realtime.sql`).
+Deletions in Memoire are not ingested.
 
 ## Writeback (dry run)
 

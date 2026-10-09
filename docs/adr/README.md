@@ -70,3 +70,4 @@ a new one, so the reasoning history stays readable.
 | [0031](0031-management-reviews.md) | Management reviews — the operating cadence as a pack of references | accepted | reviews |
 | [0032](0032-governed-intelligence-runtime.md) | The intelligence runtime — a governed, provider-neutral reader that cannot write enterprise truth | accepted | intelligence |
 | [0033](0033-agent-council.md) | The council — perspectives over one truth; an Agent Perspective is not Decision Authority | accepted | agents |
+| [0034](0034-memoire-live-sync.md) | Memoire live sync — a change notice wakes HELM; HELM re-reads, it never applies the notice | accepted, amends 0030 | integration |

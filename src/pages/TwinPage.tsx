@@ -24,6 +24,7 @@ import {
   type TwinSnapshot,
 } from '@helm/twin-runtime';
 import { useHelmStore } from '../services/helmStore.ts';
+import { useMemoireLive } from '../services/memoireLiveSync.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
 import {
   compareView,
@@ -150,6 +151,7 @@ export function TwinPage() {
   const activeOrgId = useHelmStore((st) => st.activeOrgId);
   const userId = useHelmStore((st) => st.userId);
   const myRole = useHelmStore((st) => st.myRole);
+  const memoireVersion = useMemoireLive((st) => st.version);
   const scope = useMemo(
     () => (mode === 'demo' ? demoScope() : activeOrgId ? cloudScope(activeOrgId, userId ?? '', myRole()) : null),
     [mode, activeOrgId, userId, myRole],
@@ -198,6 +200,28 @@ export function TwinPage() {
       live = false;
     };
   }, [mode, scope]);
+
+  // A state composed from Memoire while this page is open joins the list; what the reader selected stays selected (ADR-0034).
+  useEffect(() => {
+    let live = true;
+    if (!ctx || ctx.mode !== 'cloud' || memoireVersion === 0) return;
+    void (async () => {
+      try {
+        const list = await listSnapshots(ctx);
+        if (!live) return;
+        setSnapshots(list);
+        if (list.length > 0) {
+          setAId((a) => a || list[0].id);
+          setBId((b) => b || list[list.length - 1].id);
+        }
+      } catch (e) {
+        if (live) setError(e instanceof Error ? e.message : String(e));
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [ctx, memoireVersion]);
 
   const viewer = ctx?.viewers.find((v) => v.key === viewerKey)?.viewer ?? null;
   const inScope = useMemo(

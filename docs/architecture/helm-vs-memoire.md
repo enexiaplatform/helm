@@ -45,7 +45,10 @@ It produces **Management Truth**.
 4. **HELM never copies a Memoire entity.** It stores a reference plus an
    immutable snapshot (§4.1).
 5. **A migration never alters or drops a Memoire table.** Additive only, forever
-   ([ADR-0003](../adr/0003-supabase-postgres-system-of-record.md)).
+   ([ADR-0003](../adr/0003-supabase-postgres-system-of-record.md)). The one statement
+   HELM makes about a Memoire table is adding `opportunities` to the `supabase_realtime`
+   publication, which changes nothing in the table
+   ([ADR-0034](../adr/0034-memoire-live-sync.md)).
 
 ## 3. The shared substrate — and why that is not a boundary violation
 
@@ -163,6 +166,12 @@ Because HELM and Memoire share a database, "publish" can start as a polled
 outbox read over existing tables — the contract matters more than the transport,
 and adopting the contract first means the transport can change later without
 touching the kernel.
+
+The first transport is live ([ADR-0034](../adr/0034-memoire-live-sync.md)): a Supabase
+Realtime notice that one of the reader's opportunities changed wakes HELM, which
+re-reads through the reader above — the notice's payload is never applied — and
+composes a new current state when something changed. Realtime enforces Memoire's own
+RLS, so a reader hears only their own rows.
 
 ## 5. Failure modes to watch for
 

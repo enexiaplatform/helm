@@ -35,6 +35,8 @@ interface Props {
   onOrgChange?: (id: string) => void;
   userLabel: string;           // role, e.g. "Country GM Vietnam"
   demo?: boolean;
+  /** how current HELM's reading of a live source is — said in the strip, in brick when it failed */
+  sourceLine?: { text: string; failed: boolean } | null;
   /** the two clocks — always visible in the top strip */
   effectiveAsOf?: string;      // "19 Sep 12:00"
   recordedThrough?: string;    // "21 Sep 09:00"
@@ -50,7 +52,7 @@ interface Props {
 /* v2 shell. Navy sidebar 224px, text-only nav (no icons) with a 6px dot:
    brass = current page, 18% paper = idle. Brass count pill on Attention only.
    Main area has a thin mono strip (demo notice + the two clocks) instead of a banner. */
-export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items = HELM_NAV, openSignals = 0, orgName, orgs = [], activeOrgId, onOrgChange, userLabel, demo, effectiveAsOf, recordedThrough, error, onSignOut, onSettings, wide, children }: Props) {
+export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items = HELM_NAV, openSignals = 0, orgName, orgs = [], activeOrgId, onOrgChange, userLabel, demo, sourceLine, effectiveAsOf, recordedThrough, error, onSignOut, onSettings, wide, children }: Props) {
   // Below 768px the sidebar is a menu behind a bar: the content keeps the whole width instead of being squeezed beside it.
   const [menuOpen, setMenuOpen] = useState(false);
   const go = (k: string) => (e: MouseEvent) => {
@@ -130,9 +132,17 @@ export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items =
         </div>
       </aside>
       <main className="min-w-0 flex-1">
-        {(demo || effectiveAsOf) && (
+        {(demo || effectiveAsOf || sourceLine) && (
           <div className="flex flex-wrap justify-between gap-x-6 gap-y-2 border-b border-ink-200 px-5 py-3 font-mono text-meta text-ink-500 md:px-page-x">
-            <span>{demo ? 'Demo organization · local sample data, nothing syncs' : orgName}</span>
+            <span>
+              {demo ? 'Demo organization · local sample data, nothing syncs' : orgName}
+              {sourceLine && (
+                <>
+                  {' · '}
+                  <span role="status" className={sourceLine.failed ? 'text-red-700' : undefined}>{sourceLine.text}</span>
+                </>
+              )}
+            </span>
             {effectiveAsOf && <span>Effective {effectiveAsOf} · recorded through {recordedThrough}</span>}
           </div>
         )}

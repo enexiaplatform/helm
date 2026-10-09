@@ -19,6 +19,10 @@ import { supabaseClient } from '../lib/supabaseClient.ts';
  *
  * The integration fabric reads through `createMemoireOpportunityReader()` below: the same read side, as the adapter's port —
  * rows strictly after a cursor, oldest first, under the caller's own RLS. It is READ-ONLY; HELM never writes into Memoire.
+ *
+ * Live side (ADR-0034): `subscribeToMemoireOpportunities()` listens for Supabase Realtime notices that one of the
+ * signed-in user's opportunities changed. Realtime applies the same RLS, so a user hears only their own rows. The
+ * notice's payload is IGNORED: it only wakes the live sync, which re-reads through the reader above.
  */
 
 const READ_COLUMNS = 'id, account_id, account_name, opportunity_name, title, stage, estimated_value, currency, pipeline_probability, status, expected_close_period, updated_at';
@@ -34,5 +38,25 @@ export function createMemoireOpportunityReader(): MemoireReader {
       if (error) return fail('integration.read_failed', `Reading Memoire opportunities failed: ${error.message}`);
       return ok(((data ?? []) as unknown as MemoireOpportunityRow[]).map((r) => ({ ...r, updated_at: new Date(r.updated_at).toISOString() })));
     },
+  };
+}
+
+/**
+ * Hear that the signed-in user's Memoire opportunities changed. `notify` receives nothing — HELM re-reads, it never
+ * applies a change event. `listening` says whether notices are reaching HELM. Returns the way to stop listening.
+ */
+export function subscribeToMemoireOpportunities(userId: string, notify: () => void, listening: (on: boolean) => void): () => void {
+  const client = supabaseClient;
+  if (!client || !userId) {
+    listening(false);
+    return () => {};
+  }
+  const channel = client
+    .channel(`helm-memoire-opportunities-${userId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'opportunities', filter: `user_id=eq.${userId}` }, () => notify())
+    .subscribe((status) => listening(status === 'SUBSCRIBED'));
+  return () => {
+    listening(false);
+    void client.removeChannel(channel);
   };
 }

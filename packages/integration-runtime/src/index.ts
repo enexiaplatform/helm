@@ -16,6 +16,8 @@ export * from './port.ts';
 export { detectDrift } from './drift.ts';
 export { createIdentityMapper } from './identity.ts';
 export type { IdentityMapper, AliasKind } from './identity.ts';
+export { createLiveSync, syncChanged } from './live.ts';
+export type { LiveSync, LiveSyncDeps, LiveSyncPhase, LiveSyncState, LiveSyncTimers } from './live.ts';
 export { createIngestionPipeline } from './pipeline.ts';
 export type { IngestionPipeline, IngestionPipelineDeps, RunOptions } from './pipeline.ts';
 export { createMemoireAdapter, createFixtureMemoireReader, MEMOIRE_CONNECTOR, MEMOIRE_OPPORTUNITY_CONTRACT } from './memoire.ts';

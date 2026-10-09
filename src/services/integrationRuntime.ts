@@ -176,6 +176,12 @@ export async function syncNow(ctx: IntegrationContext): Promise<SyncRecord> {
   return must(await ctx.pipeline.run(ctx.scope, ctx.adapter), 'sync');
 }
 
+/** Whether the source holds anything after the checkpoint — one row read through the adapter, nothing recorded. */
+export async function sourceHasNews(ctx: IntegrationContext): Promise<boolean> {
+  const cp = must(await ctx.store.checkpointOf(ctx.scope, ctx.adapter.system, ctx.adapter.connector), 'checkpoint');
+  return must(await ctx.adapter.pull(ctx.scope, cp.cursor, 1), 'source probe').records.length > 0;
+}
+
 export async function syncHistory(ctx: IntegrationContext): Promise<readonly SyncRecord[]> {
   return must(await ctx.store.listSyncs(ctx.scope, { system: 'memoire' }), 'sync history');
 }

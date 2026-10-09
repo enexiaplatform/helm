@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { SourceAndModel, SyncRecord, WritebackRequest } from '@helm/integration-runtime';
 import { useHelmStore } from '../services/helmStore.ts';
+import { useMemoireLive, wakeMemoireLiveSync } from '../services/memoireLiveSync.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
 import { resolveIntegrationContext, syncHistory, syncNow, writebackHistory, type IntegrationContext } from '../services/integrationRuntime.ts';
 import { PageHeader } from '../components/ui/PageHeader.tsx';
@@ -92,6 +93,10 @@ export function SourcesPage() {
   const [syncs, setSyncs] = useState<readonly SyncRecord[]>([]);
   const [writebacks, setWritebacks] = useState<readonly WritebackRequest[]>([]);
   const [busy, setBusy] = useState(false);
+  // In the cloud HELM keeps Memoire current by itself (ADR-0034): every pass it makes is a reason to re-read the history.
+  const livePhase = useMemoireLive((st) => st.phase);
+  const liveListening = useMemoireLive((st) => st.listening);
+  const liveSync = useMemoireLive((st) => st.lastSync);
 
   useEffect(() => {
     let live = true;
@@ -127,7 +132,7 @@ export function SourcesPage() {
     return () => {
       live = false;
     };
-  }, [ctx, tick]);
+  }, [ctx, tick, liveSync]);
 
   if (error) return <EmptyState title="Connected sources could not be opened" detail={error} />;
   if (!ctx) return <p className="text-ui text-ink-500">Reading the connected sources…</p>;
@@ -135,6 +140,8 @@ export function SourcesPage() {
   const contract = ctx.adapter.contracts[0];
 
   const sync = async () => {
+    // The live sync runs the same pipeline and also composes the new current state; ask it rather than run beside it.
+    if (wakeMemoireLiveSync()) return;
     setBusy(true);
     try {
       await syncNow(ctx);
@@ -174,8 +181,16 @@ export function SourcesPage() {
               ]}
             />
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              {ctx.mode === 'cloud' && <Button variant="secondary" onClick={() => void sync()} disabled={busy}>{busy ? 'Syncing…' : 'Sync now'}</Button>}
-              <span className="text-meta text-ink-500">{ctx.mode === 'cloud' ? 'Reads your own Memoire opportunities under your access, from the last checkpoint.' : 'The proof below ran once when the demo was built.'}</span>
+              {ctx.mode === 'cloud' && (
+                <Button variant="secondary" onClick={() => void sync()} disabled={busy || livePhase === 'reading' || livePhase === 'composing'}>
+                  {busy || livePhase === 'reading' ? 'Syncing…' : livePhase === 'composing' ? 'Composing…' : 'Sync now'}
+                </Button>
+              )}
+              <span className="text-meta text-ink-500">
+                {ctx.mode === 'cloud'
+                  ? `Live: HELM re-reads your own Memoire opportunities under your access whenever one changes${liveListening ? '' : ' (change notices are not reaching HELM right now; it re-reads every minute instead)'}, from the last checkpoint, and composes a new current state when what it holds changed.`
+                  : 'The proof below ran once when the demo was built.'}
+              </span>
             </div>
           </section>
 

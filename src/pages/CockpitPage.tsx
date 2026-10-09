@@ -21,6 +21,7 @@ import type { ProjectedReviews } from '@helm/review-runtime';
 import type { ProjectedGenome } from '@helm/genome-runtime';
 import type { ProjectedCounterfactuals } from '@helm/counterfactual-runtime';
 import { useHelmStore } from '../services/helmStore.ts';
+import { useMemoireLive } from '../services/memoireLiveSync.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
 import { resolveIntelligenceContext, type IntelligenceContext } from '../services/intelligenceRuntime.ts';
 import { explainView, listSnapshots, loadSnapshotView, trajectoryView } from '../services/twinRuntime.ts';
@@ -66,6 +67,9 @@ export function CockpitPage() {
   const activeOrgId = useHelmStore((st) => st.activeOrgId);
   const userId = useHelmStore((st) => st.userId);
   const myRole = useHelmStore((st) => st.myRole);
+  // A new current state composed from Memoire is a reason to read the cockpit again (ADR-0034).
+  const memoireVersion = useMemoireLive((st) => st.version);
+  const livePhase = useMemoireLive((st) => st.phase);
   const scope = useMemo(() => (mode === 'demo' ? demoScope() : activeOrgId ? cloudScope(activeOrgId, userId ?? '', myRole()) : null), [mode, activeOrgId, userId, myRole]);
 
   const [ic, setIc] = useState<IntelligenceContext | null>(null);
@@ -129,7 +133,7 @@ export function CockpitPage() {
     return () => {
       live = false;
     };
-  }, [ic, viewer, scope, key]);
+  }, [ic, viewer, scope, key, memoireVersion]);
 
   if (error) return <EmptyState title="The cockpit could not be opened" detail={error} />;
   if (!ic || !viewer) return <p className="text-ui text-ink-500">Reading the enterprise…</p>;
@@ -173,6 +177,7 @@ export function CockpitPage() {
       ? 'Nothing needs your attention this week. What management committed to is where it said it would be.'
       : `${word(attention.length)} ${attention.length === 1 ? 'condition needs' : 'conditions need'} your attention${off.length > 0 ? `; ${word(off.length).toLowerCase()} ${off.length === 1 ? 'commitment sits' : 'commitment readings sit'} away from the committed future` : ''}.`;
 
+  const firstCompose = ic.mode === 'cloud' && !d && (livePhase === 'starting' || livePhase === 'reading' || livePhase === 'composing');
   const proof = d?.integration?.proof ?? null;
   const focusDecision = decisions[0];
 
@@ -189,7 +194,11 @@ export function CockpitPage() {
           Meridian Vietnam is a fictional enterprise. Its data, decisions, reviews and the AI reading below are illustrative and labelled DEMO at their source; nothing syncs to any real system.
         </Notice>
       )}
-      {data?.note && <Notice tone="warning" label="Withheld" className="mt-4">{data.note}</Notice>}
+      {firstCompose ? (
+        <Notice tone="neutral" label="Memoire" className="mt-4">HELM is reading your Memoire opportunities and composing the first current state of the enterprise.</Notice>
+      ) : (
+        data?.note && <Notice tone="warning" label="Withheld" className="mt-4">{data.note}</Notice>
+      )}
 
       <div className="mt-6 flex flex-wrap items-end gap-4">
         <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">

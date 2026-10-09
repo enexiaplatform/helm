@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import type { ForkPoint } from '@helm/scenario-runtime';
 import { useHelmStore } from '../../services/helmStore.ts';
+import { liveSyncLine, startMemoireLiveSync, useMemoireLive } from '../../services/memoireLiveSync.ts';
 import { cloudScope, demoScope } from '../../services/ontologyGraph.ts';
 import { displayClock, resolveScenarioWorkspace } from '../../services/scenarioRuntime.ts';
 import { attentionCount } from '../../services/twinRuntime.ts';
@@ -55,6 +56,27 @@ export function ConsoleLayout() {
     };
   }, [mode, scope]);
 
+  // Memoire → HELM, live (ADR-0034): while this console is open on a cloud organization, HELM re-reads the reader's
+  // Memoire opportunities on every change notice, on focus, on reconnect and on a slow tick, and composes a new
+  // current state when what it holds changed. The demo has no live source.
+  const live = useMemoireLive();
+  useEffect(() => {
+    if (mode !== 'cloud' || !scope || !userId) return;
+    const { live: sync, stop } = startMemoireLiveSync(scope);
+    const wake = () => {
+      if (document.visibilityState === 'visible') sync?.wake();
+    };
+    window.addEventListener('focus', wake);
+    window.addEventListener('online', wake);
+    document.addEventListener('visibilitychange', wake);
+    return () => {
+      window.removeEventListener('focus', wake);
+      window.removeEventListener('online', wake);
+      document.removeEventListener('visibilitychange', wake);
+      stop();
+    };
+  }, [mode, scope, userId]);
+
   // The brass count is the attention conditions HELM's own rules hold in the latest current state — not a stored signal.
   useEffect(() => {
     if (!scope || !mode) return;
@@ -69,7 +91,7 @@ export function ConsoleLayout() {
     return () => {
       cancelled = true;
     };
-  }, [mode, scope]);
+  }, [mode, scope, live.version]);
 
   const active = keyOf(pathname);
   const activeOrg = organizations.find((o) => o.id === activeOrgId);
@@ -86,6 +108,7 @@ export function ConsoleLayout() {
       onOrgChange={(id) => void setActiveOrg(id)}
       userLabel={userEmail ?? myRole()}
       demo={mode === 'demo'}
+      sourceLine={mode === 'cloud' ? liveSyncLine(live, displayClock) : null}
       effectiveAsOf={fork ? displayClock(fork.effectiveAsOf) : undefined}
       recordedThrough={fork ? displayClock(fork.recordedThrough) : undefined}
       error={error}

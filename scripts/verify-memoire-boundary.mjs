@@ -10,6 +10,8 @@
  *   3. HELM never writes to Memoire — no insert, upsert, update or delete on a Memoire table anywhere.
  *   4. No migration alters or drops a Memoire-owned object.
  *   5. HELM never claims a Memoire-owned table name (see ADR-0005).
+ *   6. A Memoire table's Realtime notices are heard only in the bridge, and the ONLY publication statement a
+ *      migration may make about a Memoire table is `supabase_realtime ADD TABLE public.opportunities` (ADR-0034).
  */
 
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
@@ -83,6 +85,21 @@ for (const file of codeFiles) {
   }
 }
 
+// ------------------------ 6a: Realtime notices from a Memoire table only in the bridge
+
+// A `postgres_changes` subscription names its table in an options object; a Memoire table may be named there only
+// by the bridge, which ignores the payload and only wakes the live sync (ADR-0034).
+for (const file of codeFiles) {
+  const rel = relative(root, file).split(sep).join('/');
+  const src = readFileSync(file, 'utf8');
+  if (!src.includes('postgres_changes')) continue;
+  for (const m of src.matchAll(/\btable\s*:\s*['"]([a-z_]+)['"]/g)) {
+    if (!MEMOIRE_TABLES.includes(m[1])) continue;
+    if (rel.startsWith('packages/')) fail('kernel-reads-memoire', file, `kernel package listens to the Memoire-owned table "${m[1]}"`);
+    else if (rel !== BRIDGE) fail('memoire-access-outside-bridge', file, `listens to Memoire-owned "${m[1]}" outside ${BRIDGE}`);
+  }
+}
+
 // --------------------------------------------- 3: HELM never writes to Memoire
 
 // The bridge once appended a `commercial_events` row when a decision was approved. That write is
@@ -125,6 +142,17 @@ for (const file of walk(migrationsDir, ['.sql'])) {
     const object = m[1].toLowerCase();
     if (MEMOIRE_TABLES.includes(object)) {
       fail('migration-alters-memoire', file, `ALTER/DROP targets Memoire-owned "${object}"`);
+    }
+  }
+
+  // 6b: a publication statement naming a Memoire table is allowed in exactly one form — adding opportunities to the
+  // Realtime publication, which changes nothing in the table (ADR-0034). Dropping, setting or adding anything else is not.
+  for (const m of sql.matchAll(/\bALTER\s+PUBLICATION\s+([a-z_]+)\s+(ADD|DROP|SET)\s+TABLE\s+([^;]+)/gi)) {
+    const [, pub, op, list] = m;
+    for (const t of list.split(',').map((x) => x.trim().replace(/^ONLY\s+/i, '').replace(/^public\./i, '').split(/\s/)[0].toLowerCase())) {
+      if (!MEMOIRE_TABLES.includes(t)) continue;
+      const allowed = pub.toLowerCase() === 'supabase_realtime' && op.toUpperCase() === 'ADD' && t === 'opportunities';
+      if (!allowed) fail('migration-alters-memoire', file, `ALTER PUBLICATION ${pub} ${op} TABLE names Memoire-owned "${t}" — only supabase_realtime ADD TABLE public.opportunities is allowed (ADR-0034)`);
     }
   }
 

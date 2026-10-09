@@ -66,3 +66,14 @@ export function subscribeToMemoireOpportunities(userId: string, notify: () => vo
     void client.removeChannel(channel);
   };
 }
+
+/**
+ * Memoire's own profile rows for the given users, by id — the email and name Settings shows for a member. RLS on
+ * `user_profiles` (Memoire's table) shows each reader only their own row; the others come back absent, and the caller
+ * names them by id. Read-only, like everything else here.
+ */
+export async function readMemoireProfiles(userIds: readonly string[]): Promise<ReadonlyMap<string, { email: string; displayName: string | null }>> {
+  if (!supabaseClient || userIds.length === 0) return new Map();
+  const { data } = await supabaseClient.from('user_profiles').select('id, email, display_name').in('id', [...userIds]);
+  return new Map(((data as { id: string; email: string; display_name: string | null }[] | null) ?? []).map((p) => [p.id, { email: p.email, displayName: p.display_name }]));
+}

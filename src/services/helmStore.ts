@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { supabaseClient } from '../lib/supabaseClient.ts';
+import { readMemoireProfiles } from './memoireBridge.ts';
 import type { OrgMember, OrgRole, OrgUnit, Organization } from '../domain/types.ts';
 import { demoMembers, demoOrganization, demoUnits, DEMO_USER_ID } from '../data/demoOrg.ts';
 import * as map from './mappers.ts';
@@ -203,9 +204,7 @@ export const useHelmStore = create<HelmState>((set, get) => {
         ]);
         if (units.error) throw new Error(units.error.message);
         if (memberRows.error) throw new Error(`Members could not be read: ${memberRows.error.message}`);
-        const ids = (memberRows.data ?? []).map((m) => m.user_id as string);
-        const profiles = ids.length > 0 ? await sb.from('user_profiles').select('id, email, display_name').in('id', ids) : { data: [] };
-        const byId = new Map(((profiles.data as { id: string; email: string; display_name: string | null }[] | null) ?? []).map((p) => [p.id, p]));
+        const byId = await readMemoireProfiles((memberRows.data ?? []).map((m) => m.user_id as string));
         const me = get().userId;
         const myEmail = get().userEmail;
 
@@ -216,7 +215,7 @@ export const useHelmStore = create<HelmState>((set, get) => {
           return {
             userId: id,
             email,
-            displayName: p?.display_name || email || `Member ${id.slice(0, 8)}`,
+            displayName: p?.displayName || email || `Member ${id.slice(0, 8)}`,
             role: m.role as OrgRole,
           };
         });

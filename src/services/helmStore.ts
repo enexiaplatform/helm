@@ -194,21 +194,29 @@ export const useHelmStore = create<HelmState>((set, get) => {
       }
       const sb = supabaseClient;
       try {
+        // Memberships are read without embedding user_profiles: there is no foreign key between the two tables, so the
+        // embed failed, the error was never checked, and every organization showed "Members 0" (audit 2026-10-09).
+        // user_profiles is Memoire's table and shows each reader only their own row, so others are named by id.
         const [units, memberRows] = await Promise.all([
           sb.from('org_units').select('*').eq('org_id', orgId),
-          sb
-            .from('organization_memberships')
-            .select('user_id, role, user_profiles:user_profiles!inner(id, email, display_name)')
-            .eq('org_id', orgId),
+          sb.from('organization_memberships').select('user_id, role').eq('org_id', orgId),
         ]);
         if (units.error) throw new Error(units.error.message);
+        if (memberRows.error) throw new Error(`Members could not be read: ${memberRows.error.message}`);
+        const ids = (memberRows.data ?? []).map((m) => m.user_id as string);
+        const profiles = ids.length > 0 ? await sb.from('user_profiles').select('id, email, display_name').in('id', ids) : { data: [] };
+        const byId = new Map(((profiles.data as { id: string; email: string; display_name: string | null }[] | null) ?? []).map((p) => [p.id, p]));
+        const me = get().userId;
+        const myEmail = get().userEmail;
 
         const members: OrgMember[] = (memberRows.data ?? []).map((m) => {
-          const p = m.user_profiles as unknown as { id: string; email: string; display_name: string | null } | null;
+          const id = m.user_id as string;
+          const p = byId.get(id);
+          const email = p?.email ?? (id === me ? (myEmail ?? '') : '');
           return {
-            userId: m.user_id as string,
-            email: p?.email ?? '',
-            displayName: p?.display_name || p?.email || 'Member',
+            userId: id,
+            email,
+            displayName: p?.display_name || email || `Member ${id.slice(0, 8)}`,
             role: m.role as OrgRole,
           };
         });

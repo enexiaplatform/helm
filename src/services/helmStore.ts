@@ -80,7 +80,6 @@ export const useHelmStore = create<HelmState>((set, get) => {
       const { data } = await supabaseClient.auth.getSession();
       const session = data.session;
       set({
-        authReady: true,
         userId: session?.user?.id ?? null,
         userEmail: session?.user?.email ?? null,
       });
@@ -88,9 +87,15 @@ export const useHelmStore = create<HelmState>((set, get) => {
         set({ userId: s?.user?.id ?? null, userEmail: s?.user?.email ?? null });
         if (!s) set({ mode: null, organizations: [], activeOrgId: null, ...emptyData });
       });
-      if (session) {
-        set({ mode: 'cloud' });
-        await get().loadOrganizations();
+      // The router decides where a reader belongs only once it knows who they are AND which organizations they hold.
+      // Ready earlier, a signed-in reader opening /twin was sent to /auth (no org yet), then on to / — the address lost.
+      try {
+        if (session) {
+          set({ mode: 'cloud' });
+          await get().loadOrganizations();
+        }
+      } finally {
+        set({ authReady: true });
       }
     },
 

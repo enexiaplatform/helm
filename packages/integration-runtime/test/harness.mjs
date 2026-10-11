@@ -33,6 +33,7 @@ export const row = (over) => ({
   status: 'open',
   expected_close_period: '2026-Q4',
   updated_at: '2026-10-01T02:00:00.000Z',
+  account_ka_flag: null,
   ...over,
 });
 

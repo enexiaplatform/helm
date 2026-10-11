@@ -301,7 +301,7 @@ so. Semantic similarity may one day supplement this; it may never define similar
 // integration-runtime/src/port.ts
 export interface SourceAdapter {
   readonly system: SourceSystem;
-  /** 'memoire-connector@0.2.0' — recorded in provenance so a fact names the build that translated it. */
+  /** 'memoire-connector@0.3.0' — recorded in provenance so a fact names the build that translated it. */
   readonly connector: string;
   /** What the adapter promises each object type looks like. Drift is detected against this. */
   readonly contracts: readonly SchemaContract[];

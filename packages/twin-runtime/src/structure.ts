@@ -165,13 +165,17 @@ export function orgPlacement(view: StructureView, id: string): Record<string, re
 
 /** The account classification a customer carries at this lens, if any. */
 export function classificationOf(view: StructureView, customerId: string): { classification: AccountClass; segmentId: string; relationshipId: string } | null {
+  // A source that reclassifies a customer adds the new membership without closing the old one; the latest one stated
+  // (by business time, then id for a stable answer) is the classification.
+  let found: { classification: AccountClass; segmentId: string; relationshipId: string; at: number } | null = null;
   for (const r of view.relationships) {
     if (r.sourceEntityId !== customerId || r.relationshipTypeKey !== 'BELONGS_TO') continue;
     const segment = view.entities.get(r.targetEntityId);
     const code = segment?.entityTypeKey === 'Segment' ? segment.attributes.segmentCode : undefined;
     if (typeof code === 'string' && (ACCOUNT_CLASSES as readonly string[]).includes(code)) {
-      return { classification: code as AccountClass, segmentId: segment!.id, relationshipId: r.id };
+      const at = ms(r.validFrom);
+      if (!found || at > found.at || (at === found.at && r.id > found.relationshipId)) found = { classification: code as AccountClass, segmentId: segment!.id, relationshipId: r.id, at };
     }
   }
-  return null;
+  return found && { classification: found.classification, segmentId: found.segmentId, relationshipId: found.relationshipId };
 }

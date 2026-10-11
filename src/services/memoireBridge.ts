@@ -25,7 +25,8 @@ import { supabaseClient } from '../lib/supabaseClient.ts';
  * notice's payload is IGNORED: it only wakes the live sync, which re-reads through the reader above.
  */
 
-const READ_COLUMNS = 'id, account_id, account_name, opportunity_name, title, stage, estimated_value, currency, pipeline_probability, status, expected_close_period, updated_at';
+// The account's key-account flag is read through the opportunity's own foreign key, under the same RLS.
+const READ_COLUMNS = 'id, account_id, account_name, opportunity_name, title, stage, estimated_value, currency, pipeline_probability, status, expected_close_period, updated_at, account:accounts(ka_flag)';
 
 /** The Memoire read port of the integration fabric, over the signed-in user's own `opportunities` (RLS scopes it). */
 export function createMemoireOpportunityReader(): MemoireReader {
@@ -42,7 +43,10 @@ export function createMemoireOpportunityReader(): MemoireReader {
       }
       const { data, error } = await q;
       if (error) return fail('integration.read_failed', `Reading Memoire opportunities failed: ${error.message}`);
-      return ok(((data ?? []) as unknown as MemoireOpportunityRow[]).map((r) => ({ ...r, updated_at: new Date(r.updated_at).toISOString() })));
+      type Read = Omit<MemoireOpportunityRow, 'account_ka_flag'> & { account: { ka_flag: boolean | null } | null };
+      return ok(
+        ((data ?? []) as unknown as Read[]).map(({ account, ...r }) => ({ ...r, updated_at: new Date(r.updated_at).toISOString(), account_ka_flag: account?.ka_flag ?? null })),
+      );
     },
   };
 }

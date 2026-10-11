@@ -238,9 +238,9 @@ export function CockpitPage() {
           </ul>
           {gapGroups.some(([code]) => code === 'UNCLASSIFIED_CUSTOMER') && (
             <p className="mt-2">
-              The state cannot say which customers are strategic, key or standard accounts. The Memoire connector reads
-              opportunities only, so no customer arrives with a class; Memoire&rsquo;s own key-account flag is not mapped into
-              HELM yet.
+              HELM classifies a Memoire customer by its account&rsquo;s key-account flag: set, a key account; cleared, a
+              standard customer. These accounts have no flag in Memoire, so HELM leaves them unclassified rather than
+              guess. Setting the flag in Memoire classifies them on the next change to one of their opportunities.
             </p>
           )}
           <p className="mt-2">

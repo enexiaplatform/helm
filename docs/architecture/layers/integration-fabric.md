@@ -11,7 +11,7 @@ How enterprise source systems reach HELM, and what HELM may propose back.
 
 | Part | File | Contract |
 | --- | --- | --- |
-| `SourceAdapter` | `types.ts`, `memoire.ts` | `translate(record)` is pure; a versioned connector id (`memoire-connector@0.2.0`); a declared source contract |
+| `SourceAdapter` | `types.ts`, `memoire.ts` | `translate(record)` is pure; a versioned connector id (`memoire-connector@0.3.0`); a declared source contract |
 | `MemoireReader` | `memoire.ts` | rows strictly after a cursor, oldest first, under the caller's own RLS; a fixture reader for tests. The app's reader is `createMemoireOpportunityReader` in `src/services/memoireBridge.ts` |
 | `IdentityMapper` | `identity.ts` | register / resolve aliases by `(system, kind, value)`; a name is never an identity; a conflict is reported, never merged |
 | `SchemaDriftDetector` | `drift.ts` | pure: `NONE` · `ADDITIVE` · `BREAKING`; a numeric column arriving as a string is not drift |
@@ -32,7 +32,11 @@ record time stamped by the database.
 3. Each record translates to an `Opportunity` and its `Customer` (canonical keys
    `memoire:opportunity:<id>`, `memoire:account:<id>`), a `HELD_BY` relationship,
    aliases, and **source observations** (`OpportunityValue`, `OpportunityProbability`)
-   naming the system, the field and the object.
+   naming the system, the field and the object. When the account states Memoire's
+   key-account flag (`accounts.ka_flag`, read through the opportunity's foreign key),
+   the customer `BELONGS_TO` a `Segment` (`memoire:account_class:KEY_ACCOUNT` or
+   `…:STANDARD_CUSTOMER`) — the account classification the twin reads. An unstated
+   flag classifies nothing; Memoire has no strategic class, so HELM never derives one.
 4. Provenance points at the ingestion event; the ledger row records counts, drift,
    quarantined records and the cursor.
 

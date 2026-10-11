@@ -34,7 +34,7 @@ commitments only to decide what may be *proposed* outward.
 
 - **`SourceAdapter`** — a pure `translate(record)` from one source object to
   ontology entities, relationships and *facts*. It owns a versioned connector id
-  (`memoire-connector@0.2.0`) and a declared source contract.
+  (`memoire-connector@0.3.0`) and a declared source contract.
 - **`IdentityMapper`** — registers `(system, kind, value)` aliases. A **name is
   never an identity**; an identifier another entity already holds is reported as
   a conflict and **never merged**.

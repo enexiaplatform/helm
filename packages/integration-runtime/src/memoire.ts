@@ -30,6 +30,11 @@ export type MemoireOpportunityRow = {
   readonly status: string | null;
   readonly expected_close_period: string | null;
   readonly updated_at: string;
+  /**
+   * Memoire's own key-account flag on the opportunity's account (`accounts.ka_flag`), read alongside the opportunity.
+   * true = a key account, false = a standard customer, null/absent = Memoire does not say — and HELM does not guess.
+   */
+  readonly account_ka_flag?: boolean | null;
 };
 
 export type MemoireCursor = { readonly updatedAt: string; readonly id: string };
@@ -39,7 +44,9 @@ export interface MemoireReader {
   listOpportunities(scope: Scope, after: MemoireCursor | null, limit: number): Promise<Result<readonly MemoireOpportunityRow[]>>;
 }
 
-export const MEMOIRE_CONNECTOR = 'memoire-connector@0.2.0';
+// 0.3.0 reads the account's key-account flag. A new connector build resumes from no checkpoint, so every opportunity is
+// read once more through the new translation; what did not change is recognised as unchanged and written nowhere.
+export const MEMOIRE_CONNECTOR = 'memoire-connector@0.3.0';
 
 const OPPORTUNITY_FIELDS: readonly FieldSpec[] = [
   { name: 'id', type: 'string', required: true },
@@ -54,9 +61,13 @@ const OPPORTUNITY_FIELDS: readonly FieldSpec[] = [
   { name: 'status', type: 'string', required: false },
   { name: 'expected_close_period', type: 'string', required: false },
   { name: 'updated_at', type: 'date', required: true },
+  { name: 'account_ka_flag', type: 'boolean', required: false },
 ];
 
-export const MEMOIRE_OPPORTUNITY_CONTRACT: SchemaContract = { system: 'memoire', objectType: 'opportunity', version: 'opportunity@1', fields: OPPORTUNITY_FIELDS };
+export const MEMOIRE_OPPORTUNITY_CONTRACT: SchemaContract = { system: 'memoire', objectType: 'opportunity', version: 'opportunity@2', fields: OPPORTUNITY_FIELDS };
+
+/** The account classification Memoire's key-account flag states. Memoire has no notion of a strategic account, so HELM never derives one. */
+const CLASS_OF_KA_FLAG = { true: { code: 'KEY_ACCOUNT', name: 'Key accounts (Memoire key-account flag)' }, false: { code: 'STANDARD_CUSTOMER', name: 'Standard customers (Memoire key-account flag)' } } as const;
 
 const encode = (c: MemoireCursor) => `${c.updatedAt}|${c.id}`;
 const decode = (s: string | null): MemoireCursor | null => {
@@ -103,6 +114,12 @@ export function createMemoireAdapter(reader: MemoireReader, options: { pageSize?
         entities.push({ ...custRef, name: f.account_name?.trim() || `Memoire account ${f.account_id.slice(0, 8)}`, sourceEntityType: 'account', sourceEntityId: f.account_id, observedAt: f.updated_at, attributes: {} });
         aliases.push({ entity: custRef, aliasKind: 'source_id', aliasValue: f.account_id });
         relationships.push({ relationshipTypeKey: 'HELD_BY', source: oppRef, target: custRef, sourceObjectType: 'opportunity', sourceObjectId: f.id });
+        if (typeof f.account_ka_flag === 'boolean') {
+          const cls = CLASS_OF_KA_FLAG[f.account_ka_flag ? 'true' : 'false'];
+          const segRef = { entityTypeKey: 'Segment', canonicalKey: `memoire:account_class:${cls.code}` };
+          entities.push({ ...segRef, name: cls.name, sourceEntityType: 'account_class', sourceEntityId: cls.code, observedAt: f.updated_at, attributes: { segmentCode: cls.code } });
+          relationships.push({ relationshipTypeKey: 'BELONGS_TO', source: custRef, target: segRef, sourceObjectType: 'account', sourceObjectId: f.account_id });
+        }
       }
       const facts: SourceFact[] = [];
       if (f.status !== 'archived') {

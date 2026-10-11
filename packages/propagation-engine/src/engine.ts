@@ -642,6 +642,10 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
     return clampConfidence(weakest * calc.definitionConfidence);
   }
 
+  // An entity's type never changes, so neither does the category scope compatibility reads from it: remembered for the
+  // engine's life instead of read once per position on every plan (79 reads per Scenarios load, audit 2026-10-11).
+  const categoryBySubject = new Map<string, string | null>();
+
   // ----------------------------------------------------------------- planning
 
   async function buildPlan(
@@ -729,9 +733,16 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
         // uncomputable with every producer's reason rather than silently skipped.
         let category: string | null = null;
         if (node.subjectEntityId) {
-          const entity = await graphStore.getEntity(scope, node.subjectEntityId);
-          if (!entity.ok) return entity;
-          if (entity.value) category = ontology.categoryOf(entity.value.entityTypeKey);
+          const known = categoryBySubject.get(`${scope.orgId}|${node.subjectEntityId}`);
+          if (known !== undefined) category = known;
+          else {
+            const entity = await graphStore.getEntity(scope, node.subjectEntityId);
+            if (!entity.ok) return entity;
+            if (entity.value) {
+              category = ontology.categoryOf(entity.value.entityTypeKey);
+              categoryBySubject.set(`${scope.orgId}|${node.subjectEntityId}`, category);
+            }
+          }
         }
         const applies = (d: CalculationDefinition): boolean =>
           d.scopeCompatibility === null || category === null || d.scopeCompatibility.includes(category);

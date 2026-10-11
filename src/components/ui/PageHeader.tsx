@@ -12,7 +12,8 @@ interface Props {
 
 /* No card, no box. Kicker (11px label) → serif headline → lede (max 640px). */
 export function PageHeader({ kicker, title, lede, size = 'display', children }: Props) {
-  const t = size === 'display' ? 'text-display max-w-headline' : size === 'title' ? 'text-title max-w-[900px]' : 'text-instrument';
+  // On a phone the 44px management voice fills the first screen before anything it speaks about; it steps down to the instrument size there.
+  const t = size === 'display' ? 'text-instrument sm:text-display max-w-headline' : size === 'title' ? 'text-instrument sm:text-title max-w-[900px]' : 'text-instrument';
   return (
     <header>
       <p className="helm-label">{kicker}</p>

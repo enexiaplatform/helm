@@ -182,6 +182,12 @@ describe('no tool can be summoned outside the catalogue', () => {
     assert.equal(a.grounding.removed, 0);
   });
 
+  it('the reference router reads a question about commitments as one about attention, even when it also asks why', async () => {
+    const tools = ['getManagementAttention', 'getCausalClaims', 'getEnterpriseState'].map((name) => ({ name, description: '', args: [] }));
+    const calls = await createReferenceProvider().plan({ question: 'Which commitment is furthest from the committed future, and why?', tools });
+    assert.deepEqual(calls.map((c) => c.tool).sort(), ['getCausalClaims', 'getManagementAttention']);
+  });
+
   it('a plan longer than the limit is cut, and says so', async () => {
     const many = Array.from({ length: 12 }, () => ({ tool: 'getManagementAttention', args: {} }));
     const b = buildIntelligence(s, scriptedProvider({ statements: [] }, { plan: many }));

@@ -190,7 +190,7 @@ export function DecisionDetailPage() {
           {[decision.scope || decision.title, `r${revision.revisionNumber}`].join(' · ')}
         </span>
       </div>
-      <h1 className="mt-3 max-w-[900px] text-title">{decision.managementQuestion}</h1>
+      <h1 className="mt-3 max-w-[900px] text-instrument sm:text-title">{decision.managementQuestion}</h1>
       <FactRow
         className="mt-5 border-b border-ink-200 pb-[22px]"
         facts={[

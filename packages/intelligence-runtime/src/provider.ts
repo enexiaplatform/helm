@@ -64,7 +64,8 @@ export function createReferenceProvider(): AiProvider {
       const want = (tool: string, re: RegExp, args: Record<string, unknown> = {}) => {
         if (has(tool) && re.test(q)) calls.push({ tool, args });
       };
-      want('getManagementAttention', /attention|matters|off-track|risk|issue/, {});
+      // A question about commitments, targets or what is waiting on management is a question about attention, whatever else it asks.
+      want('getManagementAttention', /attention|matters|off.?track|risk|issue|commit|target|objective|behind|short of|furthest|gap|decision|approv|breach|challeng/, {});
       want('getEnterpriseState', /state|now|current|where are we/, {});
       want('getCausalClaims', /caus|why|evidence|hypothes/, {});
       want('getGenomePatterns', /pattern|recurr|learn|lesson/, {});
@@ -75,7 +76,7 @@ export function createReferenceProvider(): AiProvider {
 
     async synthesize(input) {
       // A value that already opens with the label is not prefixed by it again.
-      const body = (e: { label: string; values: readonly string[] }) => (e.values.length === 0 ? e.label : e.values[0]!.toLowerCase().startsWith(e.label.toLowerCase()) ? e.values.join('; ') : `${e.label}: ${e.values.join('; ')}`);
+      const body = (e: { label: string; values: readonly string[] }) => (e.values.length === 0 ? e.label : e.values[0]!.toLowerCase().startsWith(e.label.toLowerCase()) ? e.values.join('; ') : `${e.label.replace(/[.:;]+$/, '')}: ${e.values.join('; ')}`);
       // A brief is a summary, not a dump: each section states its summary (when the evidence carries one) and its first entries
       // in KERNEL order — never the "most important" — and says how many more the pack holds.
       const CAP = 5;

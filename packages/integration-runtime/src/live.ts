@@ -53,6 +53,12 @@ export type LiveSyncDeps = {
   hasNews?(): Promise<Result<boolean>>;
   /** Whether a current state has ever been composed for this reader. */
   hasCurrentState(): Promise<Result<boolean>>;
+  /**
+   * Whether the latest current state is older than something it is composed from that changed inside HELM (a decision
+   * act, a model run, a simulation). Read every pass, so a recompose asked for in a window that closed or reloaded
+   * before it ran is not lost. Without it, only recompose() and the source say when to compose.
+   */
+  isCurrentStateStale?(): Promise<Result<boolean>>;
   composeCurrentState(): Promise<Result<unknown>>;
   /** Listen for the source's change notices. Returns the way to stop listening. */
   subscribe(notify: () => void, listening: (on: boolean) => void): () => void;
@@ -178,7 +184,12 @@ export function createLiveSync(deps: LiveSyncDeps): LiveSync {
     const held = await deps.hasCurrentState();
     if (!held.ok) throw new Error(held.error.message);
     // Taken before composing: a recompose asked for while this one composes asks for the next pass.
-    const asked = stale;
+    let asked = stale;
+    if (!asked && held.value && deps.isCurrentStateStale) {
+      const st = await deps.isCurrentStateStale();
+      if (!st.ok) throw new Error(st.error.message);
+      asked = st.value;
+    }
     if (changed || !held.value || asked) {
       stale = false;
       set({ phase: 'composing' });

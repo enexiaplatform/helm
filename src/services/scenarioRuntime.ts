@@ -180,7 +180,7 @@ export function rollUp(state: FutureState, metricKey: string, period: Period): R
   const metric = valueMetrics.metric(metricKey);
   const all = state.values.filter((v) => v.metricKey === metricKey && periodKey(v.period) === periodKey(period));
   const none = (note: string): RollUp => ({ value: null, unit: null, currency: null, counted: 0, positions: all.length, note });
-  if (all.length === 0) return none(`No position carries ${metric?.name ?? metricKey} in this state: the model has nothing to compute it from yet.`);
+  if (all.length === 0) return none(`No position carries ${metric?.name ?? metricKey} in this state: the model computes it only for subjects that carry all of its inputs.`);
   if (!metric || metric.aggregation !== 'SUM') return none(`${metric?.name ?? metricKey} is ${metric ? metric.aggregation.toLowerCase().replaceAll('_', ' ') : 'undeclared'}; it is never summed across positions.`);
   const known = all.filter((v) => v.value !== null);
   const currencies = new Set(known.map((v) => v.currency));

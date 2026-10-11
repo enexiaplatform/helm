@@ -15,6 +15,7 @@ import { create } from 'zustand';
 import { createLiveSync, type LiveSync, type LiveSyncState } from '@helm/integration-runtime';
 import { fail, ok, type Scope } from '@helm/shared';
 import { subscribeToMemoireOpportunities } from './memoireBridge.ts';
+import { supabaseClient } from '../lib/supabaseClient.ts';
 import { resolveIntegrationContext, sourceHasNews } from './integrationRuntime.ts';
 import { buildCurrentSnapshot, listSnapshots } from './twinRuntime.ts';
 
@@ -45,6 +46,28 @@ export function recomposeCurrentState(): boolean {
   if (!active) return false;
   active.recompose();
   return true;
+}
+
+/**
+ * The latest moment something the current state is composed from changed inside HELM: a decision act (its timeline is
+ * append-only, so every act leaves an event), a model run, a simulation. Read by the live sync each pass, so a state
+ * older than it is composed again even when the window that made the change closed first.
+ */
+async function latestKernelChange(orgId: string): Promise<string | null> {
+  if (!supabaseClient) return null;
+  const sb = supabaseClient;
+  const newest = async (table: string, column: string): Promise<string | null> => {
+    const { data, error } = await sb.from(table).select(column).eq('org_id', orgId).not(column, 'is', null).order(column, { ascending: false }).limit(1);
+    if (error) throw new Error(`${table}: ${error.message}`);
+    const row = (data as unknown as Record<string, string>[] | null)?.[0];
+    return row ? row[column] ?? null : null;
+  };
+  const times = await Promise.all([
+    newest('helm_decision_events', 'created_at'),
+    newest('helm_calculation_runs', 'completed_at'),
+    newest('helm_scenario_runs', 'completed_at'),
+  ]);
+  return times.filter((x): x is string => x !== null).reduce<string | null>((m, x) => (m === null || Date.parse(x) > Date.parse(m) ? x : m), null);
 }
 
 /** Serialize passes across this reader's HELM windows, where the browser can. A second window waits, then finds nothing new. */
@@ -92,6 +115,19 @@ export function startMemoireLiveSync(scope: Scope): { live: LiveSync | null; sto
         return ok(all.some((s) => s.spec.kind === 'CURRENT' && String(s.builtBy) === userId));
       } catch (e) {
         return fail('twin.read_failed', `The enterprise states could not be listed: ${asMessage(e)}`);
+      }
+    },
+    isCurrentStateStale: async () => {
+      const ctx = await contexts;
+      if (!ctx) return fail('integration.no_client', 'HELM cannot reach the cloud to read its twin.');
+      try {
+        const all = await listSnapshots(ctx.twin);
+        const latest = all.filter((s) => s.spec.kind === 'CURRENT').reduce<string | null>((m, s) => (m === null || s.createdAt > m ? s.createdAt : m), null);
+        if (latest === null) return ok(false);
+        const changed = await latestKernelChange(orgId);
+        return ok(changed !== null && Date.parse(changed) > Date.parse(latest));
+      } catch (e) {
+        return fail('twin.read_failed', `Whether the current state is current could not be read: ${asMessage(e)}`);
       }
     },
     composeCurrentState: async () => {

@@ -100,7 +100,7 @@ export function evaluateReadiness(input: {
       gaps.push({
         code: 'alternative-unmodelled',
         severity: 'GAP',
-        message: `${alternative.label} has no modelled future state${alternative.unmodelledReason ? `: ${alternative.unmodelledReason}` : ''}. Its consequences are not computed.`,
+        message: `${alternative.label} has no modelled future state${alternative.unmodelledReason ? `: ${alternative.unmodelledReason.replace(/[.\s]+$/, '')}` : ''}. Its consequences are not computed.`,
         alternativeId: alternative.id,
       });
       continue;

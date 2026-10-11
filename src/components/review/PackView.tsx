@@ -8,7 +8,8 @@ const day = (iso: string): string => iso.slice(0, 10);
 function Block({ title, note, children, count }: { title: string; note?: string | null; children: ReactNode; count: number }) {
   return (
     <section className="mt-8">
-      <SectionHead title={title} meta={String(count)} caveat={note ?? undefined} size="section-sm" />
+      {/* An empty section says its note once, as its body — not again as the caveat above it. */}
+      <SectionHead title={title} meta={String(count)} caveat={count > 0 ? (note ?? undefined) : undefined} size="section-sm" />
       {count === 0 ? <p className="mt-3 text-dense text-ink-500">{note ?? 'Nothing.'}</p> : <div className="mt-2">{children}</div>}
     </section>
   );

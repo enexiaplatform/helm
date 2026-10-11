@@ -39,6 +39,7 @@ async function liveStack(options = {}) {
         }
       : undefined,
     hasCurrentState: async () => ({ ok: true, value: composedEver }),
+    isCurrentStateStale: options.isStale ? async () => ({ ok: true, value: options.isStale() }) : undefined,
     composeCurrentState: async () => {
       calls.composed += 1;
       composedEver = true;
@@ -120,6 +121,25 @@ describe('live sync catches up and composes only on change', () => {
     t.notify();
     await t.live.idle();
     assert.equal(t.calls.composed, 2, 'the request is spent: a plain wake after it composes nothing');
+    t.live.stop();
+  });
+
+  it('a state older than a change inside HELM is recomposed by a later window that never heard the request', async () => {
+    let kernelChangedAfterState = false;
+    const t = await liveStack({ composedBefore: true, isStale: () => kernelChangedAfterState });
+    t.s.reader.rows.push(row({ id: 'opp-1', updated_at: at(1) }));
+    t.live.start();
+    await t.live.idle();
+    const before = t.calls.composed;
+    // The window that cancelled a decision closed before its recompose ran; this one only sees the record is newer.
+    kernelChangedAfterState = true;
+    t.notify();
+    await t.live.idle();
+    assert.equal(t.calls.composed, before + 1, 'composed because the state is older than the kernel change');
+    kernelChangedAfterState = false;
+    t.notify();
+    await t.live.idle();
+    assert.equal(t.calls.composed, before + 1, 'nothing newer: nothing composed');
     t.live.stop();
   });
 

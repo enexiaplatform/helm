@@ -166,7 +166,7 @@ export function FrameDecisionModal({
           {scenarios === null && <span className="text-meta text-ink-500">Reading the simulated scenarios…</span>}
           {scenarios !== null && scenarios.length === 0 && (
             <span className="text-meta text-ink-500">
-              No scenario has been simulated yet. You can frame the question now and bind alternatives later, once their futures are branched on{' '}
+              No open scenario has a simulation yet (archived ones are not offered). You can frame the question now and bind alternatives later, once their futures are branched on{' '}
               <a href="/scenarios" className="text-accent-700 underline">Scenarios</a>.
             </span>
           )}
@@ -233,6 +233,7 @@ export function DecisionAuthoring({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const { revision, decision } = workspace;
   // Where the preparation stands is management's to say: DRAFT → INVESTIGATING / MODELLING → READY_FOR_DECISION. Only
   // READY_FOR_DECISION can be committed, and commit itself is the step to COMMITTED, so it is not offered here.
@@ -282,11 +283,30 @@ export function DecisionAuthoring({
           It is <span className="font-mono">{readable(decision.state)}</span>
           {decision.state !== 'READY_FOR_DECISION' ? ' — only a decision marked ready for decision can be committed.' : ' — it can be committed.'}
         </span>
-        {moves.map((m) => (
-          <Button key={m} size="sm" variant={m === 'READY_FOR_DECISION' ? 'primary' : 'secondary'} disabled={busy} onClick={() => void act(`Marked ${readable(m)}.`, () => ctx.runtime.setState(ctx.scope, decision.id, m))}>
-            {m === 'CANCELLED' ? 'Cancel the decision' : `Mark ${readable(m)}`}
-          </Button>
-        ))}
+        {moves.map((m) =>
+          m === 'CANCELLED' ? (
+            // Cancelling is final — a cancelled decision never returns — so it asks once more, on the record of who asked.
+            confirmCancel ? (
+              <span key={m} className="inline-flex flex-wrap items-center gap-2 text-dense text-red-700">
+                A cancelled decision cannot be reopened.
+                <Button size="sm" disabled={busy} onClick={() => void act('Marked cancelled.', () => ctx.runtime.setState(ctx.scope, decision.id, m))}>
+                  Cancel it for good
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirmCancel(false)}>
+                  Keep it
+                </Button>
+              </span>
+            ) : (
+              <Button key={m} size="sm" disabled={busy} onClick={() => setConfirmCancel(true)}>
+                Cancel the decision
+              </Button>
+            )
+          ) : (
+            <Button key={m} size="sm" variant={m === 'READY_FOR_DECISION' ? 'primary' : 'secondary'} disabled={busy} onClick={() => void act(`Marked ${readable(m)}.`, () => ctx.runtime.setState(ctx.scope, decision.id, m))}>
+              {`Mark ${readable(m)}`}
+            </Button>
+          ),
+        )}
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         {tab('alternative', '+ Alternative')}

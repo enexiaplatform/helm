@@ -209,12 +209,15 @@ export function ScenariosPage() {
   const baselineState = data.baselineRun ? data.states[data.baselineRun.id] : null;
   const fork = data.baselineRun?.fork ?? ws.defaultFork;
   const tree = branchOrder(data.scenarios);
-  const simulated = data.scenarios.filter((s) => s.latestRun).length;
+  // Archived and invalidated futures stay readable, but they are no longer branches anyone is weighing.
+  const open = data.scenarios.filter((s) => s.scenario.status !== 'ARCHIVED' && s.scenario.status !== 'INVALIDATED');
+  const closed = data.scenarios.length - open.length;
+  const simulated = open.filter((s) => s.latestRun).length;
   const title =
-    data.scenarios.length === 0
-      ? 'No futures branched from the baseline yet'
-      : `${data.scenarios.length} ${data.scenarios.length === 1 ? 'future' : 'futures'} branched from one baseline` +
-        (simulated < data.scenarios.length ? ` — ${simulated} simulated` : '');
+    (open.length === 0
+      ? 'No open future branched from the baseline'
+      : `${open.length} ${open.length === 1 ? 'future' : 'futures'} branched from one baseline` +
+        (simulated < open.length ? ` — ${simulated} simulated` : '')) + (closed > 0 ? ` · ${closed} archived` : '');
 
   return (
     <>
@@ -550,6 +553,7 @@ function ScenarioDetail({
   const draft = latestRevision?.state === 'DRAFT';
   const parent = data.scenarios.find((s) => s.scenario.id === scenario.parentScenarioId)?.scenario ?? null;
   const [adding, setAdding] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
 
   // One row per effective override; an all-period override appears once.
   const effective = useMemo(() => {
@@ -618,11 +622,22 @@ function ScenarioDetail({
             Replay
           </Button>
         )}
-        {!terminal && (
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => ws.runtime.archive(ws.scope, scenario.id))}>
-            Archive
-          </Button>
-        )}
+        {!terminal &&
+          (confirmArchive ? (
+            <span className="inline-flex flex-wrap items-center gap-2 text-dense text-red-700">
+              An archived scenario stays readable but cannot be simulated or changed again.
+              <Button size="sm" disabled={busy} onClick={() => void act(() => ws.runtime.archive(ws.scope, scenario.id))}>
+                Archive it
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmArchive(false)}>
+                Keep it
+              </Button>
+            </span>
+          ) : (
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirmArchive(true)}>
+              Archive
+            </Button>
+          ))}
       </div>
 
       {draft && !terminal && (

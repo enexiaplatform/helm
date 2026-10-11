@@ -244,7 +244,7 @@ export function ReviewsPage() {
         size="title"
         title={
           projected && projected.reviews.length > 0
-            ? `${projected.reviews.length} review${projected.reviews.length === 1 ? '' : 's'} on record${openReview ? `; ${openReview.review.periodLabel} is open` : '; none is open'}. What was open at the last one has been carried forward, not retyped.`
+            ? `${projected.reviews.length} review${projected.reviews.length === 1 ? '' : 's'} on record${openReview ? `; ${openReview.review.periodLabel} is open` : '; none is open'}.${projected.reviews.some((r) => r.previous) ? ' What was open at the last one has been carried forward, not retyped.' : ''}`
             : 'No review is on record yet. The first one opens with the twin state as it stands.'
         }
         lede="A review is prepared from the kernel — what changed, what needs attention, what decisions are needed, which commitments are off-track, what was learned — so nobody rebuilds it in a slide. It records what management touched, by reference; deciding, committing and governing happen in their own instruments."

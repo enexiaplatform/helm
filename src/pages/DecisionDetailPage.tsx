@@ -345,7 +345,7 @@ export function DecisionDetailPage() {
 
       <Evidence workspace={workspace} />
 
-      {!commitment && revision.state === 'DRAFT' && (
+      {!commitment && revision.state === 'DRAFT' && decision.state !== 'CANCELLED' && (
         <DecisionAuthoring
           ctx={ctx}
           workspace={workspace}

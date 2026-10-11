@@ -177,7 +177,7 @@ export async function computePack(sources: ReviewSources, scope: Scope, input: P
     openingSnapshotId: input.snapshotId,
     changed,
     attention,
-    decisionsNeeded: section(decisionsNeeded, decisionsNeeded.length === 0 ? 'Every decision opened at this lens has a commitment.' : null),
+    decisionsNeeded: section(decisionsNeeded, decisionsNeeded.length === 0 ? 'No decision opened at this lens is waiting for a commitment.' : null),
     commitmentsOffTrack: section(offTrack, offTrack.length === 0 ? 'No commitment is beyond materiality of its committed future.' : 'Current state against the committed future, beyond materiality; nothing is scored.'),
     assumptionsChanged: section(assumptionsChanged, assumptionsChanged.length === 0 ? 'No assumption result was recorded in the window.' : null),
     outcomesArrived: section(outcomesArrived, outcomesArrived.length === 0 ? 'No outcome review was recorded in the window.' : null),

@@ -76,7 +76,7 @@ export function CockpitPage() {
   const [ic, setIc] = useState<IntelligenceContext | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viewerKey, setViewerKey] = useState('');
-  const [loaded, setLoaded] = useState<{ key: string; value: Loaded | null; note: string | null } | null>(null);
+  const [loaded, setLoaded] = useState<{ key: string; version: number; value: Loaded | null; note: string | null } | null>(null);
   const [why, setWhy] = useState<Lineage | null>(null);
   const [openAttention, setOpenAttention] = useState<string | null>(null);
 
@@ -113,7 +113,7 @@ export function CockpitPage() {
         const visible = (s: TwinSnapshot) => canSeeSnapshot(viewer, s, twin.units).visible;
         const currentHeader = [...all].filter((s) => s.spec.kind === 'CURRENT' && visible(s)).at(-1);
         if (!currentHeader) {
-          if (live) setLoaded({ key, value: null, note: 'No current enterprise state is visible to this reader yet.' });
+          if (live) setLoaded({ key, version: memoireVersion, value: null, note: 'No current enterprise state is visible to this reader yet.' });
           return;
         }
         const view = await loadSnapshotView(twin, currentHeader.id, viewer);
@@ -126,7 +126,7 @@ export function CockpitPage() {
           reviewsForViewer(ic.reviews, viewer, null),
         ]);
         const integration = await resolveIntegrationContext(ic.mode, scope).catch(() => null);
-        if (live) setLoaded({ key, value: { ic, integration, current: view.composed, projection: view.projection, trajectory, claims: claims.claims, genome, counterfactuals, reviews }, note: view.refusal });
+        if (live) setLoaded({ key, version: memoireVersion, value: { ic, integration, current: view.composed, projection: view.projection, trajectory, claims: claims.claims, genome, counterfactuals, reviews }, note: view.refusal });
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : String(e));
       }
@@ -192,6 +192,8 @@ export function CockpitPage() {
   }
 
   const firstCompose = ic.mode === 'cloud' && !d && (livePhase === 'starting' || livePhase === 'reading' || livePhase === 'composing');
+  // A newer state was composed while this one is on screen: say so until it is read, so the page never passes off the older one as current.
+  const rereading = ic.mode === 'cloud' && !!d && data!.version !== memoireVersion;
   const proof = d?.integration?.proof ?? null;
   const focusDecision = decisions[0];
 
@@ -210,6 +212,8 @@ export function CockpitPage() {
       )}
       {firstCompose ? (
         <Notice tone="neutral" label="Memoire" className="mt-4">HELM is reading your Memoire opportunities and composing the first current state of the enterprise.</Notice>
+      ) : rereading ? (
+        <Notice tone="neutral" label="Newer state" className="mt-4">A newer current state has been composed. HELM is reading it; what is shown below is the one before it.</Notice>
       ) : (
         data?.note && <Notice tone="warning" label="Withheld" className="mt-4">{data.note}</Notice>
       )}

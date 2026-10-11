@@ -64,6 +64,8 @@ async function latestKernelChange(orgId: string): Promise<string | null> {
   };
   const times = await Promise.all([
     newest('helm_decision_events', 'created_at'),
+    // A state change writes its event before the decision row moves, so the event alone can predate the change itself.
+    newest('helm_decisions', 'updated_at'),
     newest('helm_calculation_runs', 'completed_at'),
     newest('helm_scenario_runs', 'completed_at'),
   ]);

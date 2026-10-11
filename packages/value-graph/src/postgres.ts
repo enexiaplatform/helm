@@ -183,6 +183,15 @@ export function createPostgresValueGraph(opts: PostgresValueGraphOptions): Value
   }
   const metricFor = (key: string) => registry.metric(key);
 
+  // Read caches. A value node row is never updated after it is written (positions are created, not edited), so a node
+  // read once by id is the node; metric definitions change only through createMetricDefinition. Without them a scenario
+  // state or a model run read the same node and the same metric definition once per position — thousands of requests
+  // for a hundred opportunities (audit 2026-10-11). Observations are never cached: they are what moves.
+  const nodeCache = new Map<string, ValueNode>();
+  const metricCache = new Map<string, { at: number; value: ValueMetricDefinition | null }>();
+  const METRIC_TTL_MS = 5 * 60_000;
+  const nodeKey = (orgId: string, id: string) => `${orgId}|${id}`;
+
   const toNode = (r: NodeRow): ValueNode => ({
     id: r.id,
     orgId: r.org_id as OrgId,
@@ -356,6 +365,7 @@ export function createPostgresValueGraph(opts: PostgresValueGraphOptions): Value
   const graph: ValueGraph = {
     // ------------------------------------------------ metric definitions
     async createMetricDefinition(scope, input) {
+      metricCache.clear();
       const id = `vm_${input.key.toLowerCase()}@${scope.orgId}`;
       const { data, error } = await client
         .from('helm_value_metrics')
@@ -387,6 +397,9 @@ export function createPostgresValueGraph(opts: PostgresValueGraphOptions): Value
     },
 
     async getMetricDefinition(scope, key) {
+      const cacheKey = `${scope.orgId}|${key}`;
+      const hit = metricCache.get(cacheKey);
+      if (hit && clock.now().getTime() - hit.at < METRIC_TTL_MS) return ok(hit.value);
       const { data, error } = await client
         .from('helm_value_metrics')
         .select('*')
@@ -397,8 +410,9 @@ export function createPostgresValueGraph(opts: PostgresValueGraphOptions): Value
       if (error) {
         return fail(ValueErrorCodes.READ_FAILED, `Metric read failed: ${error.message}`);
       }
-      if (!data) return ok(null);
-      return ok(rowToMetric(data as Record<string, unknown>));
+      const value = data ? rowToMetric(data as Record<string, unknown>) : null;
+      metricCache.set(cacheKey, { at: clock.now().getTime(), value });
+      return ok(value);
     },
 
     async findMetricDefinitions(scope, query: MetricQuery = {}) {
@@ -505,6 +519,8 @@ export function createPostgresValueGraph(opts: PostgresValueGraphOptions): Value
     },
 
     async getValueNode(scope, id) {
+      const cached = nodeCache.get(nodeKey(String(scope.orgId), id));
+      if (cached) return ok(cached);
       const { data, error } = await client
         .from('helm_value_nodes')
         .select(NODE_COLS)
@@ -514,7 +530,9 @@ export function createPostgresValueGraph(opts: PostgresValueGraphOptions): Value
       if (error) {
         return fail(ValueErrorCodes.READ_FAILED, `Value node read failed: ${error.message}`);
       }
-      return ok(data ? toNode(data as NodeRow) : null);
+      const node = data ? toNode(data as NodeRow) : null;
+      if (node) nodeCache.set(nodeKey(String(scope.orgId), id), node);
+      return ok(node);
     },
 
     async findValueNodes(scope, query: ValueNodeQuery = {}) {
@@ -545,6 +563,8 @@ export function createPostgresValueGraph(opts: PostgresValueGraphOptions): Value
         return fail(ValueErrorCodes.READ_FAILED, `Value node query failed: ${error.message}`);
       }
       let rows = ((data ?? []) as NodeRow[]).map(toNode);
+      // A listing warms the by-id cache: the scenario state and the twin then read each node from memory.
+      for (const n of rows) nodeCache.set(nodeKey(String(scope.orgId), n.id), n);
       if (query.search) {
         const s = query.search.toLowerCase();
         rows = rows.filter(

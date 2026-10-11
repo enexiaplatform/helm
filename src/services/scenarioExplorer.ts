@@ -44,6 +44,12 @@ const completed = (r: ScenarioRun) => r.status !== 'RUNNING';
 
 export async function loadExplorer(ws: ScenarioWorkspace): Promise<ExplorerData> {
   const { runtime, scope } = ws;
+  // Read once, first: it names every position, and in the cloud it warms the adapter's node cache that the future
+  // states below would otherwise fill one request per position.
+  const nodeLabels: Record<string, string> = {};
+  for (const n of unwrap(await ws.graphs.valueGraph.findValueNodes(scope, { limit: 1000 }))) {
+    nodeLabels[n.id] = n.label;
+  }
   const scenarios = unwrap(await runtime.listScenarios(scope));
   const runs = unwrap(await runtime.listRuns(scope));
 
@@ -71,10 +77,6 @@ export async function loadExplorer(ws: ScenarioWorkspace): Promise<ExplorerData>
       ? unwrap(await runtime.compare(scope, { baselineRunId: baselineRun.id, alternativeRunIds: alternatives }))
       : null;
 
-  const nodeLabels: Record<string, string> = {};
-  for (const n of unwrap(await ws.graphs.valueGraph.findValueNodes(scope, { limit: 500 }))) {
-    nodeLabels[n.id] = n.label;
-  }
 
   return { scenarios: snapshots, baselineRun, states, overview, nodeLabels };
 }

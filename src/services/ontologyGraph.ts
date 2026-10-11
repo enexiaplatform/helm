@@ -131,7 +131,20 @@ export function getDemoGraphs(): Promise<HelmGraphs> {
 }
 
 /** The cloud graphs, backed by Postgres with RLS doing the isolation. */
+let cloudGraphs: HelmGraphs | null = null;
+
+/**
+ * One set of cloud graphs per page session: the adapters hold read caches (value nodes, metric definitions), and a
+ * fresh set per call — every page, every workspace — threw them away. Scope travels with each call, never with the
+ * adapter, so one set serves whoever is signed in; RLS still decides what each read returns.
+ */
 export function getCloudGraphs(): HelmGraphs | null {
+  if (!supabaseClient) return null;
+  cloudGraphs ??= buildCloudGraphs();
+  return cloudGraphs;
+}
+
+function buildCloudGraphs(): HelmGraphs | null {
   if (!supabaseClient) return null;
   const graphStore = createPostgresGraphStore({
     client: supabaseClient,

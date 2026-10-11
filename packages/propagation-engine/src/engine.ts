@@ -128,6 +128,11 @@ export type PropagationEngineOptions = {
   store: CalculationStore;
   /** Injected, never ambient: a run's `asOf` must be reproducible (§15). */
   clock: Clock;
+  /**
+   * How many steps of one topological depth may run at once. 1 (the default) runs the plan strictly in order; a
+   * networked store sets more, since each step is several round trips that do not depend on its neighbours.
+   */
+  concurrency?: number;
 };
 
 type ResolvedInput = { quantity: Quantity; traced: TracedInput };
@@ -185,6 +190,7 @@ export function createPropagationEngine(
   opts: PropagationEngineOptions,
 ): Result<PropagationEngine> {
   const { registry, valueGraph, graphStore, ontology, store, clock } = opts;
+  const concurrency = Math.max(1, Math.floor(opts.concurrency ?? 1));
 
   // Cycles are rejected once, at construction. An engine that could be built
   // around a circular model would fail later, in front of a manager.
@@ -894,11 +900,12 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
       const summary = emptySummary();
       // This run's answer per value node — see RunOutputs.
       const runOutputs = new Map<string, RunOutput>();
-      let sequence = 0;
 
-      for (const planNode of plan.nodes) {
+      // One step of the plan. Steps at the same topological depth read nothing the others write (a step reads only
+      // run outputs of shallower depths), so a depth may run its steps side by side; the sequence each step records is
+      // its place in the plan, never the order it happened to finish in.
+      const runStep = async (planNode: PropagationPlanNode, sequence: number): Promise<Result<void>> => {
         const calc = planNode.calculation;
-        sequence += 1;
 
         const node = await valueGraph.getValueNode(scope, planNode.outputNodeId);
         if (!node.ok || !node.value) {
@@ -907,7 +914,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
             errorCode: CalculationErrors.NODE_NOT_FOUND,
             errorMessage: `Output node ${planNode.outputNodeId} disappeared mid-run.`,
           }, steps, summary);
-          continue;
+          return ok(undefined);
         }
 
         // --- resolve inputs; a failure BLOCKS this step only (§48) ---
@@ -945,7 +952,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
             errorCode: blocked.code,
             errorMessage: blocked.message,
           }, steps, summary);
-          continue;
+          return ok(undefined);
         }
 
         const fp = inputFingerprint(calculationRef(calc), {
@@ -994,7 +1001,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
               });
             }
           }
-          continue;
+          return ok(undefined);
         }
 
         // --- compute ---
@@ -1022,7 +1029,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
             errorCode: output.error.code,
             errorMessage: output.error.message,
           }, steps, summary);
-          continue;
+          return ok(undefined);
         }
 
         if (output.value.unit !== calc.outputUnit) {
@@ -1035,7 +1042,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
               `${calculationRef(calc)} declared output unit ${calc.outputUnit} but produced ` +
               `${output.value.unit}.`,
           }, steps, summary);
-          continue;
+          return ok(undefined);
         }
 
         const confidence = combineConfidence(calc, traced);
@@ -1055,7 +1062,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
               `${calculationRef(calc)} outputs "${calc.outputMetricKey}", which is no longer ` +
               'a registered value metric, so HELM cannot tell how it relates to time.',
           }, steps, summary);
-          continue;
+          return ok(undefined);
         }
         const outPeriod = periodFor(metric.value.timeBehavior, node.value, horizon, lens.effectiveAsOf, period);
 
@@ -1159,7 +1166,7 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
             errorCode: obs.error.code,
             errorMessage: obs.error.message,
           }, steps, summary);
-          continue;
+          return ok(undefined);
         }
 
         written.push(obs.value);
@@ -1186,7 +1193,24 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
           confidence,
           inputFingerprint: fp,
         }, steps, summary);
+        return ok(undefined);
+      };
+
+      const byDepth = new Map<number, { planNode: PropagationPlanNode; sequence: number }[]>();
+      plan.nodes.forEach((planNode, i) => byDepth.set(planNode.order, [...(byDepth.get(planNode.order) ?? []), { planNode, sequence: i + 1 }]));
+      for (const depth of [...byDepth.keys()].sort((a, b) => a - b)) {
+        const queue = [...byDepth.get(depth)!];
+        let failure: Result<void> | null = null;
+        const worker = async () => {
+          for (let next = queue.shift(); next && !failure; next = queue.shift()) {
+            const r = await runStep(next.planNode, next.sequence);
+            if (!r.ok) failure = r;
+          }
+        };
+        await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, queue.length)) }, worker));
+        if (failure) return failure as Result<never>;
       }
+      steps.sort((a, b) => a.sequence - b.sequence);
 
       const status =
         summary.FAILED > 0 || summary.BLOCKED > 0

@@ -100,6 +100,8 @@ function buildEngine(
     ontology: registry,
     store,
     clock: systemClock,
+    // Each step is several round trips to the database; the steps of one depth do not wait on each other.
+    concurrency: 8,
   });
   if (!engine.ok) {
     throw new Error(`propagation engine could not be built: ${engine.error.message}`);

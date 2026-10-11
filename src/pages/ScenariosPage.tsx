@@ -213,6 +213,8 @@ export function ScenariosPage() {
   const open = data.scenarios.filter((s) => s.scenario.status !== 'ARCHIVED' && s.scenario.status !== 'INVALIDATED');
   const closed = data.scenarios.length - open.length;
   const simulated = open.filter((s) => s.latestRun).length;
+  // A future simulated before the baseline it is compared with: its delta sets what the model held then against what it holds now.
+  const behind = open.filter((s) => olderThanBaseline(s, data));
   const title =
     (open.length === 0
       ? 'No open future branched from the baseline'
@@ -268,6 +270,14 @@ export function ScenariosPage() {
           The baseline was simulated on {displayInstant(data.baselineRun.completedAt)}; the model has run since, on{' '}
           {displayInstant(modelRunAt)}. A run is never rewritten, so this baseline — and every future compared with it —
           still shows what the model held then. Simulate the baseline again to read the model as it is now.
+        </Notice>
+      )}
+      {behind.length > 0 && (
+        <Notice tone="warning" label={`${behind.length === 1 ? 'One future reads' : `${behind.length} futures read`} an earlier boundary than this baseline`} className="mt-5">
+          {behind.map((s) => s.scenario.name).join(', ')} {behind.length === 1 ? 'was' : 'were'} simulated over what HELM knew
+          before {displayInstant(data.baselineRun!.fork.recordedThrough)}, the boundary this baseline reads. A delta against
+          it therefore sets what was known then against what is known now, not one change against no change. Rebase{' '}
+          {behind.length === 1 ? 'it' : 'each one'} and simulate again to compare like with like.
         </Notice>
       )}
       {busy && (
@@ -413,6 +423,13 @@ export function ScenariosPage() {
 // ====================================================== headline compare
 
 /** Baseline first, then every future in branch order — the same five values each. */
+/** Simulated over an earlier knowledge boundary than the baseline it is compared with: it reads what HELM knew then. */
+function olderThanBaseline(s: ScenarioSnapshot, data: ExplorerData): boolean {
+  const mine = s.latestRun?.fork.recordedThrough;
+  const base = data.baselineRun?.fork.recordedThrough;
+  return !!mine && !!base && Date.parse(mine) < Date.parse(base);
+}
+
 function HeadlineCompare({
   mode,
   data,
@@ -452,8 +469,8 @@ function HeadlineCompare({
         key: s.scenario.id,
         mark: markOf(s.scenario.name, s.scenario.key),
         title: `${depth > 0 ? '↳ ' : ''}${s.scenario.name.replace(/^[A-Z]\s+—\s+/, '')}`,
-        state: `${s.scenario.status} · r${s.latestRevision?.revisionNumber ?? '?'}${state ? ` · ${state.completeness}` : ''}${s.scenario.parentScenarioId ? ' · inherits' : ''}`,
-        partial: state ? state.completeness !== 'COMPLETE' : false,
+        state: `${s.scenario.status} · r${s.latestRevision?.revisionNumber ?? '?'}${state ? ` · ${state.completeness}` : ''}${s.scenario.parentScenarioId ? ' · inherits' : ''}${olderThanBaseline(s, data) ? ' · earlier boundary' : ''}`,
+        partial: state ? state.completeness !== 'COMPLETE' || olderThanBaseline(s, data) : false,
       };
     }),
   ];

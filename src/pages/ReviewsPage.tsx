@@ -19,6 +19,8 @@ import { parsePeriodText, periodContaining, periodKey, quarterPeriod, type Perio
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
 import { packForViewer, reproduce, resolveReviewContext, reviewsForViewer, statusTone, type ReviewContext } from '../services/reviewRuntime.ts';
+import { loadSnapshotView } from '../services/twinRuntime.ts';
+import { displayValue, rollUpItems, type StateRollUp } from '../services/scenarioRuntime.ts';
 import { PageHeader } from '../components/ui/PageHeader.tsx';
 import { ReaderSelect } from '../components/ui/ReaderSelect.tsx';
 import { SectionHead } from '../components/ui/SectionHead.tsx';
@@ -138,6 +140,55 @@ function OpenReviewActions({ ctx, v, onChanged }: { ctx: ReviewContext; v: Revie
         <div><Button variant="secondary" size="sm" onClick={() => void close()} disabled={!summary.trim()}>Close the review</Button></div>
       </div>
       {err && <p role="alert" className="text-dense text-red-700">{err}</p>}
+    </div>
+  );
+}
+
+/** What the review read as the enterprise's position — the pipeline and what it is expected to bring — as the reader may see it. */
+const STATE_FIGURES: readonly { metricKey: string; layer: 'ACTUAL' | 'MODELLED'; label: string }[] = [
+  { metricKey: 'OpportunityValue', layer: 'ACTUAL', label: 'Pipeline' },
+  { metricKey: 'ExpectedRevenue', layer: 'MODELLED', label: 'Expected revenue' },
+];
+
+function StateFigures({ ctx, snapshotId, viewer, which }: { ctx: ReviewContext; snapshotId: string; viewer: Parameters<typeof loadSnapshotView>[2]; which: 'PREPARATION' | 'CLOSING' }) {
+  const [figures, setFigures] = useState<{ id: string; lines: { label: string; r: StateRollUp }[]; refusal: string | null } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void loadSnapshotView(ctx.genome.causal.twin, snapshotId, viewer)
+      .then((v) => {
+        if (!live) return;
+        const items = v.projection?.items ?? [];
+        setFigures({ id: snapshotId, lines: STATE_FIGURES.flatMap((f) => rollUpItems(items, f.metricKey, f.layer).map((r) => ({ label: f.label, r }))), refusal: v.refusal });
+      })
+      .catch((e: unknown) => live && setFigures({ id: snapshotId, lines: [], refusal: e instanceof Error ? e.message : String(e) }));
+    return () => {
+      live = false;
+    };
+  }, [ctx, snapshotId, viewer]);
+  const shown = figures && figures.id === snapshotId ? figures : null;
+  return (
+    <div className="mt-4 border-b border-ink-200 pb-4">
+      <p className="helm-label">Where the enterprise stood {which === 'PREPARATION' ? 'as it opened' : 'as it closed'}</p>
+      {!shown && <p className="mt-2 text-dense text-ink-600">Reading the twin state the review bound…</p>}
+      {shown?.refusal && <p className="mt-2 text-dense text-ink-600">{shown.refusal}</p>}
+      {shown && !shown.refusal && shown.lines.length === 0 && <p className="mt-2 text-dense text-ink-600">The state holds no pipeline position you may read.</p>}
+      {shown && shown.lines.length > 0 && (
+        <dl className="mt-2 flex flex-wrap gap-x-10 gap-y-3">
+          {shown.lines.map(({ label, r }) => (
+            <div key={`${r.metricKey}|${r.period}`} className="min-w-0">
+              <dt className="text-meta text-ink-500">
+                {label}
+                {r.period ? <span className="font-mono"> · {r.period}</span> : null}
+              </dt>
+              <dd className="font-serif text-figure-sm text-ink-950" title={r.value ? `${r.value}${r.currency ? ` ${r.currency}` : ''}` : (r.note ?? '')}>
+                {r.value === null ? '—' : displayValue(r.value, r.unit, r.currency)}
+              </dd>
+              <dd className="font-mono text-meta text-ink-500">{r.value === null ? r.note : `Σ of ${r.counted} position${r.counted === 1 ? '' : 's'}${r.note ? ` · ${r.note}` : ''}`}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <p className="mt-2 text-meta text-ink-500">Summed only where the metric declares a sum and one currency holds; nothing is ranked, weighted or converted.</p>
     </div>
   );
 }
@@ -292,6 +343,9 @@ export function ReviewsPage() {
                   </button>
                 ))}
               </div>
+              {(which === 'PREPARATION' || chosen.closure) && (
+                <StateFigures ctx={ctx} viewer={viewer} which={which} snapshotId={which === 'CLOSING' && chosen.closure ? chosen.closure.closingSnapshotId : chosen.review.openingSnapshotId} />
+              )}
               {pack?.pack ? (
                 <div className="mt-4">
                   {pack.withheld > 0 && <p className="mb-3 text-dense text-ink-600">{pack.statement}</p>}

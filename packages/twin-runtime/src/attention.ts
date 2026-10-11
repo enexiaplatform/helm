@@ -169,7 +169,7 @@ export function snapshotAttention(items: readonly TwinItem[], effectiveAsOf: str
       attentionItem(
         'COMMITTED_FUTURE_OFF_TRACK',
         `committed-future-off-track@1: an expected outcome of an ended period differs from the ${actual.layer?.toLowerCase()} reading by at least the material line (${MATERIALITY_V1.key})`,
-        `${cf.label.replace(/ — committed future$/, '')}: committed ${s(cf, 'value')}, ${actual.layer?.toLowerCase()} ${s(actual, 'value')} (${delta}${unitSuffix(s(cf, 'unit') as string | null, s(cf, 'currency') as string | null)}). Not a verdict on the decision.`,
+        `${cf.label.replace(/ — committed future$/, '')}${period ? ` (${period})` : ''}: committed ${s(cf, 'value')}, ${actual.layer?.toLowerCase()} ${s(actual, 'value')} (${delta}${unitSuffix(s(cf, 'unit') as string | null, s(cf, 'currency') as string | null)}). Not a verdict on the decision.`,
         [cf, actual],
       ),
     );

@@ -90,12 +90,14 @@ export function createReferenceProvider(): AiProvider {
         shown.push(...summaries, ...details.slice(0, input.task === 'DRAFT_MANAGEMENT_BRIEF' ? CAP : details.length));
         if (input.task === 'DRAFT_MANAGEMENT_BRIEF' && details.length > CAP) omitted.push(`${sec ?? 'The pack'}: ${details.length - CAP} more entries are in the review pack, in kernel order — not the most important; they are not shown here.`);
       }
-      const statements = shown.map((e) => ({
-        text: clip(`${body(e)}${e.status && e.status !== 'SUMMARY' ? ` [${e.status}]` : ''}`),
-        class: e.kind as OutputClass,
-        evidenceIds: [e.id],
-        section: e.section,
-      }));
+      // The same sentence twice in one section says nothing more the second time: it is said once, citing both.
+      const statements: { text: string; class: OutputClass; evidenceIds: string[]; section: string | null }[] = [];
+      for (const e of shown) {
+        const text = clip(`${body(e)}${e.status && e.status !== 'SUMMARY' ? ` [${e.status}]` : ''}`);
+        const same = statements.find((x) => x.text === text && x.section === e.section && x.class === e.kind);
+        if (same) same.evidenceIds.push(e.id);
+        else statements.push({ text, class: e.kind as OutputClass, evidenceIds: [e.id], section: e.section });
+      }
       const questions: string[] = [];
       for (const e of input.evidence) {
         if (e.kind === 'MANAGEMENT_ASSUMPTION' && /PENDING|UNCHECKED|OPEN/i.test(e.status ?? '')) questions.push(`What would confirm or disprove: ${clip(e.label, 90).replace(/[.?]+$/, '')}?`);

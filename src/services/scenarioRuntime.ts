@@ -196,6 +196,44 @@ export function rollUp(state: FutureState, metricKey: string, period: Period): R
   };
 }
 
+/** A twin state's roll-up of one metric in one layer and period: what a review or the cockpit can say about the whole. */
+export type StateRollUp = RollUp & { readonly metricKey: string; readonly metricName: string; readonly layer: string; readonly period: string | null };
+
+/**
+ * The same rule as `rollUp`, over the VALUE items of a twin state (as the reader may see them): a total only where the
+ * metric declares SUM and every position carries one currency, one line per period, never across periods.
+ */
+export function rollUpItems(items: readonly { kind: string; layer: string | null; status: string; state: Record<string, unknown> }[], metricKey: string, layer: string): StateRollUp[] {
+  const metric = valueMetrics.metric(metricKey);
+  const name = metric?.name ?? metricKey;
+  const mine = items.filter((i) => i.kind === 'VALUE' && i.layer === layer && i.state['metricKey'] === metricKey);
+  const byPeriod = new Map<string | null, typeof mine>();
+  for (const i of mine) {
+    const p = (i.state['period'] as string | null | undefined) ?? null;
+    byPeriod.set(p, [...(byPeriod.get(p) ?? []), i]);
+  }
+  return [...byPeriod.entries()]
+    .sort(([a], [b]) => String(a).localeCompare(String(b)))
+    .map(([period, all]) => {
+      const base = { metricKey, metricName: name, layer, period };
+      const none = (note: string): StateRollUp => ({ ...base, value: null, unit: null, currency: null, counted: 0, positions: all.length, note });
+      if (!metric || metric.aggregation !== 'SUM') return none(`${name} is ${metric ? metric.aggregation.toLowerCase().replaceAll('_', ' ') : 'undeclared'}; it is never summed across positions.`);
+      const known = all.filter((i) => i.status === 'KNOWN' && typeof i.state['value'] === 'string');
+      const currencies = new Set(known.map((i) => (i.state['currency'] as string | null) ?? null));
+      if (currencies.size > 1) return none(`The positions carry ${[...currencies].join(', ')}; HELM does not convert currencies.`);
+      if (known.length === 0) return none(`None of the ${all.length} positions has a value in this state.`);
+      return {
+        ...base,
+        value: decimalString(sumAll(known.map((i) => decimal(i.state['value'] as string)))),
+        unit: (known[0]!.state['unit'] as QuantityUnit | null) ?? null,
+        currency: (known[0]!.state['currency'] as string | null) ?? null,
+        counted: known.length,
+        positions: all.length,
+        note: known.length < all.length ? `${all.length - known.length} of ${all.length} positions have no value and are not in the total.` : null,
+      };
+    });
+}
+
 // ---------------------------------------------------------- display helpers
 
 const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 });

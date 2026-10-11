@@ -32,6 +32,51 @@ export type Author = { readonly label: string; readonly userId: UserId | null };
 
 type Simulated = { readonly scenario: Scenario; readonly run: ScenarioRun };
 
+/** The status quo, as a future: a scenario that changes nothing, keyed so it is found again rather than made twice. */
+const STATUS_QUO_KEY = 'status-quo';
+const isStatusQuo = (s: Scenario) => s.key === STATUS_QUO_KEY || s.key.startsWith(`${STATUS_QUO_KEY}-`);
+const STATUS_QUO_LABEL = 'Status quo — nothing changed';
+
+/**
+ * The scenario an alternative "keep things as they are" binds to. A decision compares futures; leaving things alone is
+ * one of them, and the kernel models it the only honest way — a branch with no overrides, simulated over the same
+ * boundary as the baseline. It is simulated again whenever the baseline is newer than its last simulation, so it is
+ * never compared as the model stood some other day. Returns the scenario id.
+ */
+async function statusQuoScenario(ctx: DecisionWorkspaceContext): Promise<{ ok: true; value: string } | { ok: false; error: { message: string } }> {
+  const { runtime, scope, defaultFork, periodChoices } = ctx.scenarios;
+  const [list, runs] = await Promise.all([runtime.listScenarios(scope), runtime.listRuns(scope)]);
+  if (!list.ok) return list;
+  if (!runs.ok) return runs;
+  const done = runs.value.filter((r) => r.status !== 'RUNNING');
+  const baseline = done.filter((r) => r.stateKind === 'BASELINE').at(-1);
+  // A new status quo forks where the baseline it is compared with forked.
+  let scenario = list.value.find((x) => isStatusQuo(x) && x.status !== 'ARCHIVED' && x.status !== 'INVALIDATED');
+  if (!scenario) {
+    const taken = list.value.filter(isStatusQuo).length;
+    const made = await runtime.createScenario(scope, {
+      key: taken === 0 ? STATUS_QUO_KEY : `${STATUS_QUO_KEY}-${taken + 1}`,
+      name: STATUS_QUO_LABEL,
+      description: 'Keeps things as they are: no override, so it simulates the baseline itself. Made when a decision named the status quo as an alternative.',
+      fork: baseline?.fork ?? defaultFork,
+      periods: baseline?.periods ?? periodChoices.slice(0, 1),
+    });
+    if (!made.ok) return made;
+    scenario = made.value.scenario;
+  }
+  const mine = done.filter((r) => r.scenarioId === scenario.id).at(-1);
+  // Read over the same boundary as the baseline, or the comparison sets what was known then against what is known now.
+  if (mine && baseline && Date.parse(mine.fork.recordedThrough) < Date.parse(baseline.fork.recordedThrough)) {
+    const moved = await runtime.rebase(scope, scenario.id, { effectiveAsOf: baseline.fork.effectiveAsOf, recordedThrough: baseline.fork.recordedThrough, policy: baseline.fork.policy });
+    if (!moved.ok) return moved;
+  }
+  if (!mine || (baseline && Date.parse(mine.fork.recordedThrough) < Date.parse(baseline.fork.recordedThrough))) {
+    const ran = await runtime.execute(scope, scenario.id);
+    if (!ran.ok) return ran;
+  }
+  return { ok: true, value: scenario.id };
+}
+
 /** Scenarios with a completed simulation — the only ones an alternative can be bound to. */
 function useSimulatedScenarios(ctx: DecisionWorkspaceContext): Simulated[] | null {
   const [list, setList] = useState<Simulated[] | null>(null);
@@ -46,7 +91,7 @@ function useSimulatedScenarios(ctx: DecisionWorkspaceContext): Simulated[] | nul
         return;
       }
       const out: Simulated[] = [];
-      for (const s of scenarios.value.filter((x) => x.status !== 'ARCHIVED' && x.status !== 'INVALIDATED')) {
+      for (const s of scenarios.value.filter((x) => x.status !== 'ARCHIVED' && x.status !== 'INVALIDATED' && !isStatusQuo(x))) {
         const run = runs.value.filter((r) => r.scenarioId === s.id && r.status !== 'RUNNING').at(-1);
         if (run) out.push({ scenario: s, run });
       }
@@ -90,6 +135,7 @@ export function FrameDecisionModal({
   const [trigger, setTrigger] = useState<DecisionTriggerType>('MANUAL');
   const [decideBy, setDecideBy] = useState('');
   const [bound, setBound] = useState<ReadonlySet<string>>(new Set());
+  const [withStatusQuo, setWithStatusQuo] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const tooShort = question.trim().length < 12;
@@ -116,6 +162,15 @@ export function FrameDecisionModal({
         const alt = await ctx.runtime.addAlternative(ctx.scope, created.value.revision.id, { label: s.scenario.name, scenarioId: s.scenario.id });
         if (!alt.ok) {
           setError(`The decision was framed, but ${s.scenario.name} could not be bound: ${alt.error.message}`);
+          onFramed(created.value.decision.id);
+          return;
+        }
+      }
+      if (withStatusQuo) {
+        const sq = await statusQuoScenario(ctx);
+        const alt = sq.ok ? await ctx.runtime.addAlternative(ctx.scope, created.value.revision.id, { label: STATUS_QUO_LABEL, scenarioId: sq.value }) : sq;
+        if (!alt.ok) {
+          setError(`The decision was framed, but the status quo could not be bound: ${alt.error.message}`);
           onFramed(created.value.decision.id);
           return;
         }
@@ -187,13 +242,17 @@ export function FrameDecisionModal({
               {s.scenario.name} <span className="font-mono text-meta text-ink-500">run {s.run.id.slice(0, 8)}</span>
             </label>
           ))}
+          <label className="inline-flex items-center gap-2 text-dense">
+            <input type="checkbox" checked={withStatusQuo} onChange={() => setWithStatusQuo((v) => !v)} />
+            {STATUS_QUO_LABEL} <span className="text-meta text-ink-500">— simulated as a branch with no overrides</span>
+          </label>
         </div>
         <p className="text-meta text-ink-500">HELM records the question and the futures; it does not decide, and it does not write the question for you.</p>
         {error && <p role="alert" className="text-dense text-red-700">{error}</p>}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
           <Button variant="primary" type="submit" disabled={busy || tooShort}>
-            {busy ? 'Framing…' : 'Frame the decision'}
+            {busy ? (withStatusQuo ? 'Framing, and simulating the status quo…' : 'Framing…') : 'Frame the decision'}
           </Button>
         </div>
       </form>
@@ -316,7 +375,19 @@ export function DecisionAuthoring({
         {tab('commit', 'Commit')}
       </div>
       <div className="mt-4">
-        {open === 'alternative' && <AlternativeForm ctx={ctx} busy={busy} onSubmit={(input) => act('Alternative added.', () => ctx.runtime.addAlternative(ctx.scope, revision.id, input))} />}
+        {open === 'alternative' && (
+          <AlternativeForm
+            ctx={ctx}
+            busy={busy}
+            onSubmit={(input) =>
+              act('Alternative added.', async () => {
+                if (!input.statusQuo) return ctx.runtime.addAlternative(ctx.scope, revision.id, input);
+                const sq = await statusQuoScenario(ctx);
+                return sq.ok ? ctx.runtime.addAlternative(ctx.scope, revision.id, { label: input.label, scenarioId: sq.value }) : sq;
+              })
+            }
+          />
+        )}
         {open === 'criterion' && <CriterionForm ctx={ctx} busy={busy} author={author} onSubmit={(input) => act('Criterion written down.', () => ctx.runtime.addCriterion(ctx.scope, revision.id, input))} />}
         {open === 'assumption' && <AssumptionForm busy={busy} author={author} onSubmit={(input) => act('Assumption written down.', () => ctx.runtime.addAssumption(ctx.scope, revision.id, input))} />}
         {open === 'assess' && <AssessForm workspace={workspace} busy={busy} author={author} onSubmit={(input) => act('Assessment recorded.', () => ctx.runtime.recordAssessment(ctx.scope, input))} />}
@@ -372,28 +443,34 @@ function AlternativeForm({
 }: {
   ctx: DecisionWorkspaceContext;
   busy: boolean;
-  onSubmit: (input: { label: string; description?: string; scenarioId?: string | null; unmodelledReason?: string | null }) => void;
+  onSubmit: (input: { label: string; description?: string; scenarioId?: string | null; unmodelledReason?: string | null; statusQuo?: boolean }) => void;
 }) {
   const scenarios = useSimulatedScenarios(ctx);
   const [label, setLabel] = useState('');
   const [scenarioId, setScenarioId] = useState('');
   const [reason, setReason] = useState('');
+  const statusQuo = scenarioId === STATUS_QUO_KEY;
   const chosen = scenarios?.find((s) => s.scenario.id === scenarioId) ?? null;
   return (
     <FormShell
       busy={busy}
       label="Add the alternative"
       onSubmit={() =>
-        onSubmit({
-          label: label.trim() || chosen?.scenario.name || '',
-          scenarioId: scenarioId || null,
-          unmodelledReason: scenarioId ? null : reason.trim() || 'No scenario is bound yet, so this alternative has no computed future state.',
-        })
+        onSubmit(
+          statusQuo
+            ? { label: label.trim() || STATUS_QUO_LABEL, statusQuo: true }
+            : {
+                label: label.trim() || chosen?.scenario.name || '',
+                scenarioId: scenarioId || null,
+                unmodelledReason: scenarioId ? null : reason.trim() || 'No scenario is bound yet, so this alternative has no computed future state.',
+              },
+        )
       }
     >
       <Field label="Its future" className="sm:col-span-2" hint="bind a simulated scenario, or leave it unmodelled and say why">
         <select className={controlClass} value={scenarioId} onChange={(e) => setScenarioId(e.target.value)}>
           <option value="">— unmodelled: no computed future —</option>
+          <option value={STATUS_QUO_KEY}>{STATUS_QUO_LABEL} · simulated as a branch with no overrides</option>
           {(scenarios ?? []).map((s) => (
             <option key={s.scenario.id} value={s.scenario.id}>
               {s.scenario.name} · run {s.run.id.slice(0, 8)}
@@ -402,7 +479,7 @@ function AlternativeForm({
         </select>
       </Field>
       <Field label="Name it" className="sm:col-span-2">
-        <input className={controlClass} value={label} onChange={(e) => setLabel(e.target.value)} placeholder={chosen?.scenario.name ?? 'Keep the current price'} required={!chosen} />
+        <input className={controlClass} value={label} onChange={(e) => setLabel(e.target.value)} placeholder={statusQuo ? STATUS_QUO_LABEL : (chosen?.scenario.name ?? 'Keep the current price')} required={!chosen && !statusQuo} />
       </Field>
       {!scenarioId && (
         <Field label="Why it has no modelled future" className="sm:col-span-2">

@@ -53,6 +53,7 @@ export type DerivedPositionReport = {
 
 // PostgREST caps a read at 1000 rows; asking for more would silently return fewer.
 const LIMIT = 1000;
+const CONCURRENCY = 8;
 
 /** A calculation whose every required input is read from the output's own subject. */
 const sameSubjectOnly = (c: CalculationDefinition): boolean =>
@@ -109,14 +110,18 @@ export async function ensureDerivedPositions(
       if (!outputs.ok) return outputs;
       const has = new Set(outputs.value.filter((n) => n.subjectEntityId && (!n.timeHorizon || n.timeHorizon === horizon)).map((n) => String(n.subjectEntityId)));
 
+      const missing: [string, ValueNode[]][] = [];
       for (const [subject, inputs] of qualifying) {
         if (has.has(subject)) {
           if (pass === 0) existing += 1;
-          continue;
-        }
+        } else missing.push([subject, inputs]);
+      }
+      // A position and its links are independent of every other subject's: a few at a time, not one after another
+      // (the first run over 79 Memoire opportunities took minutes created serially).
+      const one = async ([subject, inputs]: [string, ValueNode[]]): Promise<Result<DerivedPosition | null>> => {
         const s = await subjectOf(subject as EntityId);
         if (!s.ok) return s;
-        if (calc.scopeCompatibility !== null && s.value.category !== null && !calc.scopeCompatibility.includes(s.value.category)) continue;
+        if (calc.scopeCompatibility !== null && s.value.category !== null && !calc.scopeCompatibility.includes(s.value.category)) return ok(null);
         const label = `${calc.name} — ${s.value.name}`;
         const node = await deps.valueGraph.upsertValueNode(scope, {
           metricKey: calc.outputMetricKey,
@@ -127,21 +132,35 @@ export async function ensureDerivedPositions(
           createdBy: scope.actorId,
         });
         if (!node.ok) return node;
-        for (const input of inputs) {
-          const link = await deps.valueGraph.createValueLink(scope, {
-            linkType: 'DRIVES',
-            sourceNodeId: input.id,
-            targetNodeId: node.value.id,
-            confidence: 1,
-            sourceSystem: 'helm',
-            metadata: { calculation: ref(calc) },
-            createdBy: scope.actorId,
-          });
-          if (!link.ok) return fail(link.error.code, `The position ${label} was created, but its link from ${input.label} was not: ${link.error.message}`);
+        const links = await Promise.all(
+          inputs.map((input) =>
+            deps.valueGraph.createValueLink(scope, {
+              linkType: 'DRIVES',
+              sourceNodeId: input.id,
+              targetNodeId: node.value.id,
+              confidence: 1,
+              sourceSystem: 'helm',
+              metadata: { calculation: ref(calc) },
+              createdBy: scope.actorId,
+            }),
+          ),
+        );
+        const failed = links.findIndex((l) => !l.ok);
+        if (failed >= 0) {
+          const l = links[failed]!;
+          return fail(l.ok ? 'unknown' : l.error.code, `The position ${label} was created, but its link from ${inputs[failed]!.label} was not: ${l.ok ? '' : l.error.message}`);
         }
-        created.push({ nodeId: node.value.id, metricKey: calc.outputMetricKey, subjectEntityId: subject as EntityId, calculation: ref(calc), label });
-        has.add(subject);
-        added += 1;
+        return ok({ nodeId: node.value.id, metricKey: calc.outputMetricKey, subjectEntityId: subject as EntityId, calculation: ref(calc), label });
+      };
+      for (let i = 0; i < missing.length; i += CONCURRENCY) {
+        const batch = await Promise.all(missing.slice(i, i + CONCURRENCY).map(one));
+        for (const r of batch) {
+          if (!r.ok) return r;
+          if (!r.value) continue;
+          created.push(r.value);
+          has.add(String(r.value.subjectEntityId));
+          added += 1;
+        }
       }
     }
     if (added === 0) break;

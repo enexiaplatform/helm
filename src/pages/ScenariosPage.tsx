@@ -30,6 +30,7 @@ import type { Explanation } from '@helm/propagation-engine';
 import { periodKey, type Period } from '@helm/shared';
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
+import { recomposeCurrentState } from '../services/memoireLiveSync.ts';
 import {
   BRANCH_METRICS,
   CLOUD_BRANCH_METRICS,
@@ -118,6 +119,20 @@ export function ScenariosPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [changedOnly, setChangedOnly] = useState(true);
+  // When the model last ran from source facts (Calculations), so a baseline simulated before it can say it is older.
+  const [modelRunAt, setModelRunAt] = useState<string | null>(null);
+  useEffect(() => {
+    if (!ws || ws.mode !== 'cloud') return;
+    let live = true;
+    void ws.graphs.engine.listRuns(ws.scope, 20).then((r) => {
+      if (!live || !r.ok) return;
+      const last = r.value.find((x) => x.status === 'COMPLETED' && x.context.rootMetricKeys.length > 0 && x.context.scenarioRevisionId === null);
+      setModelRunAt(last?.completedAt ?? null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [ws, data]);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,9 +224,12 @@ export function ScenariosPage() {
           <Button
             disabled={busy}
             onClick={() =>
-              void act(() =>
-                ws.runtime.executeBaseline(ws.scope, { fork: ws.defaultFork, periods: ws.periodChoices.slice(0, 1) }),
-              )
+              void act(async () => {
+                const r = await ws.runtime.executeBaseline(ws.scope, { fork: ws.defaultFork, periods: ws.periodChoices.slice(0, 1) });
+                // The current state reads the latest baseline: compose it again over this one.
+                if (r.ok && ws.mode === 'cloud') recomposeCurrentState();
+                return r;
+              })
             }
           >
             Simulate baseline
@@ -240,6 +258,13 @@ export function ScenariosPage() {
       {error && (
         <Notice tone="error" className="mt-5" onDismiss={() => setError(null)}>
           {error}
+        </Notice>
+      )}
+      {data.baselineRun && modelRunAt && data.baselineRun.completedAt && modelRunAt > data.baselineRun.completedAt && (
+        <Notice tone="warning" label="Simulated before the model last ran" className="mt-5">
+          The baseline was simulated on {displayInstant(data.baselineRun.completedAt)}; the model has run since, on{' '}
+          {displayInstant(modelRunAt)}. A run is never rewritten, so this baseline — and every future compared with it —
+          still shows what the model held then. Simulate the baseline again to read the model as it is now.
         </Notice>
       )}
       {busy && (

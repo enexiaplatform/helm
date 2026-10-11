@@ -37,6 +37,16 @@ export function wakeMemoireLiveSync(): boolean {
   return true;
 }
 
+/**
+ * Something HELM holds changed inside HELM — a model run, a baseline simulation, a decision act — so the current state
+ * is older than what it claims to show. Ask the running live sync to compose a new one. False when none is running.
+ */
+export function recomposeCurrentState(): boolean {
+  if (!active) return false;
+  active.recompose();
+  return true;
+}
+
 /** Serialize passes across this reader's HELM windows, where the browser can. A second window waits, then finds nothing new. */
 function exclusiveFor(key: string) {
   return <T,>(pass: () => Promise<T>): Promise<T> => {

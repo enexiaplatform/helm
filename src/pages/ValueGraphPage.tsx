@@ -47,7 +47,7 @@ function formatValue(o: ValueObservation): string {
     case 'currency': {
       const abs = Math.abs(v);
       const compact =
-        abs >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : abs >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v.toLocaleString();
+        abs >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : abs >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v.toLocaleString('en-US'); // one convention app-wide: a Vietnamese browser read 1,500 as "1.500"
       return `${compact} ${o.currency ?? ''}`.trim();
     }
     case 'percentage':

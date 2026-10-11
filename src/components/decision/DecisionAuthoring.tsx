@@ -21,6 +21,7 @@ import type { Scenario, ScenarioRun } from '@helm/scenario-runtime';
 import type { UserId } from '@helm/shared';
 import type { DecisionWorkspaceContext } from '../../services/decisionRuntime.ts';
 import { valueMetrics } from '../../services/ontologyGraph.ts';
+import { recomposeCurrentState } from '../../services/memoireLiveSync.ts';
 import { Modal } from '../ui/Modal.tsx';
 import { Field, controlClass } from '../ui/Field.tsx';
 import { Button } from '../ui/Button.tsx';
@@ -119,6 +120,7 @@ export function FrameDecisionModal({
           return;
         }
       }
+      if (ctx.mode === 'cloud') recomposeCurrentState();
       onFramed(created.value.decision.id);
     } catch (e) {
       setError(asMessage(e));
@@ -248,6 +250,8 @@ export function DecisionAuthoring({
       else {
         setDone(what);
         setOpen(null);
+        // The Cockpit reads decisions from the current state: what was just recorded belongs in it.
+        if (ctx.mode === 'cloud') recomposeCurrentState();
         onChanged();
       }
     } catch (e) {

@@ -107,6 +107,22 @@ describe('live sync catches up and composes only on change', () => {
     t.live.stop();
   });
 
+  it('recompose: a change inside HELM (a model run) composes a new state although the source has nothing new', async () => {
+    const t = await liveStack();
+    t.s.reader.rows.push(row({ id: 'opp-1', updated_at: at(1) }));
+    t.live.start();
+    await t.live.idle();
+    assert.equal(t.calls.composed, 1);
+    t.live.recompose();
+    await t.live.idle();
+    assert.equal(t.calls.composed, 2, 'composed again with nothing new in the source');
+    assert.equal(t.live.state().version, 2, 'readers re-read on it');
+    t.notify();
+    await t.live.idle();
+    assert.equal(t.calls.composed, 2, 'the request is spent: a plain wake after it composes nothing');
+    t.live.stop();
+  });
+
   it('a change in the source arrives through the pipeline, not through the notice, and composes a new state', async () => {
     const t = await liveStack();
     t.s.reader.rows.push(row({ id: 'opp-1', pipeline_probability: 50, updated_at: at(1) }));

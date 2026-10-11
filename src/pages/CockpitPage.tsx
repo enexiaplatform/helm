@@ -180,7 +180,7 @@ export function CockpitPage() {
     ? 'Reading what needs your attention…'
     : attention.length === 0 && off.length === 0
       ? partial
-        ? `No attention condition holds — but the state is ${d.current.snapshot.completeness.toLowerCase()}: ${word(gaps.length).toLowerCase()} ${gaps.length === 1 ? 'thing it cannot read' : 'things it cannot read'} may be hiding one.`
+        ? `No attention condition holds, and the state it is read from is ${d.current.snapshot.completeness.toLowerCase()}: ${word(gaps.length).toLowerCase()} ${gaps.length === 1 ? 'record it cannot fully read' : 'records it cannot fully read'}.`
         : 'Nothing needs your attention this week. What management committed to is where it said it would be.'
       : `${word(attention.length)} ${attention.length === 1 ? 'condition needs' : 'conditions need'} your attention${off.length > 0 ? `; ${word(off.length).toLowerCase()} ${off.length === 1 ? 'commitment sits' : 'commitment readings sit'} away from the committed future` : ''}.`;
   // Grouped by what the state could not read, so twenty-eight unclassified customers read as one gap, not twenty-eight.

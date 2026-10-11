@@ -79,6 +79,12 @@ export interface LiveSync {
   start(): void;
   /** Ask for a pass. Wakes inside the debounce window, or during a pass, coalesce. */
   wake(): void;
+  /**
+   * Say that what the current state is composed FROM changed inside HELM — a model run wrote derived values, a baseline
+   * was simulated — and ask for a pass that composes a new current state even though the source has nothing new.
+   * Without it the state stayed as it was when Memoire last changed, older than the model it claims to show.
+   */
+  recompose(): void;
   stop(): void;
   state(): LiveSyncState;
   /** Resolves when no pass is running or scheduled — for tests and for a caller that must wait. */
@@ -122,6 +128,7 @@ export function createLiveSync(deps: LiveSyncDeps): LiveSync {
   let stopped = false;
   let running: Promise<void> | null = null;
   let dirty = false;
+  let stale = false;
   let failures = 0;
   let wakeTimer: unknown = null;
   let tickTimer: unknown = null;
@@ -170,10 +177,16 @@ export function createLiveSync(deps: LiveSyncDeps): LiveSync {
     let composedAt = state.composedAt;
     const held = await deps.hasCurrentState();
     if (!held.ok) throw new Error(held.error.message);
-    if (changed || !held.value) {
+    // Taken before composing: a recompose asked for while this one composes asks for the next pass.
+    const asked = stale;
+    if (changed || !held.value || asked) {
+      stale = false;
       set({ phase: 'composing' });
       const c = await deps.composeCurrentState();
-      if (!c.ok) throw new Error(c.error.message);
+      if (!c.ok) {
+        if (asked) stale = true;
+        throw new Error(c.error.message);
+      }
       composedAt = deps.now();
     }
     // A run the pipeline recorded as PARTIAL or BLOCKED is not a crash: what it took is held, and it is said out loud.
@@ -233,6 +246,11 @@ export function createLiveSync(deps: LiveSyncDeps): LiveSync {
       run();
     },
     wake,
+    recompose() {
+      if (stopped) return;
+      stale = true;
+      wake();
+    },
     stop() {
       if (stopped) return;
       stopped = true;

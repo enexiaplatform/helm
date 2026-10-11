@@ -30,7 +30,8 @@ import type {
 import { buildDependencyGraph } from '@helm/propagation-engine';
 import type { Scope } from '@helm/shared';
 import { useHelmStore } from '../services/helmStore.ts';
-import { calculations, cloudScope, demoScope, resolveGraphs } from '../services/ontologyGraph.ts';
+import { calculations, cloudScope, demoScope, resolveGraphs, valueMetrics } from '../services/ontologyGraph.ts';
+import { recomposeCurrentState } from '../services/memoireLiveSync.ts';
 import { PageHeader } from '../components/ui/PageHeader.tsx';
 import { SectionHead } from '../components/ui/SectionHead.tsx';
 import { Button } from '../components/ui/Button.tsx';
@@ -92,6 +93,47 @@ function toLineage(node: Explanation): LineageNode {
       : `stated by ${node.source?.system ?? 'an unknown source'}${node.source?.method ? ` · ${node.source.method}` : ''}${conf}`,
     inputs: node.inputs.map(toLineage),
   };
+}
+
+/**
+ * One line per calculation in the run: how many positions it computed, their roll-up where the metric declares SUM and
+ * the currency is one, and how many came out zero because an input stated zero — a source value worth checking at its
+ * source, not a model result. The table below keeps every position; nothing here is ranked.
+ */
+function RunSummary({ steps }: { steps: readonly CalculationStep[] }) {
+  const byCalc = new Map<string, CalculationStep[]>();
+  for (const s of steps) if (s.status === 'CALCULATED') byCalc.set(s.calculationKey, [...(byCalc.get(s.calculationKey) ?? []), s]);
+  if (byCalc.size === 0) return null;
+  return (
+    <ul className="mt-3 grid gap-1">
+      {[...byCalc.entries()].map(([key, list]) => {
+        const metric = valueMetrics.metric(list[0]!.outputMetricKey);
+        const currencies = new Set(list.map((s) => s.outputCurrency));
+        const summable = metric?.aggregation === 'SUM' && currencies.size === 1;
+        const total = summable ? list.reduce((a, s) => a + Number(s.outputValue ?? 0), 0) : null;
+        const zeroInputs = list.filter((s) => Number(s.outputValue) === 0 && s.inputs.some((i) => Number(i.value) === 0));
+        const zeroBy = new Map<string, number>();
+        for (const s of zeroInputs) for (const i of s.inputs.filter((x) => Number(x.value) === 0)) zeroBy.set(i.metricKey, (zeroBy.get(i.metricKey) ?? 0) + 1);
+        return (
+          <li key={key} className="text-dense text-ink-800">
+            <span className="font-mono">{key}</span> · {list.length} position{list.length === 1 ? '' : 's'} computed
+            {total !== null && (
+              <>
+                {' '}· Σ <span className="font-mono font-medium">{total.toLocaleString('en-US', { maximumFractionDigits: 2 })} {[...currencies][0] ?? ''}</span>{' '}
+                <span className="text-ink-500">(summed as the metric declares)</span>
+              </>
+            )}
+            {zeroInputs.length > 0 && (
+              <span className="block text-meta text-amber-800">
+                {zeroInputs.length} of them are zero because an input states zero —{' '}
+                {[...zeroBy.entries()].map(([m, n]) => `${n} × ${valueMetrics.metric(m)?.name ?? m} = 0`).join(', ')}. Check those at their source.
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 export function CalculationsPage() {
@@ -188,8 +230,10 @@ export function CalculationsPage() {
         return;
       }
       setResult(r.value);
+      // The run wrote derived values the current state does not hold yet: the Cockpit and the Twin read the new one.
+      if (mode === 'cloud' && r.value.written.length > 0) recomposeCurrentState();
     },
-    [loaded],
+    [loaded, mode],
   );
 
   const explain = useCallback(
@@ -361,6 +405,7 @@ export function CalculationsPage() {
                   run {result.run.id} · modelling {result.run.context.effectiveAsOf} · knowledge through{' '}
                   {result.run.context.recordedThrough} · {result.run.context.preference} · {result.run.status}
                 </p>
+                <RunSummary steps={steps} />
                 {steps.length === 0 && (
                   <p className="mt-3 max-w-reading text-base text-red-700">
                     This run computed nothing: no value position carries a result of these calculations. A model result needs

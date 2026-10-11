@@ -643,7 +643,10 @@ export function createScenarioRuntime(opts: ScenarioRuntimeOptions): ScenarioRun
               }));
               if (!r.ok) return r;
             } else {
-              const obs = await observationConfidence(scope, part.nodeId, part.observationId);
+              // The trace already carries the confidence of the observation a single input was bound to; reading every
+              // observation of the node to find it again cost one request per input (158 per state for 79 positions).
+              const single = !input.components || input.components.length === 0;
+              const obs = single ? input.confidence : await observationConfidence(scope, part.nodeId, part.observationId);
               const r = await push(part.nodeId, period, () => ({
                 origin: 'INHERITED',
                 value: canonicalNumeric(part.value),

@@ -717,6 +717,13 @@ type BoundNodes = { usable: readonly ValueNode[]; wrongHorizon: readonly ValueNo
       });
       if (!candidates.ok) return candidates;
 
+      // Many subjects not yet known: one listing fills the categories instead of one read per position.
+      const unknown = candidates.value.filter((n) => n.subjectEntityId && !categoryBySubject.has(`${scope.orgId}|${n.subjectEntityId}`));
+      if (unknown.length >= 8) {
+        const all = await graphStore.findEntities(scope, { includeInactive: true, limit: 10_000 });
+        if (all.ok) for (const e of all.value) categoryBySubject.set(`${scope.orgId}|${e.id}`, ontology.categoryOf(e.entityTypeKey));
+      }
+
       for (const node of candidates.value) {
         if (
           request.subjectEntityIds?.length &&

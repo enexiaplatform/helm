@@ -24,7 +24,7 @@ export function PipelineFacts({ items }: { items: readonly TwinItem[] }) {
   ].filter((x): x is string => typeof x === 'string');
   return (
     <section className="mt-10">
-      <SectionHead title="The pipeline, as Memoire states it" meta={String(f.opportunities)} caveat="counted, never ranked" />
+      <SectionHead title="The pipeline, as its source states it" meta={String(f.opportunities)} caveat="counted, never ranked" />
       <dl className="mt-3 flex flex-wrap gap-x-10 gap-y-3">
         {figures.map(({ label, sub, r }) => (
           <div key={`${r.metricKey}|${r.period}`} className="min-w-0">

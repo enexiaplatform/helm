@@ -42,6 +42,9 @@ export type PipelineFacts = {
   readonly noClosePeriod: number;
 };
 
+/** Opportunity and its seeded subtype: a tender is an opportunity (packages/ontology seed). */
+const OPPORTUNITY_TYPES: ReadonlySet<string> = new Set(['Opportunity', 'Tender']);
+
 const s = (v: unknown): string | null => (v === null || v === undefined || v === '' ? null : String(v));
 
 /** Every opportunity of the state, with what the state says about it, in the state's own order. */
@@ -62,7 +65,7 @@ export function readPipeline(items: readonly TwinItem[]): PipelinePosition[] {
 
   const out: PipelinePosition[] = [];
   for (const e of entities.values()) {
-    if (e.state['entityTypeKey'] !== 'Opportunity') continue;
+    if (!OPPORTUNITY_TYPES.has(String(e.state['entityTypeKey']))) continue;
     const id = e.subjectEntityId!;
     const attrs = (e.state['attributes'] ?? {}) as Record<string, unknown>;
     const cust = heldBy.has(id) ? entities.get(heldBy.get(id)!) ?? null : null;

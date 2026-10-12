@@ -143,7 +143,8 @@ export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items =
                 </>
               )}
             </span>
-            {effectiveAsOf && <span>Effective {effectiveAsOf} · recorded through {recordedThrough}</span>}
+            {/* The boundary a new future forks at. Two equal instants read as one: "now", not a riddle. */}
+            {effectiveAsOf && <span>{effectiveAsOf === recordedThrough ? `New futures fork at ${effectiveAsOf}` : `Effective ${effectiveAsOf} · recorded through ${recordedThrough}`}</span>}
           </div>
         )}
         {error && (

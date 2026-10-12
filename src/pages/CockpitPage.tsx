@@ -71,6 +71,7 @@ export function CockpitPage() {
   // A new current state composed from Memoire is a reason to read the cockpit again (ADR-0034).
   const memoireVersion = useMemoireLive((st) => st.version);
   const livePhase = useMemoireLive((st) => st.phase);
+  const caughtUpAt = useMemoireLive((st) => st.caughtUpAt);
   const scope = useMemo(() => (mode === 'demo' ? demoScope() : activeOrgId ? cloudScope(activeOrgId, userId ?? '', myRole()) : null), [mode, activeOrgId, userId, myRole]);
 
   const [ic, setIc] = useState<IntelligenceContext | null>(null);
@@ -194,6 +195,9 @@ export function CockpitPage() {
   const firstCompose = ic.mode === 'cloud' && !d && (livePhase === 'starting' || livePhase === 'reading' || livePhase === 'composing');
   // A newer state was composed while this one is on screen: say so until it is read, so the page never passes off the older one as current.
   const rereading = ic.mode === 'cloud' && !!d && data!.version !== memoireVersion;
+  // A state is on screen while Memoire is still being read: it is the last one known, and the page says how old it is.
+  // Only until the first pass of this session catches up, or while a new state is composed: a routine probe every minute is not news.
+  const catchingUp = ic.mode === 'cloud' && !!d && ((caughtUpAt === null && (livePhase === 'starting' || livePhase === 'reading')) || livePhase === 'composing');
   const proof = d?.integration?.proof ?? null;
   const focusDecision = decisions[0];
 
@@ -214,6 +218,11 @@ export function CockpitPage() {
         <Notice tone="neutral" label="Memoire" className="mt-4">HELM is reading your Memoire opportunities and composing the first current state of the enterprise.</Notice>
       ) : rereading ? (
         <Notice tone="neutral" label="Newer state" className="mt-4">A newer current state has been composed. HELM is reading it; what is shown below is the one before it.</Notice>
+      ) : catchingUp ? (
+        // Audit 2026-10-12: for minutes after sign-in the page showed an older state's warnings as if they were today's.
+        <Notice tone="neutral" label="Memoire" className="mt-4">
+          Shown: the state as known at {d!.current.snapshot.spec.lens.recordedThrough.slice(0, 16).replace('T', ' ')} UTC. HELM is {livePhase === 'composing' ? 'composing a newer state' : 'reading newer changes from Memoire'}; this page re-reads it when it is ready.
+        </Notice>
       ) : (
         data?.note && <Notice tone="warning" label="Withheld" className="mt-4">{data.note}</Notice>
       )}

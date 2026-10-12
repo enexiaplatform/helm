@@ -32,6 +32,7 @@ import {
   type SyncCounts,
   type SyncOutcome,
   type SyncRecord,
+  type Translation,
 } from './types.ts';
 
 export type IngestionPipelineDeps = {
@@ -40,7 +41,27 @@ export type IngestionPipelineDeps = {
   readonly store: IntegrationStore;
   readonly clock: Clock;
   readonly identity?: IdentityMapper;
+  /**
+   * How many records of a page are ingested side by side. Each record is several reads and writes, and in the cloud each
+   * is a round trip: one after another, a first read of a hundred opportunities took minutes (audit 2026-10-12).
+   */
+  readonly concurrency?: number;
 };
+
+const DEFAULT_CONCURRENCY = 8;
+
+/** Run `fn` over the items with at most `limit` in flight. */
+async function eachLimited<T>(items: readonly T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const lane = async () => {
+    while (next < items.length) {
+      const item = items[next]!;
+      next += 1;
+      await fn(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, lane));
+}
 
 export type RunOptions = { readonly limit?: number };
 
@@ -122,109 +143,162 @@ export function createIngestionPipeline(deps: IngestionPipelineDeps): IngestionP
         return r.value.id;
       };
 
-      for (const rec of usable) {
+      // ---- translate every record first (pure); what cannot be translated is quarantined and goes no further.
+      type Work = { readonly index: number; readonly rec: SourceRecord; readonly t: Translation };
+      const work: Work[] = [];
+      const quarantine = (index: number, externalId: string, reason: string) => {
+        quarantinedAt.push({ index, entry: { externalId, reason } });
+        counts.quarantined += 1;
+      };
+      const quarantinedAt: { index: number; entry: { externalId: string; reason: string } }[] = [];
+      usable.forEach((rec, index) => {
         const t = adapter.translate(rec);
-        if (!t.ok) {
-          quarantined.push({ externalId: rec.externalId, reason: t.error.message });
-          counts.quarantined += 1;
-          continue;
-        }
+        if (!t.ok) return quarantine(index, rec.externalId, t.error.message);
         const problems = validateTranslation(t.value.facts);
-        if (problems) {
-          quarantined.push({ externalId: rec.externalId, reason: problems });
-          counts.quarantined += 1;
-          continue;
-        }
-        try {
-          // entities
-          for (const m of t.value.entities) {
-            // What the source said about this entity may not have changed even though another record mentions it later
-            // (a customer named by each of its opportunities): unchanged content is not a new version.
-            const held = await graph.getEntityByCanonicalKey(scope, m.entityTypeKey, m.canonicalKey);
-            if (held.ok && held.value && sameContent(held.value, m, adapter.system)) {
-              entityByKey.set(keyOf(m), { id: held.value.id });
-              counts.entitiesUnchanged += 1;
-              continue;
-            }
-            const up = await graph.upsertEntity(scope, {
-              entityTypeKey: m.entityTypeKey,
-              canonicalKey: m.canonicalKey,
-              name: m.name,
-              sourceSystem: adapter.system,
-              sourceEntityType: m.sourceEntityType,
-              sourceEntityId: m.sourceEntityId,
+        if (problems) return quarantine(index, rec.externalId, problems);
+        work.push({ index, rec, t: t.value });
+      });
+
+      // ---- what more than one record of this page names is SHARED (a customer named by each of its opportunities, the
+      // segment its account belongs to). Its writes happen once per mention, in record order, before anything runs side
+      // by side — exactly as a sequential run would make them. Everything else belongs to one record alone, so records
+      // can be ingested concurrently without two of them racing on the same entity, alias, relationship or value node.
+      const mentions = new Map<string, number>();
+      for (const w of work) {
+        const named = new Set([
+          ...w.t.entities.map(keyOf),
+          ...w.t.aliases.map((x) => keyOf(x.entity)),
+          ...w.t.relationships.flatMap((r) => [keyOf(r.source), keyOf(r.target)]),
+          ...w.t.facts.map((x) => keyOf(x.subject)),
+        ]);
+        for (const k of named) mentions.set(k, (mentions.get(k) ?? 0) + 1);
+      }
+      const shared = (r: EntityRef) => (mentions.get(keyOf(r)) ?? 0) > 1;
+      const failed = new Set<number>();
+
+      const upsertEntities = async (w: Work, which: (m: EntityRef) => boolean) => {
+        for (const m of w.t.entities) {
+          if (!which(m)) continue;
+          // What the source said about this entity may not have changed even though another record mentions it later
+          // (a customer named by each of its opportunities): unchanged content is not a new version.
+          const held = await graph.getEntityByCanonicalKey(scope, m.entityTypeKey, m.canonicalKey);
+          if (held.ok && held.value && sameContent(held.value, m, adapter.system)) {
+            entityByKey.set(keyOf(m), { id: held.value.id });
+            counts.entitiesUnchanged += 1;
+            continue;
+          }
+          const up = await graph.upsertEntity(scope, {
+            entityTypeKey: m.entityTypeKey,
+            canonicalKey: m.canonicalKey,
+            name: m.name,
+            sourceSystem: adapter.system,
+            sourceEntityType: m.sourceEntityType,
+            sourceEntityId: m.sourceEntityId,
+            observedAt: asValidTime(m.observedAt),
+            attributes: { ...m.attributes },
+            createdBy: startedBy,
+          });
+          if (!up.ok) throw new Error(up.error.message);
+          entityByKey.set(keyOf(m), { id: up.value.entity.id });
+          if (up.value.outcome === 'created') counts.entitiesCreated += 1;
+          else if (up.value.outcome === 'updated') counts.entitiesUpdated += 1;
+          else counts.entitiesUnchanged += 1;
+          if (up.value.outcome !== 'unchanged') {
+            const p = await graph.recordProvenance(scope, {
+              subjectKind: 'entity',
+              subjectId: up.value.entity.id,
+              sourceField: null,
+              method: 'ingested',
+              system: adapter.system,
+              connector: adapter.connector,
+              sourceObjectType: m.sourceEntityType,
+              sourceObjectId: m.sourceEntityId,
+              ingestionEventId: evt.value.id,
+              transformation: `translate@${adapter.contracts.find((c) => c.objectType === w.rec.objectType)?.version ?? 'unversioned'}`,
+              inputs: null,
+              actorId: startedBy,
+              confidence: null,
+              notes: null,
+              payload: { contentHash: w.rec.contentHash, updatedAt: w.rec.updatedAt },
               observedAt: asValidTime(m.observedAt),
-              attributes: { ...m.attributes },
+            });
+            if (!p.ok) throw new Error(p.error.message);
+          }
+        }
+      };
+      const registerAliases = async (w: Work, which: (m: EntityRef) => boolean) => {
+        for (const al of w.t.aliases) {
+          if (!which(al.entity)) continue;
+          const id = await entityOf(al.entity);
+          if (!id) throw new Error(`alias names ${al.entity.canonicalKey}, which was not ingested`);
+          const reg = await identity.register(scope, asEntityId(id), adapter.system, al.aliasKind, al.aliasValue, { connector: adapter.connector, ingestionEventId });
+          if (!reg.ok) throw new Error(reg.error.message);
+          if (reg.value.created) counts.aliasesRegistered += 1;
+        }
+      };
+      const relate = async (w: Work, which: (r: Translation['relationships'][number]) => boolean) => {
+        for (const rel of w.t.relationships) {
+          if (!which(rel)) continue;
+          const src = await entityOf(rel.source);
+          const tg = await entityOf(rel.target);
+          if (!src || !tg) throw new Error(`relationship ${rel.relationshipTypeKey} names an entity that was not ingested`);
+          const have = await graph.findRelationships(scope, { relationshipTypeKeys: [rel.relationshipTypeKey], sourceEntityId: asEntityId(src), targetEntityId: asEntityId(tg) });
+          if (!have.ok) throw new Error(have.error.message);
+          if (have.value.length === 0) {
+            const made = await graph.createRelationship(scope, {
+              relationshipTypeKey: rel.relationshipTypeKey,
+              sourceEntityId: asEntityId(src),
+              targetEntityId: asEntityId(tg),
+              sourceSystem: adapter.system,
+              sourceObjectType: rel.sourceObjectType,
+              sourceObjectId: rel.sourceObjectId,
+              observedAt: asValidTime(w.rec.updatedAt),
               createdBy: startedBy,
             });
-            if (!up.ok) throw new Error(up.error.message);
-            entityByKey.set(keyOf(m), { id: up.value.entity.id });
-            if (up.value.outcome === 'created') counts.entitiesCreated += 1;
-            else if (up.value.outcome === 'updated') counts.entitiesUpdated += 1;
-            else counts.entitiesUnchanged += 1;
-            if (up.value.outcome !== 'unchanged') {
-              const p = await graph.recordProvenance(scope, {
-                subjectKind: 'entity',
-                subjectId: up.value.entity.id,
-                sourceField: null,
-                method: 'ingested',
-                system: adapter.system,
-                connector: adapter.connector,
-                sourceObjectType: m.sourceEntityType,
-                sourceObjectId: m.sourceEntityId,
-                ingestionEventId: evt.value.id,
-                transformation: `translate@${adapter.contracts.find((c) => c.objectType === rec.objectType)?.version ?? 'unversioned'}`,
-                inputs: null,
-                actorId: startedBy,
-                confidence: null,
-                notes: null,
-                payload: { contentHash: rec.contentHash, updatedAt: rec.updatedAt },
-                observedAt: asValidTime(m.observedAt),
-              });
-              if (!p.ok) throw new Error(p.error.message);
-            }
+            if (!made.ok) throw new Error(made.error.message);
+            counts.relationshipsCreated += 1;
           }
-          // identity
-          for (const a of t.value.aliases) {
-            const id = await entityOf(a.entity);
-            if (!id) throw new Error(`alias names ${a.entity.canonicalKey}, which was not ingested`);
-            const reg = await identity.register(scope, asEntityId(id), adapter.system, a.aliasKind, a.aliasValue, { connector: adapter.connector, ingestionEventId });
-            if (!reg.ok) throw new Error(reg.error.message);
-            if (reg.value.created) counts.aliasesRegistered += 1;
-          }
-          // relationships
-          for (const rel of t.value.relationships) {
-            const s = await entityOf(rel.source);
-            const tg = await entityOf(rel.target);
-            if (!s || !tg) throw new Error(`relationship ${rel.relationshipTypeKey} names an entity that was not ingested`);
-            const have = await graph.findRelationships(scope, { relationshipTypeKeys: [rel.relationshipTypeKey], sourceEntityId: asEntityId(s), targetEntityId: asEntityId(tg) });
-            if (!have.ok) throw new Error(have.error.message);
-            if (have.value.length === 0) {
-              const made = await graph.createRelationship(scope, {
-                relationshipTypeKey: rel.relationshipTypeKey,
-                sourceEntityId: asEntityId(s),
-                targetEntityId: asEntityId(tg),
-                sourceSystem: adapter.system,
-                sourceObjectType: rel.sourceObjectType,
-                sourceObjectId: rel.sourceObjectId,
-                observedAt: asValidTime(rec.updatedAt),
-                createdBy: startedBy,
-              });
-              if (!made.ok) throw new Error(made.error.message);
-              counts.relationshipsCreated += 1;
-            }
-          }
+        }
+      };
+      const bothShared = (r: Translation['relationships'][number]) => shared(r.source) && shared(r.target);
+
+      // 1. The shared part, sequentially, in record order.
+      for (const w of work) {
+        try {
+          await upsertEntities(w, shared);
+          await registerAliases(w, shared);
+          await relate(w, bothShared);
+        } catch (e) {
+          failed.add(w.index);
+          quarantine(w.index, w.rec.externalId, (e as Error).message);
+        }
+      }
+
+      // 2. What belongs to one record alone — its own entities, identities, relationships and source facts.
+      const own = async (w: Work) => {
+        try {
+          await upsertEntities(w, (m) => !shared(m));
+          await registerAliases(w, (m) => !shared(m));
+          await relate(w, (r) => !bothShared(r));
           // facts — source-typed observations only
-          for (const f of t.value.facts) {
-            const outcome = await recordFact(scope, adapter, rec, f, ingestionEventId, await entityOf(f.subject));
+          for (const fact of w.t.facts) {
+            const outcome = await recordFact(scope, adapter, w.rec, fact, ingestionEventId, await entityOf(fact.subject));
             if (outcome === 'recorded') counts.observationsRecorded += 1;
             else counts.observationsUnchanged += 1;
           }
         } catch (e) {
-          quarantined.push({ externalId: rec.externalId, reason: (e as Error).message });
-          counts.quarantined += 1;
+          quarantine(w.index, w.rec.externalId, (e as Error).message);
         }
-      }
+      };
+      const rest = work.filter((w) => !failed.has(w.index));
+      // A record whose facts land on a shared subject (the same opportunity twice in one page) shares a value node with
+      // another record: those run one after another, after the rest.
+      const alone = rest.filter((w) => w.t.facts.every((x) => !shared(x.subject)));
+      const together = rest.filter((w) => !alone.includes(w));
+      await eachLimited(alone, deps.concurrency ?? DEFAULT_CONCURRENCY, own);
+      for (const w of together) await own(w);
+      // Completion order is not record order: the quarantine reads in record order, whatever finished first.
+      quarantined.push(...quarantinedAt.sort((x, y) => x.index - y.index).map((q) => q.entry));
 
       const anyBlocked = blockedTypes.size > 0;
       const anyQuarantined = quarantined.length > 0;

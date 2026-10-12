@@ -1,152 +1,131 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { pipelineFacts, readPipeline, type TwinItem } from '@helm/twin-runtime';
 import type { ReviewView } from '@helm/review-runtime';
-import { Pill } from '../ui/Pill.tsx';
+import { cn } from '../../lib/cn.ts';
+import { ASKED_KEY, DISMISSED_KEY, GUIDE_EVENT, read, write } from './gettingStarted.ts';
 
 /**
- * "Bắt đầu từ đây": how a manager uses HELM, on the page they land on, in their language.
+ * Getting started — what a new manager does first, on the page they land on.
  *
- * Audit 2026-10-12, after every finding was fixed: "I log in to HELM and still don't know how to use it." The app said
- * what it refuses to do and never what to do with it. Four things, each a link to where it is done, each with what the
- * organization's own records say about it — what is open, what is done. A guide to the instrument, not advice about the
- * business: it never says which deal or which future to choose.
+ * Audit 2026-10-12: "I log in and still don't know how to use it", then "the guide is bad" — a wall of paragraphs.
+ * Modelled on the first-run patterns of products like Stripe's setup guide and Linear's empty states: a short list (four
+ * items), one line each, one verb per item, done items checked off by the organization's own records, progress shown,
+ * dismissible, gone once everything is done. It guides the instrument; it never says which deal or future to choose.
  */
 
-const COMMITTED_STATES = ['COMMITTED', 'EXECUTING', 'COMPLETED', 'REVIEWED'];
-const HIDDEN_KEY = 'helm:start-here:hidden';
-
-const readHidden = (): boolean => {
-  try {
-    return globalThis.localStorage?.getItem(HIDDEN_KEY) === '1';
-  } catch {
-    return false;
-  }
-};
-const writeHidden = (v: boolean) => {
-  try {
-    if (v) globalThis.localStorage?.setItem(HIDDEN_KEY, '1');
-    else globalThis.localStorage?.removeItem(HIDDEN_KEY);
-  } catch {
-    /* a private window keeps the guide open; nothing depends on it */
-  }
-};
+const COMMITTED_OR_OPEN = ['DRAFT', 'INVESTIGATING', 'MODELLING', 'READY_FOR_DECISION', 'COMMITTED', 'EXECUTING', 'COMPLETED', 'REVIEWED'];
 
 const quarterOf = (iso: string) => {
   const d = new Date(iso);
   return `${d.getUTCFullYear()}-Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
 };
 
-type Step = { n: number; title: string; why: string; status: string; done: boolean | null; actions: { label: string; to?: string; onClick?: () => void }[] };
+type Item = { key: string; title: string; detail: string; done: boolean; cta: { label: string; to?: string; onClick?: () => void } };
 
-export function StartHere({ items, reviews, now }: { items: readonly TwinItem[]; reviews: readonly ReviewView[]; now: string }) {
-  const [hidden, setHidden] = useState(readHidden);
-  const toggle = (v: boolean) => {
-    setHidden(v);
-    writeHidden(v);
-  };
-  if (hidden) {
-    return (
-      <p className="mt-6 text-meta">
-        <button type="button" onClick={() => toggle(false)} className="font-medium text-accent-700 hover:underline">
-          Hiện hướng dẫn “Bắt đầu từ đây”
-        </button>
-      </p>
-    );
-  }
+export function StartHere({ items, reviews, now, onDismiss }: { items: readonly TwinItem[]; reviews: readonly ReviewView[]; now: string; onDismiss?: () => void }) {
+  const [dismissed, setDismissed] = useState(() => read(DISMISSED_KEY));
+  // Ask HELM lives elsewhere on the page: its first answer checks its item off here without a reload.
+  const [asked, setAsked] = useState(() => read(ASKED_KEY));
+  useEffect(() => {
+    const on = () => setAsked(read(ASKED_KEY));
+    globalThis.addEventListener(GUIDE_EVENT, on);
+    return () => globalThis.removeEventListener(GUIDE_EVENT, on);
+  }, []);
 
   const f = pipelineFacts(readPipeline(items));
   const gaps = [
-    f.zeroValue > 0 && `${f.zeroValue} deal giá trị 0`,
-    f.noValue > 0 && `${f.noValue} deal không có giá trị`,
-    f.noProbability > 0 && `${f.noProbability} deal chưa có xác suất`,
-    f.noClosePeriod > 0 && `${f.noClosePeriod} deal chưa có kỳ chốt`,
-    f.withoutCustomer > 0 && `${f.withoutCustomer} deal chưa gắn khách hàng`,
+    f.zeroValue > 0 && `${f.zeroValue} at a value of 0`,
+    f.noProbability > 0 && `${f.noProbability} without a probability`,
+    f.noClosePeriod > 0 && `${f.noClosePeriod} without a close period`,
   ].filter((x): x is string => typeof x === 'string');
-
-  const decisions = items.filter((i) => i.kind === 'DECISION');
-  const stateOf = (i: TwinItem) => String((i.state as { state?: string }).state ?? '');
-  const committed = decisions.filter((i) => COMMITTED_STATES.includes(stateOf(i))).length;
-  const open = decisions.filter((i) => (i.state as { open?: boolean }).open === true).length;
-
+  const decisions = items.filter((i) => i.kind === 'DECISION' && COMMITTED_OR_OPEN.includes(String((i.state as { state?: string }).state ?? '')));
   const quarter = quarterOf(now);
-  const thisQuarter = reviews.filter((r) => r.review.periodLabel === quarter);
-  const openReview = thisQuarter.find((r) => r.status === 'OPEN') ?? null;
-  const closedReview = thisQuarter.find((r) => r.status === 'CLOSED') ?? null;
-
+  const review = reviews.find((r) => r.review.periodLabel === quarter) ?? null;
   const scrollTo = (id: string) => () => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  const steps: Step[] = [
+  const list: Item[] = [
     {
-      n: 1,
-      title: 'Mỗi tuần: xem pipeline và dọn dữ liệu trong Memoire',
-      why: 'Con số chỉ đáng tin khi dữ liệu đủ. Sửa trong Memoire; HELM tự đọc lại, không cần nhập gì ở đây.',
-      status: f.opportunities === 0 ? 'HELM chưa đọc được cơ hội nào từ Memoire.' : gaps.length === 0 ? `Dữ liệu ${f.opportunities} cơ hội đã đủ.` : `Còn thiếu: ${gaps.join(' · ')}.`,
-      done: f.opportunities === 0 ? null : gaps.length === 0,
-      actions: [{ label: 'Xem pipeline', onClick: scrollTo('pipeline') }],
+      key: 'pipeline',
+      title: 'Check the pipeline',
+      detail: f.opportunities === 0 ? 'No opportunities read from Memoire yet' : gaps.length > 0 ? `${f.opportunities} opportunities · ${gaps.join(' · ')}` : `${f.opportunities} opportunities, complete`,
+      done: f.opportunities > 0 && gaps.length === 0,
+      cta: { label: 'Review', onClick: scrollTo('pipeline') },
     },
     {
-      n: 2,
-      title: 'Hỏi HELM về deal và khách hàng',
-      why: 'Bấm một câu hỏi gợi ý: HELM liệt kê đúng các deal thỏa điều kiện, kèm khách hàng, giá trị và xác suất — không xếp hạng.',
-      status: 'Có sẵn câu hỏi gợi ý trong ô Ask HELM.',
-      done: null,
-      actions: [{ label: 'Mở Ask HELM', onClick: scrollTo('ask-helm') }],
+      key: 'ask',
+      title: 'Ask HELM a question',
+      detail: 'Answers name the deals that meet a condition — never a ranking',
+      done: asked,
+      cta: { label: 'Try one', onClick: scrollTo('ask-helm') },
     },
     {
-      n: 3,
-      title: 'Khi có quyết định lớn về một deal: thử các phương án rồi chốt',
-      why: 'Tạo scenario (ví dụ giảm xác suất một deal) và chạy Simulate để thấy doanh thu kỳ vọng đổi bao nhiêu; rồi frame quyết định, chọn deal, so các phương án — kể cả giữ nguyên — và commit một. Từ đó Cockpit đo thực tế so với điều đã cam kết.',
-      status: committed > 0 ? `${committed} quyết định đã commit${open > 0 ? ` · ${open} đang mở` : ''}.` : open > 0 ? `${open} quyết định đang mở, chưa commit.` : 'Chưa có quyết định nào được commit.',
-      done: committed > 0,
-      actions: [
-        { label: 'Tạo scenario', to: '/scenarios?new=1' },
-        { label: 'Frame quyết định', to: '/decisions?frame=1' },
-      ],
+      key: 'decision',
+      title: 'Frame a decision on a deal',
+      detail: decisions.length > 0 ? `${decisions.length} decision${decisions.length === 1 ? '' : 's'} on record` : 'Compare futures from Scenarios, then commit one',
+      done: decisions.length > 0,
+      cta: { label: 'Frame', to: '/decisions?frame=1' },
     },
     {
-      n: 4,
-      title: 'Đầu và cuối mỗi quý: mở và đóng review',
-      why: 'Mở review chụp lại trạng thái lúc đó; đóng review ghi kết luận. Review sau tự mang theo những gì còn để mở.',
-      status: openReview ? `Review ${quarter} đang mở — đóng nó khi kết thúc quý.` : closedReview ? `Review ${quarter} đã mở và đóng.` : `Chưa có review cho ${quarter}.`,
-      done: !!closedReview && !openReview ? true : openReview ? null : false,
-      actions: [{ label: openReview ? 'Đến review đang mở' : 'Mở review', to: '/reviews' }],
+      key: 'review',
+      title: `Open the ${quarter} review`,
+      detail: review ? `${review.status === 'OPEN' ? 'Open' : 'Closed'} · carries forward what is left open` : 'Captures where the quarter stands',
+      done: !!review,
+      cta: { label: review?.status === 'OPEN' ? 'Continue' : 'Open', to: '/reviews' },
     },
   ];
+  const done = list.filter((i) => i.done).length;
+  if (dismissed || done === list.length) return null;
+  const next = list.find((i) => !i.done)?.key;
 
   return (
-    <section className="mt-6 rounded-xl border border-ink-200 bg-white px-5 py-4" aria-labelledby="start-here">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 id="start-here" className="font-serif text-panel text-ink-950">Bắt đầu từ đây</h2>
-        <button type="button" onClick={() => toggle(true)} className="text-meta text-ink-500 hover:text-ink-900">Ẩn hướng dẫn</button>
+    <section className="mt-6 rounded-xl border border-ink-200 bg-white" aria-labelledby="getting-started">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-ink-200 px-5 py-3">
+        <h2 id="getting-started" className="font-serif text-panel text-ink-950">Getting started</h2>
+        <span className="font-mono text-meta text-ink-500">{done} of {list.length}</span>
+        <span className="h-[3px] w-24 overflow-hidden rounded-full bg-ink-100" aria-hidden>
+          <span className="block h-full rounded-full bg-accent-800 transition-colors ease-helm" style={{ width: `${(done / list.length) * 100}%` }} />
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            write(DISMISSED_KEY, true);
+            setDismissed(true);
+            onDismiss?.();
+          }}
+          className="ml-auto text-meta text-ink-500 hover:text-ink-900"
+        >
+          Dismiss
+        </button>
       </div>
-      <p className="mt-1 max-w-reading text-dense text-ink-600">
-        HELM dùng cho bốn việc. Các trang trong nhóm Learning và Setup chỉ có ích sau khi đã có quyết định được commit và có kết quả — tạm thời có thể bỏ qua.
-      </p>
-      <ol className="mt-3">
-        {steps.map((s) => (
-          <li key={s.n} className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-2 border-t border-ink-200 py-3 first:border-t-0">
-            <span className="font-mono text-dense text-ink-500">{s.n}</span>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-baseline gap-2">
-                <span className="text-ui font-medium text-ink-950">{s.title}</span>
-                {s.done === true && <Pill tone="committed">đã làm</Pill>}
-                {s.done === false && <Pill tone="open">chưa làm</Pill>}
-              </div>
-              <p className="mt-1 max-w-reading text-dense text-ink-700">{s.why}</p>
-              <p className="mt-1 text-meta text-ink-600">{s.status}</p>
-              <p className="mt-1 flex flex-wrap gap-x-4 text-meta">
-                {s.actions.map((a) =>
-                  a.to ? (
-                    <Link key={a.label} to={a.to} className="font-medium text-accent-700 underline">{a.label} →</Link>
-                  ) : (
-                    <button key={a.label} type="button" onClick={a.onClick} className="font-medium text-accent-700 underline">{a.label} →</button>
-                  ),
+      <ol>
+        {list.map((i, n) => {
+          const isNext = i.key === next;
+          const ctaClass = cn('shrink-0 text-meta font-medium', isNext ? 'rounded-lg bg-accent-800 px-3 py-1 text-white hover:bg-accent-700 hover:no-underline' : 'text-accent-700 hover:underline');
+          return (
+            <li key={i.key} className="flex items-center gap-3 border-b border-ink-200 px-5 py-[10px] last:border-b-0">
+              <span
+                aria-label={i.done ? 'done' : `step ${n + 1}`}
+                className={cn(
+                  'grid h-5 w-5 shrink-0 place-items-center rounded-full font-mono text-[11px]',
+                  i.done ? 'bg-accent-800 text-white' : 'border border-ink-300 text-ink-500',
                 )}
-              </p>
-            </div>
-          </li>
-        ))}
+              >
+                {i.done ? '✓' : n + 1}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className={cn('text-ui font-medium', i.done ? 'text-ink-500 line-through decoration-ink-300' : 'text-ink-950')}>{i.title}</span>
+                <span className="ml-2 text-meta text-ink-500">{i.detail}</span>
+              </span>
+              {!i.done &&
+                (i.cta.to ? (
+                  <Link to={i.cta.to} className={ctaClass}>{i.cta.label}</Link>
+                ) : (
+                  <button type="button" onClick={i.cta.onClick} className={ctaClass}>{i.cta.label}</button>
+                ))}
+            </li>
+          );
+        })}
       </ol>
     </section>
   );

@@ -1,10 +1,10 @@
 /**
- * Questions a manager can ask with one click (audit 2026-10-12: "I log in and still don't know how to use it" — an empty
- * box asked them to guess what HELM can answer). Each one is a question the reference router reads into a governed tool.
+ * Questions a manager can ask with one click (audit 2026-10-12: an empty box asked them to guess what HELM can answer).
+ * Each one is read by the reference router into a governed tool; the governed suite holds that true.
  */
 export const SUGGESTED_QUESTIONS: readonly string[] = [
-  'Cơ hội nào rủi ro không chốt được quý này?',
-  'Cơ hội nào có giá trị 0?',
-  'Cơ hội nào chưa có xác suất?',
-  'Điều gì cần tôi chú ý?',
+  'Which deals are at risk this quarter?',
+  'Which opportunities have a value of 0?',
+  'Which opportunities have no probability?',
+  'What needs my attention?',
 ];

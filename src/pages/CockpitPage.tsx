@@ -42,6 +42,7 @@ import { AskHelm } from '../components/intelligence/AskHelm.tsx';
 import { CouncilPanel } from '../components/intelligence/CouncilPanel.tsx';
 import { PipelineFacts } from '../components/cockpit/PipelineFacts.tsx';
 import { StartHere } from '../components/cockpit/StartHere.tsx';
+import { DISMISSED_KEY, read as readGuide, showGettingStarted } from '../components/cockpit/gettingStarted.ts';
 import { SUGGESTED_QUESTIONS } from '../components/intelligence/suggestedQuestions.ts';
 import { cn } from '../lib/cn.ts';
 
@@ -83,6 +84,8 @@ export function CockpitPage() {
   const [loaded, setLoaded] = useState<{ key: string; version: number; value: Loaded | null; note: string | null } | null>(null);
   const [why, setWhy] = useState<Lineage | null>(null);
   const [openAttention, setOpenAttention] = useState<string | null>(null);
+  // Bumped when the Getting started guide is dismissed or brought back, so both places re-read it.
+  const [guideKey, setGuideKey] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -232,7 +235,7 @@ export function CockpitPage() {
         data?.note && <Notice tone="warning" label="Withheld" className="mt-4">{data.note}</Notice>
       )}
 
-      {d && <StartHere items={items} reviews={d.reviews.reviews} now={d.current.snapshot.spec.lens.effectiveAsOf} />}
+      {d && <StartHere key={guideKey} items={items} reviews={d.reviews.reviews} now={d.current.snapshot.spec.lens.effectiveAsOf} onDismiss={() => setGuideKey((k) => k + 1)} />}
 
       <div className="mt-6 flex flex-wrap items-end gap-4">
         <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
@@ -270,20 +273,17 @@ export function CockpitPage() {
           <section>
             <SectionHead title="What requires your attention" meta={d ? String(attention.length) : '…'} caveat="named conditions with a cause — not a ranking" dot={attention.length > 0 ? 'warning' : undefined} />
             {d && attention.length === 0 && (
-              <div className="mt-3 max-w-reading text-ui text-ink-500">
-                <p>
-                  Nothing to act on — but the rules have little to watch: {word(openDecisions).toLowerCase()} open {openDecisions === 1 ? 'decision' : 'decisions'},{' '}
-                  {word(items.filter((i) => i.kind === 'CONSTRAINT').length).toLowerCase()} constraints,{' '}
-                  {word(items.filter((i) => i.kind === 'OBJECTIVE').length).toLowerCase()} objectives.
-                </p>
-                {/* Audit 2026-10-12: an empty cockpit said why, never what would make it useful. */}
+              // An empty state is one line and one action (audit 2026-10-12): what is watched, and how to give the rules something to watch.
+              <p className="mt-3 max-w-reading text-ui text-ink-500">
+                Nothing to act on. The rules watch {word(openDecisions).toLowerCase()} open {openDecisions === 1 ? 'decision' : 'decisions'},{' '}
+                {word(items.filter((i) => i.kind === 'CONSTRAINT').length).toLowerCase()} constraints and {word(items.filter((i) => i.kind === 'OBJECTIVE').length).toLowerCase()} objectives.
                 {openDecisions === 0 && !d.trajectory && (
-                  <p className="mt-2 text-ink-700">
-                    Next step: frame the question the quarter turns on in <Link to="/decisions" className="text-accent-700 underline">Decisions</Link>, weigh its futures from{' '}
-                    <Link to="/scenarios" className="text-accent-700 underline">Scenarios</Link>, and commit one. HELM then measures now against that committed future here, and says when a commitment drifts from it.
-                  </p>
+                  <>
+                    {' '}
+                    <Link to="/decisions?frame=1" className="font-medium text-accent-700 underline">Frame a decision →</Link>
+                  </>
                 )}
-              </div>
+              </p>
             )}
             {groups.map(([condition, group]) => (
               <div key={condition} className="mt-5">
@@ -435,7 +435,15 @@ export function CockpitPage() {
               { label: 'Decisions needed', value: !d ? '…' : String(attention.filter((a) => /AWAITING|READY/i.test(String((a.state as { condition?: string }).condition ?? ''))).length) },
             ]}
           />
-          <p className="mt-2 text-meta text-ink-600"><Link to="/reviews" className="text-accent-700 underline">Open the reviews →</Link></p>
+          <p className="mt-2 text-meta text-ink-600">
+            <Link to="/reviews" className="text-accent-700 underline">Open the reviews →</Link>
+            {readGuide(DISMISSED_KEY) && (
+              <>
+                {' · '}
+                <button type="button" onClick={() => { showGettingStarted(); setGuideKey((k) => k + 1); }} className="text-accent-700 underline">Getting started</button>
+              </>
+            )}
+          </p>
 
           <div className="mt-8">
             <SectionHead title="Ask, or open the council" size="section-sm" />

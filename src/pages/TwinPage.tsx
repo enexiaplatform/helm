@@ -191,7 +191,7 @@ export function TwinPage() {
           setAId(c.story.S1.snapshot.id);
           setBId(c.story.S2.snapshot.id);
         } else if (list.length > 0) {
-          setAId(list[0].id);
+          setAId(list[Math.max(0, list.length - 2)].id);
           setBId(list[list.length - 1].id);
         }
       } catch (e) {
@@ -213,7 +213,7 @@ export function TwinPage() {
         if (!live) return;
         setSnapshots(list);
         if (list.length > 0) {
-          setAId((a) => a || list[0].id);
+          setAId((a) => a || list[Math.max(0, list.length - 2)].id);
           setBId((b) => b || list[list.length - 1].id);
         }
       } catch (e) {
@@ -233,12 +233,12 @@ export function TwinPage() {
 
   useEffect(() => {
     let live = true;
-    if (!ctx || !viewer || !aId) return;
-    void loadSnapshotView(ctx, aId, viewer).then((v) => live && setView(v)).catch((e) => live && setError(String(e)));
+    if (!ctx || !viewer || !bId) return;
+    void loadSnapshotView(ctx, bId, viewer).then((v) => live && setView(v)).catch((e) => live && setError(String(e)));
     return () => {
       live = false;
     };
-  }, [ctx, viewer, aId]);
+  }, [ctx, viewer, bId]);
 
   useEffect(() => {
     let live = true;
@@ -268,6 +268,10 @@ export function TwinPage() {
   const delta = deltaState && deltaState.key === `${aId}|${bId}` ? deltaState.value : null;
   const trajectory = trajectoryState && trajectoryState.key === bId ? trajectoryState.value : null;
   const a = snapshots.find((x) => x.id === aId) ?? null;
+  // Every composed state stays kind CURRENT in the kernel; only the newest one in scope is the current state now.
+  const newestCurrentId = [...inScope].filter((x) => x.spec.kind === 'CURRENT').sort((x, y) => x.createdAt.localeCompare(y.createdAt)).at(-1)?.id ?? null;
+  // Six states named "Current — Enterprise" cannot be told apart by name: each option carries its boundary.
+  const optionLabel = (x: TwinSnapshot) => `${x.spec.label} · known through ${x.spec.lens.recordedThrough.slice(0, 16).replace('T', ' ')} UTC${x.id === newestCurrentId ? ' · current' : ''}`;
   const b = snapshots.find((x) => x.id === bId) ?? null;
   const scopeLabel = ctx.scopes.find((x) => (x.kind === 'ENTERPRISE' ? 'ENTERPRISE' : x.entityId) === scopeKey)?.label ?? 'Enterprise';
   const shown = view?.projection?.items ?? [];
@@ -356,14 +360,14 @@ export function TwinPage() {
         </label>
         <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">State</span>
-          <select className={select} value={aId} onChange={(e) => setAId(e.target.value)}>
-            {snapshots.map((x) => <option key={x.id} value={x.id}>{x.spec.label}</option>)}
+          <select className={select} value={bId} onChange={(e) => setBId(e.target.value)}>
+            {snapshots.map((x) => <option key={x.id} value={x.id}>{optionLabel(x)}</option>)}
           </select>
         </label>
         <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
           <span className="helm-label">Compared with</span>
-          <select className={select} value={bId} onChange={(e) => setBId(e.target.value)}>
-            {snapshots.map((x) => <option key={x.id} value={x.id}>{x.spec.label}</option>)}
+          <select className={select} value={aId} onChange={(e) => setAId(e.target.value)}>
+            {snapshots.map((x) => <option key={x.id} value={x.id}>{optionLabel(x)}</option>)}
           </select>
         </label>
       </div>
@@ -373,13 +377,13 @@ export function TwinPage() {
           <section>
             <SectionHead title="Snapshots" meta={`${inScope.length} of ${snapshots.length} in this scope`} caveat="each one immutable; a correction is a new snapshot" />
             {inScope.map((x) => (
-              <Row key={x.id} onClick={() => setAId(x.id)} selected={x.id === aId}>
+              <Row key={x.id} onClick={() => setBId(x.id)} selected={x.id === bId}>
                 <span className="min-w-0">
                   <span className="text-ui font-medium">{x.spec.label}</span>
                   <span className="mt-[2px] block font-mono text-meta text-ink-500">{lensText(x)}</span>
                 </span>
                 <span className="flex flex-wrap items-center justify-end gap-2">
-                  <Pill tone="neutral">{x.spec.kind}</Pill>
+                  <Pill tone="neutral">{x.spec.kind === 'CURRENT' && x.id !== newestCurrentId ? 'CURRENT · SUPERSEDED' : x.spec.kind}</Pill>
                   <Pill tone={COMPLETENESS_TONE[x.completeness]}>{x.completeness}</Pill>
                   <span className="font-mono text-meta text-ink-500">{x.fingerprint.slice(0, 20)}</span>
                 </span>
@@ -387,28 +391,28 @@ export function TwinPage() {
             ))}
           </section>
 
-          {a && view && (
+          {b && view && (
             <section className="mt-11">
-              <SectionHead title={`State — ${a.spec.label}`} meta={`${a.itemCount} items · ${a.spec.kind}`} caveat="actual, modelled and committed future are never merged" />
+              <SectionHead title={`State — ${b.spec.label}`} meta={`${b.itemCount} items · ${b.spec.kind}`} caveat="actual, modelled and committed future are never merged" />
               <FactRow
                 className="mt-4"
                 facts={[
-                  { label: 'Effective', value: a.spec.lens.effectiveAsOf.slice(0, 16).replace('T', ' '), mono: true },
-                  { label: 'Known through', value: a.spec.lens.recordedThrough.slice(0, 16).replace('T', ' '), mono: true },
-                  { label: 'Periods', value: a.spec.periods.join(', '), mono: true },
-                  { label: 'Completeness', value: a.completeness, mono: true },
-                  { label: 'Sensitivity', value: a.sensitivityClasses.join(', ').toLowerCase().replaceAll('_', ' '), mono: false },
+                  { label: 'Effective', value: b.spec.lens.effectiveAsOf.slice(0, 16).replace('T', ' '), mono: true },
+                  { label: 'Known through', value: b.spec.lens.recordedThrough.slice(0, 16).replace('T', ' '), mono: true },
+                  { label: 'Periods', value: b.spec.periods.join(', '), mono: true },
+                  { label: 'Completeness', value: b.completeness, mono: true },
+                  { label: 'Sensitivity', value: b.sensitivityClasses.join(', ').toLowerCase().replaceAll('_', ' '), mono: false },
                 ]}
               />
               {view.refusal && <Notice tone="error" label="Not visible to this reader" className="mt-4">{view.refusal}</Notice>}
               {view.projection && view.projection.withheld.length > 0 && (
                 <Notice tone="warning" label="Withheld by sensitivity" className="mt-4">{view.projection.statement}</Notice>
               )}
-              {a.completenessReasons.length > 0 && (
+              {b.completenessReasons.length > 0 && (
                 <details className="mt-4">
-                  <summary className="cursor-pointer text-ui text-accent-700">Why this snapshot is {a.completeness.toLowerCase()} ({a.completenessReasons.length})</summary>
+                  <summary className="cursor-pointer text-ui text-accent-700">Why this snapshot is {b.completeness.toLowerCase()} ({b.completenessReasons.length})</summary>
                   <ul className="mt-2 grid gap-1">
-                    {a.completenessReasons.map((r, i) => (
+                    {b.completenessReasons.map((r, i) => (
                       <li key={i} className="text-dense text-ink-700">
                         <span className="font-mono text-meta text-ink-500">{r.code}</span> {r.message}
                       </li>
@@ -446,7 +450,7 @@ export function TwinPage() {
                     {needle && <p className="font-mono text-meta text-ink-500">{items.length} of {all.length} match “{filter.trim()}”</p>}
                     {items.length === 0 && <p className="py-3 text-ui text-ink-500">Nothing in {CATEGORY_LABEL[category].toLowerCase()}{needle ? ' matches the filter' : ''} for this reader at this lens.</p>}
                     {items.map((i) => (
-                      <Row key={i.key} onClick={() => openItem(a.id, i)}>
+                      <Row key={i.key} onClick={() => openItem(b.id, i)}>
                         <span className="min-w-0">
                           <span className={cn('text-ui', i.kind === 'ATTENTION' && 'font-serif text-read')}>{i.label}</span>
                           {i.reason && <span className="mt-[2px] block text-dense text-red-700">{i.reason}</span>}

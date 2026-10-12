@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Pill, type PillTone } from '../ui/Pill.tsx';
 import { FactRow, type Fact } from '../ui/FactRow.tsx';
 import { SectionHead } from '../ui/SectionHead.tsx';
@@ -34,6 +34,18 @@ function Links({ title, items, empty, onSelect }: { title: string; items: GraphL
    FactRow (unit, aggregation, direction, time, horizon, subject) → optional ochre contention notice →
    Driven by | Drives → Observations table (kinds never blended). */
 export function NodeDetail(p: Props) {
+  // Observations arrive newest first. By default each kind (and each scenario) shows what HELM holds now; earlier
+  // model runs and source readings stay one click away, never deleted and never blended into the latest.
+  const [history, setHistory] = useState(false);
+  const seen = new Set<string>();
+  const latest = p.observations.filter((o) => {
+    const k = `${o.kind}|${o.scenario ?? ''}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const shown = history ? p.observations : latest;
+  const earlier = p.observations.length - latest.length;
   return (
     <div className="min-w-0 flex-[1_1_560px]">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -60,7 +72,7 @@ export function NodeDetail(p: Props) {
             <table className="w-full min-w-[560px] border-collapse">
               <thead><tr>{['Kind', 'Value', 'When', 'Source', 'Confidence'].map((h, i) => <th key={h} className={'helm-label px-3 pb-2 pt-[10px] first:pl-0 last:pr-0 ' + (i === 1 || i === 4 ? 'text-right' : 'text-left')}>{h}</th>)}</tr></thead>
               <tbody>
-                {p.observations.map((o, i) => (
+                {shown.map((o, i) => (
                   <tr key={i} className="border-t border-ink-200">
                     <td className="py-[10px] pr-3"><Pill tone={KT[o.kind] ?? 'neutral'}>{o.kind}</Pill>{o.scenario && <span className="helm-meta ml-2">scenario {o.scenario}</span>}</td>
                     <td className="px-3 py-[10px] text-right font-mono text-ui font-medium">{o.value}</td>
@@ -71,6 +83,11 @@ export function NodeDetail(p: Props) {
                 ))}
               </tbody>
             </table>
+            {earlier > 0 && (
+              <button type="button" onClick={() => setHistory((h) => !h)} className="mt-2 text-meta font-medium text-accent-700 hover:underline">
+                {history ? 'Show only the latest of each kind' : `Show history — ${earlier} earlier observation${earlier === 1 ? '' : 's'}`}
+              </button>
+            )}
           </div>
         ) : (
           <p className="mt-3 text-base text-ink-600">No observations recorded. This value exists only inside a scenario run, where it is computed from the nodes that drive it.</p>

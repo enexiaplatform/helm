@@ -514,7 +514,7 @@ function HeadlineCompare({
           const base = baselineState ? rollUp(baselineState, m.metricKey, period) : null;
           return {
             label: m.label,
-            meta: base && base.value !== null ? `Σ of ${base.counted} position${base.counted === 1 ? '' : 's'} — summed as the metric declares` : (base?.note ?? undefined),
+            meta: base && base.value !== null ? `Σ of ${base.counted} position${base.counted === 1 ? '' : 's'} — summed as the metric declares${m.scopeNote ? `; ${m.scopeNote}` : ''}` : (base?.note ?? undefined),
             cells: [rollCell(baselineState, m.metricKey, false), ...tree.map(({ snapshot: s }) => rollCell(s.latestRun ? data.states[s.latestRun.id] : null, m.metricKey, true))],
           };
         })

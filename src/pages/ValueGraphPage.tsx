@@ -320,7 +320,8 @@ export function ValueGraphPage() {
             contention={contentionFor(current.node.id)}
             up={current.upstream.map((n) => ({ id: n.node.id, label: n.node.label, type: n.via.linkType, weight: n.via.weight, confidence: n.via.confidence }))}
             down={current.downstream.map((n) => ({ id: n.node.id, label: n.node.label, type: n.via.linkType, weight: n.via.weight, confidence: n.via.confidence }))}
-            observations={current.observations.map((o) => ({
+            // Newest knowledge first, so the first row of each kind is what HELM holds now; NodeDetail keeps the rest behind "history".
+            observations={[...current.observations].sort((x, y) => String(y.recordedAt).localeCompare(String(x.recordedAt))).map((o) => ({
               kind: o.observationType,
               value: formatValue(o),
               when: o.effectiveAt ? o.effectiveAt.slice(0, 10) : `${o.periodStart?.slice(0, 10)} → ${o.periodEnd?.slice(0, 10)}`,

@@ -404,9 +404,10 @@ export function CockpitPage() {
             title="This review"
             kind={latestReview ? { label: latestReview.status, tone: latestReview.status === 'OPEN' ? 'open' : 'reviewed' } : undefined}
             metrics={[
-              { label: 'Latest review', sub: latestReview?.review.cadence.toLowerCase(), value: latestReview ? latestReview.review.periodLabel : 'none' },
-              { label: 'Carried forward', sub: 'the same objects, not retyped', value: String(latestReview?.items.filter((i) => i.carriedFromItemId).length ?? 0) },
-              { label: 'Decisions needed', value: String(attention.filter((a) => /AWAITING|READY/i.test(String((a.state as { condition?: string }).condition ?? ''))).length) },
+              // While the state is being read, nothing is claimed: "none" and "0" are statements, "…" is not.
+              { label: 'Latest review', sub: latestReview?.review.cadence.toLowerCase(), value: !d ? '…' : latestReview ? latestReview.review.periodLabel : 'none' },
+              { label: 'Carried forward', sub: 'the same objects, not retyped', value: !d ? '…' : String(latestReview?.items.filter((i) => i.carriedFromItemId).length ?? 0) },
+              { label: 'Decisions needed', value: !d ? '…' : String(attention.filter((a) => /AWAITING|READY/i.test(String((a.state as { condition?: string }).condition ?? ''))).length) },
             ]}
           />
           <p className="mt-2 text-meta text-ink-600"><Link to="/reviews" className="text-accent-700 underline">Open the reviews →</Link></p>

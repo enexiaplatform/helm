@@ -188,7 +188,10 @@ function StateFigures({ ctx, snapshotId, viewer, which }: { ctx: ReviewContext; 
           ))}
         </dl>
       )}
-      <p className="mt-2 text-meta text-ink-500">Summed only where the metric declares a sum and one currency holds; nothing is ranked, weighted or converted.</p>
+      <p className="mt-2 text-meta text-ink-500">
+        Summed only where the metric declares a sum and one currency holds; nothing is ranked, weighted or converted. The pipeline counts every opportunity with a
+        value; Scenarios model only those that also carry a probability, so their modelled pipeline can be smaller.
+      </p>
     </div>
   );
 }
@@ -209,7 +212,7 @@ export function ReviewsPage() {
   const [tick, setTick] = useState(0);
   const [state, setState] = useState<{ key: string; value: ProjectedReviews } | null>(null);
   const [packState, setPackState] = useState<{ key: string; pack: ReviewPack | null; withheld: number; statement: string } | null>(null);
-  const [repro, setRepro] = useState<{ key: string; lines: string[] } | null>(null);
+  const [repro, setRepro] = useState<{ key: string; lines: string[]; busy: boolean; failure: string | null } | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -276,15 +279,22 @@ export function ReviewsPage() {
 
   const pack = packState && packState.key === packKey ? packState : null;
   const select = 'max-w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-ui';
+  // The check recomputes both packs from the kernel, which takes a moment: it says it is working, and a failure is said, not swallowed.
   const runRepro = async () => {
     if (!chosen) return;
-    const lines: string[] = [];
-    for (const w of ['PREPARATION', 'CLOSING'] as const) {
-      if (w === 'CLOSING' && chosen.status === 'OPEN') continue;
-      const r = await reproduce(ctx, chosen.review.id, w);
-      lines.push(`${w === 'PREPARATION' ? 'Preparation' : 'Closing'} — ${r.identical ? 'IDENTICAL' : 'DIFFERS'}: stored ${r.storedFingerprint} · recomputed ${r.recomputedFingerprint}. ${r.statement}`);
+    const id = chosen.review.id;
+    setRepro({ key: id, lines: [], busy: true, failure: null });
+    try {
+      const lines: string[] = [];
+      for (const w of ['PREPARATION', 'CLOSING'] as const) {
+        if (w === 'CLOSING' && chosen.status === 'OPEN') continue;
+        const r = await reproduce(ctx, id, w);
+        lines.push(`${w === 'PREPARATION' ? 'Preparation' : 'Closing'} — ${r.identical ? 'IDENTICAL' : 'DIFFERS'}: stored ${r.storedFingerprint} · recomputed ${r.recomputedFingerprint}. ${r.statement}`);
+      }
+      setRepro({ key: id, lines, busy: false, failure: null });
+    } catch (e) {
+      setRepro({ key: id, lines: [], busy: false, failure: `The pack could not be recomputed: ${e instanceof Error ? e.message : String(e)}` });
     }
-    setRepro({ key: chosen.review.id, lines });
   };
   const openReview = projected?.reviews.find((r) => r.status === 'OPEN') ?? null;
 
@@ -294,7 +304,9 @@ export function ReviewsPage() {
         kicker="Management · Review loop"
         size="title"
         title={
-          projected && projected.reviews.length > 0
+          !projected
+            ? 'Reading the management reviews…'
+            : projected.reviews.length > 0
             ? `${projected.reviews.length} review${projected.reviews.length === 1 ? '' : 's'} on record${openReview ? `; ${openReview.review.periodLabel} is open` : '; none is open'}.${projected.reviews.some((r) => r.previous) ? ' What was open at the last one has been carried forward, not retyped.' : ''}`
             : 'No review is on record yet. The first one opens with the twin state as it stands.'
         }
@@ -390,7 +402,9 @@ export function ReviewsPage() {
               </p>
 
               <div className="mt-6">
-                <Button variant="secondary" size="sm" onClick={() => void runRepro()}>Check that it is still what management saw</Button>
+                <Button variant="secondary" size="sm" onClick={() => void runRepro()} disabled={!!repro && repro.key === chosen.review.id && repro.busy}>Check that it is still what management saw</Button>
+                {repro && repro.key === chosen.review.id && repro.busy && <p className="mt-2 text-meta text-ink-600">Recomputing the pack from the kernel and comparing fingerprints…</p>}
+                {repro && repro.key === chosen.review.id && repro.failure && <p role="alert" className="mt-2 text-meta text-red-700">{repro.failure}</p>}
                 {repro && repro.key === chosen.review.id && <ul className="mt-2 grid gap-1">{repro.lines.map((l, i) => <li key={i} className="text-meta text-ink-700">{l}</li>)}</ul>}
               </div>
 

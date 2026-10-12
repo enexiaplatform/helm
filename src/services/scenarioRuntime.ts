@@ -157,9 +157,15 @@ export function pickValue(
  * roll-up the metric itself declares — summed only where its aggregation is SUM and every position is in one currency;
  * anything else is said, not computed. Nothing is ranked: the same rows, in the same order, for every future.
  */
-export const CLOUD_BRANCH_METRICS: readonly { label: string; metricKey: string }[] = [
+export const CLOUD_BRANCH_METRICS: readonly { label: string; metricKey: string; scopeNote?: string }[] = [
   { label: 'Expected revenue', metricKey: 'ExpectedRevenue' },
-  { label: 'Pipeline value', metricKey: 'OpportunityValue' },
+  // A future state holds only the positions the model computes from: an opportunity with a value and no probability is
+  // in the pipeline (Cockpit, Reviews) but in no future. The row says so, so two pages never show two "pipelines" unexplained.
+  {
+    label: 'Modelled pipeline',
+    metricKey: 'OpportunityValue',
+    scopeNote: 'only opportunities that carry both a value and a probability are modelled — the whole pipeline, with those that carry no probability, is on the Cockpit and in Reviews',
+  },
   { label: 'Gross margin', metricKey: 'GrossMargin' },
   { label: 'Cash', metricKey: 'CashImpact' },
   { label: 'Revenue at risk', metricKey: 'RevenueAtRisk' },

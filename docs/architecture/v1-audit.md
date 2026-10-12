@@ -126,3 +126,21 @@ Browser-verified in demo mode at desktop and narrow widths with no console error
 Cockpit, `/twin`, `/scenarios`, `/decisions`, `/governance`, `/causal`, `/genome`,
 `/counterfactuals`, `/reviews` and `/sources`, including an AI question and a council. The
 UI rules are enforced by review, not by a contract: there is no automated visual test.
+
+## Manager audit, 2026-10-12
+
+A manager's walk through the live organization found the app honest and hard to use:
+a seven-minute first read, Ask HELM silent on a pipeline question, two "pipeline"
+figures (Σ of 95 in Reviews, Σ of 79 in Scenarios), the Twin opening on its oldest
+state, opportunity labels without a customer, a decision "raised by an opportunity"
+that could not name one, and an empty Cockpit that said why but not what would make it
+useful. Addressed without changing what HELM refuses to do: the pipeline is ingested
+side by side (ADR-0034 amendment); `getPipelinePositions` answers under named
+conditions and says it does not rank; `readPipeline`/`pipelineFacts` give the Cockpit
+the pipeline and what its data leaves open (a value of 0, no probability, no close
+period), counted and never scored; Scenarios call theirs the modelled pipeline and say
+why it is smaller; labels add the customer at display time (stored labels, fingerprints
+and history unchanged). **Deferred, deliberately:** recording an enterprise target needs
+an enterprise roll-up position in the calculation model (a new calculation and model
+version) before an objective can be measured, and a Vietnamese interface needs the
+computed sentences moved behind a message catalogue — each its own piece of work.

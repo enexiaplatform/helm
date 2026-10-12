@@ -84,7 +84,7 @@ export function createReferenceProvider(): AiProvider {
           args['closePeriod'] = `${d.getUTCFullYear()}-Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
         }
         if (/risk|not clos|unlikely|low probab|weak|slip|rủi ro|khó chốt/.test(q)) args['probabilityAtMost'] = 0.25;
-        if (/zero|\b0 (sgd|vnd|usd)|no value|without a value|giá trị 0/.test(q)) args['condition'] = 'ZERO_VALUE';
+        if (/zero|value of 0|\b0 (sgd|vnd|usd)|no value|without a value|giá trị 0|giá trị bằng 0/.test(q)) args['condition'] = 'ZERO_VALUE';
         else if (/no probab|without a probab|chưa có xác suất/.test(q)) args['condition'] = 'NO_PROBABILITY';
         calls.push({ tool: 'getPipelinePositions', args });
       }

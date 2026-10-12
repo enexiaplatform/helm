@@ -2,23 +2,35 @@ import { useState, type ReactNode, type MouseEvent } from 'react';
 import { HelmLockup } from '../brand/HelmLogo.tsx';
 import { cn } from '../../lib/cn.ts';
 
-export interface NavItem { key: string; label: string; group?: 'Management' | 'Kernel' }
+export type NavGroup = 'Management' | 'Model' | 'Learning' | 'Setup';
+export interface NavItem { key: string; label: string; group?: NavGroup }
+/**
+ * Grouped by what a manager comes for (audit 2026-10-12: fourteen flat entries, five of them pages that only explain
+ * why they are empty). Learning and Setup fold away until opened or until one of their pages is the current one.
+ */
 export const HELM_NAV: NavItem[] = [
   { key: 'cockpit', label: 'Cockpit', group: 'Management' },
   { key: 'reviews', label: 'Reviews' },
   { key: 'decisions', label: 'Decisions' },
   { key: 'memory', label: 'Decision memory' },
-  { key: 'scenarios', label: 'Scenarios', group: 'Kernel' },
+  { key: 'scenarios', label: 'Scenarios', group: 'Model' },
   { key: 'twin', label: 'Twin' },
-  { key: 'causal', label: 'Causal' },
-  { key: 'counterfactuals', label: 'Counterfactuals' },
-  { key: 'genome', label: 'Genome' },
-  { key: 'governance', label: 'Governance' },
-  { key: 'sources', label: 'Sources' },
-  { key: 'ontology', label: 'Ontology' },
   { key: 'value-graph', label: 'Value Graph' },
   { key: 'calculations', label: 'Calculations' },
+  { key: 'causal', label: 'Causal', group: 'Learning' },
+  { key: 'counterfactuals', label: 'Counterfactuals' },
+  { key: 'genome', label: 'Genome' },
+  { key: 'sources', label: 'Sources', group: 'Setup' },
+  { key: 'governance', label: 'Governance' },
+  { key: 'ontology', label: 'Ontology' },
 ];
+const FOLDED: readonly NavGroup[] = ['Learning', 'Setup'];
+
+/** The group an item belongs to: its own, or the last one declared above it. */
+function groupOf(items: readonly NavItem[], idx: number): NavGroup | null {
+  for (let i = idx; i >= 0; i -= 1) if (items[i]!.group) return items[i]!.group!;
+  return null;
+}
 
 interface Props {
   active: string;
@@ -55,6 +67,7 @@ interface Props {
 export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items = HELM_NAV, openSignals = 0, orgName, orgs = [], activeOrgId, onOrgChange, userLabel, demo, sourceLine, effectiveAsOf, recordedThrough, error, onSignOut, onSettings, wide, children }: Props) {
   // Below 768px the sidebar is a menu behind a bar: the content keeps the whole width instead of being squeezed beside it.
   const [menuOpen, setMenuOpen] = useState(false);
+  const [unfolded, setUnfolded] = useState<ReadonlySet<NavGroup>>(new Set());
   const go = (k: string) => (e: MouseEvent) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
     e.preventDefault();
@@ -99,12 +112,28 @@ export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items =
           )}
         </div>
         <nav className="grid flex-1 content-start gap-[2px] px-[10px] pb-4 pt-[6px]">
-          {items.map((it) => {
+          {items.map((it, idx) => {
             const on = it.key === active;
+            const group = groupOf(items, idx);
+            const foldable = group !== null && FOLDED.includes(group);
+            const folded = foldable && !unfolded.has(group) && !items.some((x, j) => groupOf(items, j) === group && x.key === active);
             return (
               <div key={it.key}>
-                {it.group && <p className="mx-3 mb-[6px] mt-[18px] font-sans text-tag font-medium uppercase text-chrome-muted">{it.group}</p>}
-                <a
+                {it.group &&
+                  (FOLDED.includes(it.group) ? (
+                    <button
+                      type="button"
+                      onClick={() => setUnfolded((u) => { const n = new Set(u); if (n.has(it.group!)) n.delete(it.group!); else n.add(it.group!); return n; })}
+                      aria-expanded={!folded}
+                      className="mx-3 mb-[6px] mt-[18px] flex w-[calc(100%-24px)] items-center justify-between font-sans text-tag font-medium uppercase text-chrome-muted hover:text-paper"
+                    >
+                      <span>{it.group}</span>
+                      <span aria-hidden>{folded ? '+' : '−'}</span>
+                    </button>
+                  ) : (
+                    <p className="mx-3 mb-[6px] mt-[18px] font-sans text-tag font-medium uppercase text-chrome-muted">{it.group}</p>
+                  ))}
+                {!folded && <a
                   href={hrefFor(it.key)}
                   onClick={go(it.key)}
                   aria-current={on ? 'page' : undefined}
@@ -118,7 +147,7 @@ export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items =
                   {it.key === 'cockpit' && openSignals > 0 && (
                     <span className="rounded-full bg-brass-400 px-[7px] font-mono text-[11px] font-bold leading-[18px] text-navy">{openSignals}</span>
                   )}
-                </a>
+                </a>}
               </div>
             );
           })}

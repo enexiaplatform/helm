@@ -40,6 +40,7 @@ import { MetricList } from '../components/ui/MetricList.tsx';
 import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.tsx';
 import { AskHelm } from '../components/intelligence/AskHelm.tsx';
 import { CouncilPanel } from '../components/intelligence/CouncilPanel.tsx';
+import { PipelineFacts } from '../components/cockpit/PipelineFacts.tsx';
 import { cn } from '../lib/cn.ts';
 
 const NUM = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
@@ -200,13 +201,15 @@ export function CockpitPage() {
   const catchingUp = ic.mode === 'cloud' && !!d && ((caughtUpAt === null && (livePhase === 'starting' || livePhase === 'reading')) || livePhase === 'composing');
   const proof = d?.integration?.proof ?? null;
   const focusDecision = decisions[0];
+  // A cancelled or committed decision is history, not something the rules wait on.
+  const openDecisions = decisions.filter((x) => (x.state as { open?: boolean }).open === true).length;
 
   return (
     <>
       <PageHeader
         kicker={`Management · ${twinCtx.story ? twinCtx.story.scopes.vietnam.label : 'Enterprise'} · ${d ? `state as known through ${day(d.current.snapshot.spec.lens.recordedThrough)}` : '…'}`}
         title={headline}
-        lede="What requires management attention, why, and what management has already decided — read from the kernels as you, never ranked or scored. There is no health number: an enterprise is not one figure."
+        lede="What needs your attention, why, and what has already been decided — read as you, never ranked or scored."
       />
 
       {ic.mode === 'demo' && (
@@ -263,13 +266,20 @@ export function CockpitPage() {
           <section>
             <SectionHead title="What requires your attention" meta={d ? String(attention.length) : '…'} caveat="named conditions with a cause — not a ranking" dot={attention.length > 0 ? 'warning' : undefined} />
             {d && attention.length === 0 && (
-              <p className="mt-3 max-w-reading text-ui text-ink-500">
-                No attention condition holds in the state you may read. The rules watch decisions awaiting commitment, approvals,
-                challenged or disproved assumptions, breached constraints, value deterioration and commitments off their future —
-                this state holds {word(decisions.length).toLowerCase()} {decisions.length === 1 ? 'decision' : 'decisions'},{' '}
-                {word(items.filter((i) => i.kind === 'CONSTRAINT').length).toLowerCase()} constraints and{' '}
-                {word(items.filter((i) => i.kind === 'OBJECTIVE').length).toLowerCase()} objectives for them to watch.
-              </p>
+              <div className="mt-3 max-w-reading text-ui text-ink-500">
+                <p>
+                  Nothing to act on — but the rules have little to watch: {word(openDecisions).toLowerCase()} open {openDecisions === 1 ? 'decision' : 'decisions'},{' '}
+                  {word(items.filter((i) => i.kind === 'CONSTRAINT').length).toLowerCase()} constraints,{' '}
+                  {word(items.filter((i) => i.kind === 'OBJECTIVE').length).toLowerCase()} objectives.
+                </p>
+                {/* Audit 2026-10-12: an empty cockpit said why, never what would make it useful. */}
+                {openDecisions === 0 && !d.trajectory && (
+                  <p className="mt-2 text-ink-700">
+                    Next step: frame the question the quarter turns on in <Link to="/decisions" className="text-accent-700 underline">Decisions</Link>, weigh its futures from{' '}
+                    <Link to="/scenarios" className="text-accent-700 underline">Scenarios</Link>, and commit one. HELM then measures now against that committed future here, and says when a commitment drifts from it.
+                  </p>
+                )}
+              </div>
             )}
             {groups.map(([condition, group]) => (
               <div key={condition} className="mt-5">
@@ -311,6 +321,8 @@ export function CockpitPage() {
               </div>
             ))}
           </section>
+
+          {d && <PipelineFacts items={items} />}
 
           <section className="mt-10">
             <SectionHead title="Now, against the committed future" meta={d?.trajectory ? d.trajectory.relation : '…'} caveat="the distance is a fact, not a verdict" />

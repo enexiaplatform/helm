@@ -34,7 +34,7 @@ describe('the pipeline as the state holds it', () => {
   });
 
   it('counts what the pipeline states about itself, never a score', () => {
-    assert.deepEqual(pipelineFacts(readPipeline(items)), { opportunities: 3, withValue: 2, zeroValue: 1, noValue: 1, noProbability: 2, modelled: 1, withoutCustomer: 2 });
+    assert.deepEqual(pipelineFacts(readPipeline(items)), { opportunities: 3, withValue: 2, zeroValue: 1, noValue: 1, noProbability: 2, modelled: 1, withoutCustomer: 2, noClosePeriod: 1 });
   });
 
   it('reads a close period as Memoire states it, and does not guess a missing year', () => {

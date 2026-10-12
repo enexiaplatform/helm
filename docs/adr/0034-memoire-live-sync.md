@@ -111,3 +111,17 @@ One additive, idempotent migration, applied to the shared project via the live
 DB proof protocol (pre/post fingerprint unchanged; HELM tables and policies
 unchanged; publication membership checked). No HELM table, policy or function
 changes.
+
+## Amendment 2026-10-12 — a page is ingested side by side
+
+A manager's first sign-in after the 0.3.0 connector reset its checkpoint waited
+about seven minutes (five pages of twenty, each record a dozen sequential round
+trips), and every page showed the previous state's warnings meanwhile. The
+pipeline now translates a page first, writes what more than one record names (a
+customer, its segment, their membership) once per mention in record order, and
+ingests what belongs to one record alone eight at a time
+(`IngestionPipelineDeps.concurrency`). A record whose facts land on a shared
+subject still runs alone. Counts, writes and idempotency are those of the
+sequential run (`integration-runtime/test/concurrency.test.mjs`). Until the
+session's first pass catches up, the Cockpit names the boundary of the state it
+shows instead of passing it off as current.

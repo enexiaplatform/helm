@@ -39,6 +39,7 @@ export type PipelineFacts = {
   /** Both a value and a probability: what the model computes expected revenue for. */
   readonly modelled: number;
   readonly withoutCustomer: number;
+  readonly noClosePeriod: number;
 };
 
 const s = (v: unknown): string | null => (v === null || v === undefined || v === '' ? null : String(v));
@@ -95,6 +96,7 @@ export function pipelineFacts(rows: readonly PipelinePosition[]): PipelineFacts 
     noProbability: rows.filter((r) => r.probability === null).length,
     modelled: rows.filter((r) => r.value !== null && r.probability !== null).length,
     withoutCustomer: rows.filter((r) => r.customer === null).length,
+    noClosePeriod: rows.filter((r) => r.expectedClosePeriod === null).length,
   };
 }
 

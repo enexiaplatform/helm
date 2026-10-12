@@ -29,6 +29,7 @@ import {
 import type { Explanation } from '@helm/propagation-engine';
 import { periodKey, type Period } from '@helm/shared';
 import { useHelmStore } from '../services/helmStore.ts';
+import { useCustomerNames } from '../services/customerNames.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
 import { recomposeCurrentState } from '../services/memoireLiveSync.ts';
 import {
@@ -104,6 +105,7 @@ function toLineage(node: Explanation): LineageNode {
 // ================================================================ page
 
 export function ScenariosPage() {
+  const customers = useCustomerNames();
   const mode = useHelmStore((s) => s.mode);
   const activeOrgId = useHelmStore((s) => s.activeOrgId);
   const userId = useHelmStore((s) => s.userId);
@@ -383,7 +385,7 @@ export function ScenariosPage() {
         ) : (
           <>
             <p className="mt-3 flex flex-wrap items-baseline gap-2 text-base">
-              <span className="font-semibold">{lineage.value.nodeLabel}</span>
+              <span className="font-semibold">{customers.forNode(lineage.value.nodeLabel, lineage.value.nodeId)}</span>
               <span className="font-mono">= {lineage.value.value ?? '—'}</span>
               <Pill tone={lineage.value.origin === 'BLOCKED' ? 'blocked' : lineage.value.origin === 'OVERRIDDEN' ? 'overridden' : lineage.value.origin === 'COMPUTED' ? 'computed' : 'neutral'}>
                 {lineage.value.origin}
@@ -763,6 +765,7 @@ function AddOverrideForm({
   onAdd: (input: Parameters<ScenarioWorkspace['runtime']['addOverride']>[2]) => Promise<void>;
   onCancel: () => void;
 }) {
+  const customers = useCustomerNames();
   const [nodes, setNodes] = useState<OverridableNode[]>([]);
   const [nodeId, setNodeId] = useState('');
   const [operation, setOperation] = useState<'SET' | 'ADD'>('SET');
@@ -784,8 +787,8 @@ function AddOverrideForm({
   }, [ws, periods]);
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? nodes.filter((n) => `${n.label} ${n.metricName}`.toLowerCase().includes(q)) : nodes;
-  }, [nodes, query]);
+    return q ? nodes.filter((n) => `${customers.forNode(n.label, n.id)} ${n.metricName}`.toLowerCase().includes(q)) : nodes;
+  }, [nodes, query, customers]);
   // The chosen target, or the first one the search still shows.
   const targetId = shown.some((n) => n.id === nodeId) ? nodeId : (shown[0]?.id ?? '');
   const node = nodes.find((n) => n.id === targetId);
@@ -834,7 +837,7 @@ function AddOverrideForm({
         <select className={controlClass} value={targetId} onChange={(e) => setNodeId(e.target.value)}>
           {shown.map((n) => (
             <option key={n.id} value={n.id}>
-              {n.label} · {n.unitType}
+              {customers.forNode(n.label, n.id)} · {n.unitType}
             </option>
           ))}
         </select>
@@ -916,6 +919,7 @@ function Comparison({
   onChangedOnly: (v: boolean) => void;
   onExplain: (runId: string, nodeId: string) => void;
 }) {
+  const customers = useCustomerNames();
   const pk = periodKey(period);
   const shown = comparison.alternatives.filter((a) => !hidden.has(a.runId));
   const delta = (runId: string, nodeId: string) =>
@@ -960,7 +964,7 @@ function Comparison({
       };
       return {
         key: r.nodeId,
-        label: r.nodeLabel,
+        label: customers.forNode(r.nodeLabel, r.nodeId),
         meta: r.dimension.toLowerCase(),
         cells: [cell(comparison.baseline.runId, false), ...shown.map((a) => cell(a.runId, true))],
       };
@@ -998,7 +1002,7 @@ function Comparison({
                   <tr key={i} className="border-t border-ink-200 align-top">
                     <td className="py-3 pr-3 text-dense font-semibold">{a.state.label}</td>
                     <td className="py-3 pl-3 text-dense">
-                      {a.nodeLabel}
+                      {customers.forNode(a.nodeLabel, a.nodeId)}
                       {a.inheritedFromScenarioId && <span className="helm-meta ml-2 text-sky-700">inherited</span>}
                       {!a.consumed && (
                         <span className="helm-meta ml-2" title="No calculation reads this value: stated, not propagated">
@@ -1117,16 +1121,22 @@ function NewScenarioModal({
         <Field label="Name">
           <input className={controlClass} value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
         </Field>
-        <Field label="Key" hint="made from the name — lowercase letters, digits and hyphens, unique in this organization">
-          <input
-            className={controlClass + ' font-mono'}
-            value={key}
-            onChange={(e) => setKeyTyped(slugOf(e.target.value, true))}
-            required
-            pattern="[a-z0-9][a-z0-9\-]{0,62}"
-            title="lowercase letters, digits and hyphens, starting with a letter or digit"
-          />
-        </Field>
+        {/* The key is a machine identity made from the name; a manager names the scenario and never has to type one (audit 2026-10-12). */}
+        <details className="text-meta text-ink-600" open={keyTyped !== null || (name.trim().length > 0 && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(key)) || undefined}>
+          <summary className="cursor-pointer">Key <span className="font-mono">{key || '—'}</span> · made from the name; change it only if it clashes</summary>
+          <div className="mt-2">
+            <Field label="Key" hint="made from the name — lowercase letters, digits and hyphens, unique in this organization">
+              <input
+                className={controlClass + ' font-mono'}
+                value={key}
+                onChange={(e) => setKeyTyped(slugOf(e.target.value, true))}
+                required
+                pattern="[a-z0-9][a-z0-9\-]{0,62}"
+                title="lowercase letters, digits and hyphens, starting with a letter or digit"
+              />
+            </Field>
+          </div>
+        </details>
         <Field label="Description">
           <input className={controlClass} value={description} onChange={(e) => setDescription(e.target.value)} />
         </Field>

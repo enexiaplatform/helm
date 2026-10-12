@@ -22,6 +22,7 @@ import type { UserId } from '@helm/shared';
 import type { DecisionWorkspaceContext } from '../../services/decisionRuntime.ts';
 import { valueMetrics } from '../../services/ontologyGraph.ts';
 import { recomposeCurrentState } from '../../services/memoireLiveSync.ts';
+import { loadCustomerNames, withCustomer } from '../../services/customerNames.ts';
 import { Modal } from '../ui/Modal.tsx';
 import { Field, controlClass } from '../ui/Field.tsx';
 import { Button } from '../ui/Button.tsx';
@@ -104,6 +105,33 @@ function useSimulatedScenarios(ctx: DecisionWorkspaceContext): Simulated[] | nul
   return list;
 }
 
+type OpportunityChoice = { readonly id: string; readonly label: string };
+
+/**
+ * The opportunities a decision raised by an opportunity can point at, each named with its customer (audit 2026-10-12:
+ * choosing "an opportunity" named none). Read only when asked for; null while reading.
+ */
+function useOpportunities(ctx: DecisionWorkspaceContext, wanted: boolean): readonly OpportunityChoice[] | null {
+  const [list, setList] = useState<readonly OpportunityChoice[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (!wanted || list !== null) return;
+    void (async () => {
+      const [opps, names] = await Promise.all([
+        ctx.scenarios.graphs.graphStore.findEntities(ctx.scope, { entityTypeKeys: ['Opportunity'] }),
+        loadCustomerNames(ctx.mode, ctx.scope).catch(() => null),
+      ]);
+      if (!live) return;
+      const rows = opps.ok ? opps.value.map((o) => ({ id: String(o.id), label: withCustomer(o.name, names?.bySubject.get(String(o.id))) })) : [];
+      setList(rows.sort((a, b) => a.label.localeCompare(b.label)));
+    })();
+    return () => {
+      live = false;
+    };
+  }, [ctx, wanted, list]);
+  return list;
+}
+
 const TRIGGERS: readonly { value: DecisionTriggerType; label: string }[] = [
   { value: 'MANUAL', label: 'raised by management' },
   { value: 'OPPORTUNITY', label: 'an opportunity' },
@@ -138,6 +166,14 @@ export function FrameDecisionModal({
   const [withStatusQuo, setWithStatusQuo] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [oppQuery, setOppQuery] = useState('');
+  const [oppId, setOppId] = useState('');
+  const opportunities = useOpportunities(ctx, trigger === 'OPPORTUNITY');
+  const oppShown = useMemo(() => {
+    const q = oppQuery.trim().toLowerCase();
+    return (opportunities ?? []).filter((o) => !q || o.label.toLowerCase().includes(q)).slice(0, 200);
+  }, [opportunities, oppQuery]);
+  const opportunity = trigger === 'OPPORTUNITY' ? ((opportunities ?? []).find((o) => o.id === oppId) ?? null) : null;
   const tooShort = question.trim().length < 12;
 
   const submit = async () => {
@@ -149,7 +185,10 @@ export function FrameDecisionModal({
         title: title.trim() || question.trim().slice(0, 80),
         managementQuestion: question.trim(),
         triggerType: trigger,
-        triggerRefs: chosen.map((s) => ({ kind: 'SCENARIO' as const, ref: s.scenario.id, label: s.scenario.name })),
+        triggerRefs: [
+          ...(opportunity ? [{ kind: 'OPPORTUNITY' as const, ref: opportunity.id, label: opportunity.label }] : []),
+          ...chosen.map((s) => ({ kind: 'SCENARIO' as const, ref: s.scenario.id, label: s.scenario.name })),
+        ],
         owner: { kind: 'PERSON', label: author.label, userId: author.userId },
         horizon: decideBy ? { decisionDeadline: new Date(`${decideBy}T00:00:00.000Z`).toISOString() } : undefined,
       });
@@ -209,6 +248,21 @@ export function FrameDecisionModal({
               ))}
             </select>
           </Field>
+          {trigger === 'OPPORTUNITY' && (
+            <Field label="Which opportunity" hint="optional — the decision points at it; HELM reads it from Memoire, nothing is copied" className="sm:col-span-2">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input className={controlClass} value={oppQuery} onChange={(e) => setOppQuery(e.target.value)} placeholder={opportunities ? `Search ${opportunities.length} opportunities — a customer or a product` : 'Reading the opportunities…'} />
+                <select className={controlClass} value={oppId} onChange={(e) => setOppId(e.target.value)} disabled={!opportunities}>
+                  <option value="">— none chosen —</option>
+                  {oppShown.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </Field>
+          )}
           <Field label="Decide by" hint="optional">
             <input type="date" className={controlClass} value={decideBy} onChange={(e) => setDecideBy(e.target.value)} />
           </Field>

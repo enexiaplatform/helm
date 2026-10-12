@@ -30,6 +30,7 @@ import type {
 import { buildDependencyGraph } from '@helm/propagation-engine';
 import type { Scope } from '@helm/shared';
 import { useHelmStore } from '../services/helmStore.ts';
+import { useCustomerNames } from '../services/customerNames.ts';
 import { calculations, cloudScope, demoScope, resolveGraphs, valueMetrics } from '../services/ontologyGraph.ts';
 import { recomposeCurrentState } from '../services/memoireLiveSync.ts';
 import { PageHeader } from '../components/ui/PageHeader.tsx';
@@ -149,6 +150,7 @@ export function CalculationsPage() {
   const [selectedCalc, setSelectedCalc] = useState<string>(calculations.active()[0]?.key ?? '');
   const [explaining, setExplaining] = useState<Explanation | null>(null);
   const [nodeLabels, setNodeLabels] = useState<Map<string, ValueNode>>(new Map());
+  const customers = useCustomerNames();
 
   // --- open the right stack for the current mode ---
   useEffect(() => {
@@ -433,7 +435,7 @@ export function CalculationsPage() {
                             <span className="helm-meta">@{step.calculationVersion}</span>
                           </td>
                           <td className="py-3 pl-3 text-dense text-ink-700">
-                            {nodeLabels.get(step.outputNodeId)?.label ?? step.outputMetricKey}
+                            {customers.forNode(nodeLabels.get(step.outputNodeId)?.label ?? step.outputMetricKey, step.outputNodeId)}
                           </td>
                           <td
                             className="py-3 pl-3"

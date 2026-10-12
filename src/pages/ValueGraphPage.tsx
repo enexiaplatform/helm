@@ -25,6 +25,7 @@ import type { Entity } from '@helm/ontology';
 import type { GraphStore } from '@helm/graph-store';
 import type { Scope } from '@helm/shared';
 import { useHelmStore } from '../services/helmStore.ts';
+import { useCustomerNames } from '../services/customerNames.ts';
 import { cloudScope, demoScope, resolveGraphs, valueMetrics } from '../services/ontologyGraph.ts';
 import { PageHeader } from '../components/ui/PageHeader.tsx';
 import { SectionHead } from '../components/ui/SectionHead.tsx';
@@ -70,6 +71,7 @@ function formatValue(o: ValueObservation): string {
 }
 
 export function ValueGraphPage() {
+  const customers = useCustomerNames();
   const mode = useHelmStore((s) => s.mode);
   const activeOrgId = useHelmStore((s) => s.activeOrgId);
   const userId = useHelmStore((s) => s.userId);
@@ -216,10 +218,10 @@ export function ValueGraphPage() {
     () =>
       nodes.map((n) => ({
         id: n.id,
-        label: n.label,
+        label: customers.forNode(n.label, n.id),
         dimension: (valueMetrics.metric(n.metricKey)?.dimension ?? 'FINANCIAL') as Dimension,
       })),
-    [nodes],
+    [nodes, customers],
   );
 
   const scenarioName = (id: string | null) => (id ? (scenarios.find((s) => s.id === id)?.name ?? 'scenario') : null);
@@ -307,7 +309,7 @@ export function ValueGraphPage() {
           <NodeDetail
             dimension={(current.metric?.dimension ?? 'FINANCIAL') as Dimension}
             metricKey={current.node.metricKey}
-            label={current.node.label}
+            label={customers.forNode(current.node.label, current.node.id)}
             description={current.metric?.description ?? ''}
             facts={[
               { label: 'Unit', value: current.metric?.unitType ?? '—', mono: true },

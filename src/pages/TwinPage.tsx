@@ -24,6 +24,7 @@ import {
   type TwinSnapshot,
 } from '@helm/twin-runtime';
 import { useHelmStore } from '../services/helmStore.ts';
+import { useCustomerNames } from '../services/customerNames.ts';
 import { useMemoireLive } from '../services/memoireLiveSync.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
 import {
@@ -160,6 +161,7 @@ export function TwinPage() {
 
   const [ctx, setCtx] = useState<TwinContext | null>(null);
   const [snapshots, setSnapshots] = useState<readonly TwinSnapshot[]>([]);
+  const customers = useCustomerNames();
   const [error, setError] = useState<string | null>(null);
   const [scopeKey, setScopeKey] = useState<string>('');
   const [viewerKey, setViewerKey] = useState<string>('');
@@ -452,7 +454,7 @@ export function TwinPage() {
                     {items.map((i) => (
                       <Row key={i.key} onClick={() => openItem(b.id, i)}>
                         <span className="min-w-0">
-                          <span className={cn('text-ui', i.kind === 'ATTENTION' && 'font-serif text-read')}>{i.label}</span>
+                          <span className={cn('text-ui', i.kind === 'ATTENTION' && 'font-serif text-read')}>{customers.forSubject(i.label, i.subjectEntityId)}</span>
                           {i.reason && <span className="mt-[2px] block text-dense text-red-700">{i.reason}</span>}
                         </span>
                         <span className="flex flex-wrap items-center justify-end gap-2">

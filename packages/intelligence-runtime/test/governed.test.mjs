@@ -198,6 +198,16 @@ describe('no tool can be summoned outside the catalogue', () => {
     assert.deepEqual(explicit.find((c) => c.tool === 'getPipelinePositions').args, { closePeriod: '2027-Q1', condition: 'NO_PROBABILITY' });
   });
 
+  it('every suggested question the Cockpit offers is read into a governed tool, in Vietnamese', async () => {
+    const tools = ['getManagementAttention', 'getPipelinePositions', 'getEnterpriseState'].map((name) => ({ name, description: '', args: [] }));
+    const plan = (question) => createReferenceProvider().plan({ question, tools, now: '2026-10-12T12:00:00.000Z' });
+    const pipe = async (q) => (await plan(q)).find((c) => c.tool === 'getPipelinePositions')?.args;
+    assert.deepEqual(await pipe('Cơ hội nào rủi ro không chốt được quý này?'), { closePeriod: '2026-Q4', probabilityAtMost: 0.25 });
+    assert.deepEqual(await pipe('Cơ hội nào có giá trị 0?'), { condition: 'ZERO_VALUE' });
+    assert.deepEqual(await pipe('Cơ hội nào chưa có xác suất?'), { condition: 'NO_PROBABILITY' });
+    assert.deepEqual((await plan('Điều gì cần tôi chú ý?')).map((c) => c.tool), ['getManagementAttention']);
+  });
+
   it('the pipeline tool answers from the state, states its conditions, and says it does not rank', async () => {
     const b = buildIntelligence(s, scriptedProvider(() => ({ statements: [], questions: [], unknowns: [] }), { plan: [{ tool: 'getPipelinePositions', args: { probabilityAtMost: 1 } }] }));
     const a = unwrap(await b.intelligence.run(s.scope, adminCaller(), { task: 'ASK_HELM', params: { question: 'pipeline' } }), 'answer');

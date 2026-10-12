@@ -23,7 +23,7 @@ export function PipelineFacts({ items }: { items: readonly TwinItem[] }) {
     f.withoutCustomer > 0 && `${f.withoutCustomer} are held by no customer HELM can read.`,
   ].filter((x): x is string => typeof x === 'string');
   return (
-    <section className="mt-10">
+    <section id="pipeline" className="mt-10 scroll-mt-6">
       <SectionHead title="The pipeline, as its source states it" meta={String(f.opportunities)} caveat="counted, never ranked" />
       <dl className="mt-3 flex flex-wrap gap-x-10 gap-y-3">
         {figures.map(({ label, sub, r }) => (

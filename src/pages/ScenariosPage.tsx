@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   COMPARISON_STATEMENT,
   overrideProvenanceKinds,
@@ -117,7 +118,13 @@ export function ScenariosPage() {
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const [periodKeyShown, setPeriodKeyShown] = useState<string | null>(null);
   const [lineage, setLineage] = useState<ScenarioExplanation | null>(null);
-  const [creating, setCreating] = useState(false);
+  // ?new=1 opens the new-scenario form directly: the Cockpit's start-here guide links here.
+  const [params, setParams] = useSearchParams();
+  const [creating, setCreating] = useState(params.get('new') === '1');
+  // The link opened the form once; a reload or a back step does not open it again.
+  useEffect(() => {
+    if (params.has('new')) setParams({}, { replace: true });
+  }, [params, setParams]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [changedOnly, setChangedOnly] = useState(true);

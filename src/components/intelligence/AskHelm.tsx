@@ -13,7 +13,7 @@ import { AnswerView } from './AnswerView.tsx';
  * instruments — and not a chatbot: it cannot query a table, write anything, or say what the
  * kernel does not.
  */
-export function AskHelm({ viewer }: { viewer: TwinViewer | null }) {
+export function AskHelm({ viewer, suggestions = [] }: { viewer: TwinViewer | null; suggestions?: readonly string[] }) {
   const mode = useHelmStore((s) => s.mode);
   const activeOrgId = useHelmStore((s) => s.activeOrgId);
   const userId = useHelmStore((s) => s.userId);
@@ -22,25 +22,25 @@ export function AskHelm({ viewer }: { viewer: TwinViewer | null }) {
   const [question, setQuestion] = useState('');
   const [state, setState] = useState<{ answer: IntelligenceAnswer | null; error: string | null; busy: boolean } | null>(null);
 
-  const ask = async () => {
-    if (!scope || !viewer || question.trim().length < 4) return;
+  const ask = async (asked: string = question) => {
+    if (!scope || !viewer || asked.trim().length < 4 || state?.busy) return;
     setState({ answer: null, error: null, busy: true });
     try {
       const ctx = await resolveIntelligenceContext(mode ?? 'demo', scope);
       if (!ctx) throw new Error('The AI layer is unavailable in this mode.');
-      setState({ answer: await askHelm(ctx, viewer, 'ASK_HELM', { question }), error: null, busy: false });
+      setState({ answer: await askHelm(ctx, viewer, 'ASK_HELM', { question: asked }), error: null, busy: false });
     } catch (e) {
       setState({ answer: null, error: e instanceof Error ? e.message : String(e), busy: false });
     }
   };
 
   return (
-    <div>
+    <div id="ask-helm" className="scroll-mt-6">
       <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
         <span className="helm-label">Ask HELM</span>
         <input
           className="w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-ui"
-          placeholder="What matters right now, and what do we believe about why?"
+          placeholder="Hỏi về pipeline, deal, khách hàng — hoặc chọn một câu bên dưới"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={(e) => {
@@ -48,6 +48,24 @@ export function AskHelm({ viewer }: { viewer: TwinViewer | null }) {
           }}
         />
       </label>
+      {suggestions.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2" aria-label="Suggested questions">
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              type="button"
+              disabled={!viewer || state?.busy}
+              onClick={() => {
+                setQuestion(s);
+                void ask(s);
+              }}
+              className="rounded-full border border-ink-200 bg-white px-3 py-1 text-left text-meta text-ink-700 transition-colors ease-helm hover:border-accent-700 hover:text-accent-800 disabled:opacity-50"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="mt-2 flex items-center gap-3">
         <Button variant="secondary" size="sm" onClick={() => void ask()} disabled={!viewer || state?.busy || question.trim().length < 4}>{state?.busy ? 'Reading the kernel…' : 'Ask'}</Button>
         <span className="text-meta text-ink-500">Answers only from governed, read-only tools, as you.</span>

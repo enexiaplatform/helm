@@ -41,6 +41,8 @@ import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.
 import { AskHelm } from '../components/intelligence/AskHelm.tsx';
 import { CouncilPanel } from '../components/intelligence/CouncilPanel.tsx';
 import { PipelineFacts } from '../components/cockpit/PipelineFacts.tsx';
+import { StartHere } from '../components/cockpit/StartHere.tsx';
+import { SUGGESTED_QUESTIONS } from '../components/intelligence/suggestedQuestions.ts';
 import { cn } from '../lib/cn.ts';
 
 const NUM = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
@@ -229,6 +231,8 @@ export function CockpitPage() {
       ) : (
         data?.note && <Notice tone="warning" label="Withheld" className="mt-4">{data.note}</Notice>
       )}
+
+      {d && <StartHere items={items} reviews={d.reviews.reviews} now={d.current.snapshot.spec.lens.effectiveAsOf} />}
 
       <div className="mt-6 flex flex-wrap items-end gap-4">
         <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
@@ -435,7 +439,7 @@ export function CockpitPage() {
 
           <div className="mt-8">
             <SectionHead title="Ask, or open the council" size="section-sm" />
-            <div className="mt-3"><AskHelm viewer={viewer} /></div>
+            <div className="mt-3"><AskHelm viewer={viewer} suggestions={SUGGESTED_QUESTIONS} /></div>
             {latestReview && (
               <IntelligencePanel task="DRAFT_MANAGEMENT_BRIEF" params={{ reviewId: latestReview.review.id }} viewer={viewer} label="Draft the management brief" detail="A grounded brief for the latest review: what changed, what matters, what is off-track, what is uncertain, what decisions are required, which assumptions are challenged, which outcomes arrived." />
             )}

@@ -67,7 +67,7 @@ export function createReferenceProvider(): AiProvider {
         if (has(tool) && re.test(q)) calls.push({ tool, args });
       };
       // A question about commitments, targets or what is waiting on management is a question about attention, whatever else it asks.
-      want('getManagementAttention', /attention|matters|off.?track|risk|issue|commit|target|objective|behind|short of|furthest|gap|decision|approv|breach|challeng/, {});
+      want('getManagementAttention', /attention|matters|off.?track|risk|issue|commit|target|objective|behind|short of|furthest|gap|decision|approv|breach|challeng|chú ý|quan trọng|cần làm|quyết định|mục tiêu/, {});
       want('getEnterpriseState', /state|now|current|where are we/, {});
       want('getCausalClaims', /caus|why|evidence|hypothes/, {});
       want('getGenomePatterns', /pattern|recurr|learn|lesson/, {});

@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { DecisionState } from '@helm/decision-runtime';
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
@@ -101,7 +101,13 @@ export function DecisionsPage() {
   const myRole = useHelmStore((s) => s.myRole);
   const [items, setItems] = useState<DecisionSummary[] | null>(null);
   const [ctx, setCtx] = useState<DecisionWorkspaceContext | null>(null);
-  const [framing, setFraming] = useState(false);
+  // ?frame=1 opens the framing form directly: the Cockpit's start-here guide links here.
+  const [params, setParams] = useSearchParams();
+  const [framing, setFraming] = useState(params.get('frame') === '1');
+  // The link opened the form once; a reload or a back step does not open it again.
+  useEffect(() => {
+    if (params.has('frame')) setParams({}, { replace: true });
+  }, [params, setParams]);
   const [governed, setGoverned] = useState<Governed>({});
   const [error, setError] = useState<string | null>(null);
 

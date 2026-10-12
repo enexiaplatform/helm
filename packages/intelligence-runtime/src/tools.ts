@@ -13,7 +13,7 @@
  *     arguments the tool validates, or nothing.
  */
 
-import { canSeeSnapshot, isCleared, sensitivityOfMetric, type TwinRuntime, type TwinViewer } from '@helm/twin-runtime';
+import { canSeeSnapshot, closesIn, isCleared, opportunityLabel, pipelineFacts, readPipeline, sensitivityOfMetric, type PipelinePosition, type TwinItem, type TwinRuntime, type TwinViewer } from '@helm/twin-runtime';
 import type { CausalGraph } from '@helm/causal-runtime';
 import type { CounterfactualRuntime } from '@helm/counterfactual-runtime';
 import type { DecisionRuntime } from '@helm/decision-runtime';
@@ -72,6 +72,7 @@ const MAX = { items: 30, changes: 40, claims: 20, patterns: 15, episodes: 10, ro
 const A = {
   str: (name: string, description: string, required = true): ToolArgSpec => ({ name, type: 'string', required, description }),
   strs: (name: string, description: string, required = false): ToolArgSpec => ({ name, type: 'string[]', required, description }),
+  num: (name: string, description: string, required = false): ToolArgSpec => ({ name, type: 'number', required, description }),
 };
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
@@ -190,6 +191,85 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
       const att = (proj.value.items as unknown as ItemLike[]).filter((i) => i.kind === 'ATTENTION');
       const withheld = proj.value.withheld.reduce((n, w) => n + w.count, 0);
       return done(att.slice(0, MAX.items).map((i) => evidenceOfItem(i, lens, 'What matters?')), att.length === 0 ? ['No attention condition holds in this state.'] : withheldNote(withheld, 'item(s)'), withheld);
+    },
+  });
+
+  tool({
+    name: 'getPipelinePositions',
+    description:
+      'The commercial pipeline in the current state, one opportunity per row with its customer, stage, expected close period, value, probability and expected revenue — in kernel order, never ranked. Optional named conditions filter it; they never judge which deal matters most.',
+    args: [
+      A.str('closePeriod', 'Only opportunities Memoire expects to close in this period, e.g. "2026-Q4".', false),
+      A.num('probabilityAtMost', 'Only opportunities whose stated probability is at most this ratio (0–1).', false),
+      A.str('condition', 'One named condition: ZERO_VALUE (a stated value of 0), NO_VALUE, NO_PROBABILITY.', false),
+      A.str('customer', 'Only opportunities held by a customer whose name contains this text.', false),
+      A.str('snapshotId', 'A specific twin snapshot. Default: the latest current state you can see.', false),
+    ],
+    async run(ctx, args) {
+      const s = await latestVisibleSnapshot(ctx, src.twin, str(args['snapshotId']), null);
+      if (!s.ok) return s;
+      const lens = lensOf(s.value.snapshot.spec.lens);
+      const proj = await src.twin.projectForViewer(ctx.scope, s.value.snapshot.id, ctx.viewer, ctx.units);
+      if (!proj.ok) return proj;
+      const all = readPipeline(proj.value.items as readonly TwinItem[]);
+      const period = str(args['closePeriod']);
+      const atMost = typeof args['probabilityAtMost'] === 'number' && Number.isFinite(args['probabilityAtMost']) ? (args['probabilityAtMost'] as number) : null;
+      const condition = str(args['condition'])?.toUpperCase() ?? null;
+      const customer = str(args['customer'])?.toLowerCase() ?? null;
+      if (condition && !['ZERO_VALUE', 'NO_VALUE', 'NO_PROBABILITY'].includes(condition)) return fail(IntelligenceErrors.INVALID, `Unknown pipeline condition "${condition}".`);
+      // Each filter is a stated condition, said back in the answer: the reader sees exactly what was asked of the data.
+      const named: string[] = [];
+      if (period) named.push(`expected to close in ${period} (a quarter Memoire states without a year is kept and marked)`);
+      if (atMost !== null) named.push(`a stated probability of at most ${Math.round(atMost * 100)}%`);
+      if (condition === 'ZERO_VALUE') named.push('a stated value of 0');
+      if (condition === 'NO_VALUE') named.push('no stated value');
+      if (condition === 'NO_PROBABILITY') named.push('no stated probability');
+      if (customer) named.push(`held by a customer named like "${customer}"`);
+      const rows = all.filter(
+        (p) =>
+          (!period || closesIn(p.expectedClosePeriod, period) !== 'NO') &&
+          (atMost === null || (p.probability !== null && Number(p.probability) <= atMost)) &&
+          (condition !== 'ZERO_VALUE' || (p.value !== null && Number(p.value) === 0)) &&
+          (condition !== 'NO_VALUE' || p.value === null) &&
+          (condition !== 'NO_PROBABILITY' || p.probability === null) &&
+          (!customer || (p.customer ?? '').toLowerCase().includes(customer)),
+      );
+      const facts = pipelineFacts(all);
+      const ref = { kind: 'TWIN_SNAPSHOT', id: s.value.snapshot.id };
+      const summary = ev(
+        'SOURCE_FACT',
+        ref,
+        'The pipeline as Memoire states it',
+        [
+          `${facts.opportunities} opportunities in the state you may read`,
+          `${facts.withValue} with a value (${facts.zeroValue} of them 0), ${facts.noValue} without one`,
+          `${facts.noProbability} without a probability; ${facts.modelled} carry both and are modelled`,
+          named.length > 0 ? `${rows.length} match: ${named.join(', ')}` : '',
+        ],
+        { status: 'SUMMARY', section: 'pipeline', lens },
+      );
+      const asEvidence = (p: PipelinePosition): RawEvidence =>
+        ev(
+          'SOURCE_FACT',
+          { kind: 'ENTITY', id: p.opportunityId },
+          opportunityLabel(p),
+          [
+            p.value === null ? 'no value stated' : `value ${p.value}${p.currency ? ` ${p.currency}` : ''}`,
+            p.probability === null ? 'no probability stated' : `probability ${Math.round(Number(p.probability) * 100)}%`,
+            p.stage ? `stage ${p.stage}` : '',
+            p.expectedClosePeriod ? `expected to close ${p.expectedClosePeriod}` : 'no close period stated',
+            ...p.expectedRevenue.filter((r) => r.value !== null).map((r) => `expected revenue ${r.value}${r.currency ? ` ${r.currency}` : ''}${r.period ? ` in ${r.period}` : ''} (model result)`),
+          ],
+          { status: period && closesIn(p.expectedClosePeriod, period) === 'AMBIGUOUS' ? 'CLOSE PERIOD STATES NO YEAR' : named.length > 0 ? 'MATCHES' : null, section: 'pipeline', lens },
+        );
+      const withheld = proj.value.withheld.reduce((n, w) => n + w.count, 0);
+      const notes = [
+        'Rows are in kernel order — not ranked by size, risk or importance. HELM states which opportunities meet a named condition; which of them matter is a management judgement.',
+        ...(rows.length > MAX.rows ? [`${rows.length - MAX.rows} more rows match and are not listed; narrow the question (a period, a customer, a condition).`] : []),
+        ...(rows.length === 0 ? [`No opportunity in this state meets: ${named.join(', ') || 'the request'}.`] : []),
+        ...withheldNote(withheld, 'item(s)'),
+      ];
+      return done([summary, ...rows.slice(0, MAX.rows).map(asEvidence)], notes, withheld);
     },
   });
 

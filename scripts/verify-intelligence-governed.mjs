@@ -20,7 +20,7 @@ const ask = (who, task, params) => s.intelligence.run(s.scope, who, { task, para
 
 // The catalogue.
 const names = s.tools.all().map((t) => t.name);
-for (const n of ['getEnterpriseState', 'compareTwinSnapshots', 'explainValue', 'getValueDependencies', 'getScenarioComparison', 'getDecision', 'explainDecision', 'getGovernanceState', 'getCausalClaims', 'getGenomePatterns', 'getSimilarEpisodes', 'runCounterfactual', 'getManagementAttention', 'getDataCoverage', 'getReviewPack']) c.check('catalogue', names.includes(n), `the tool ${n} is missing`);
+for (const n of ['getEnterpriseState', 'compareTwinSnapshots', 'explainValue', 'getValueDependencies', 'getScenarioComparison', 'getDecision', 'explainDecision', 'getGovernanceState', 'getCausalClaims', 'getGenomePatterns', 'getSimilarEpisodes', 'runCounterfactual', 'getManagementAttention', 'getDataCoverage', 'getReviewPack', 'getPipelinePositions']) c.check('catalogue', names.includes(n), `the tool ${n} is missing`);
 c.check('catalogue', names.every((n) => !/sql|query|table|write|set|create|update|delete|approve|commit|execute|record/i.test(n)), `a tool name suggests a query or a write: ${names}`);
 c.check('read-only', s.tools.all().every((t) => t.access === 'READ_ONLY'), 'a tool is not READ_ONLY');
 

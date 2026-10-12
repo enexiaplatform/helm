@@ -188,6 +188,29 @@ describe('no tool can be summoned outside the catalogue', () => {
     assert.deepEqual(calls.map((c) => c.tool).sort(), ['getCausalClaims', 'getManagementAttention']);
   });
 
+  it('a question about deals at risk reads the pipeline under a NAMED condition, never a ranking (audit 2026-10-12)', async () => {
+    const tools = ['getManagementAttention', 'getPipelinePositions'].map((name) => ({ name, description: '', args: [] }));
+    const calls = await createReferenceProvider().plan({ question: 'Which opportunities are most at risk of not closing this quarter?', tools, now: '2026-10-12T12:00:00.000Z' });
+    const pipe = calls.find((c) => c.tool === 'getPipelinePositions');
+    assert.ok(pipe, 'the pipeline is read');
+    assert.deepEqual(pipe.args, { closePeriod: '2026-Q4', probabilityAtMost: 0.25 });
+    const explicit = await createReferenceProvider().plan({ question: 'Show the pipeline for Q1 2027 with no probability', tools });
+    assert.deepEqual(explicit.find((c) => c.tool === 'getPipelinePositions').args, { closePeriod: '2027-Q1', condition: 'NO_PROBABILITY' });
+  });
+
+  it('the pipeline tool answers from the state, states its conditions, and says it does not rank', async () => {
+    const b = buildIntelligence(s, scriptedProvider(() => ({ statements: [], questions: [], unknowns: [] }), { plan: [{ tool: 'getPipelinePositions', args: { probabilityAtMost: 1 } }] }));
+    const a = unwrap(await b.intelligence.run(s.scope, adminCaller(), { task: 'ASK_HELM', params: { question: 'pipeline' } }), 'answer');
+    assert.deepEqual(a.toolCalls.map((c) => c.outcome), ['OK']);
+    const summary = a.evidence.find((e) => e.status === 'SUMMARY');
+    assert.ok(summary && summary.values.some((v) => /opportunities in the state you may read/.test(v)));
+    assert.ok(summary.values.some((v) => /match: a stated probability of at most 100%/.test(v)));
+    assert.ok(a.evidence.filter((e) => e.status !== 'SUMMARY').every((e) => e.kind === 'SOURCE_FACT' && e.ref.kind === 'ENTITY'));
+    const refused = buildIntelligence(s, scriptedProvider(() => ({ statements: [], questions: [], unknowns: [] }), { plan: [{ tool: 'getPipelinePositions', args: { condition: 'MOST_AT_RISK' } }] }));
+    const r = unwrap(await refused.intelligence.run(s.scope, adminCaller(), { task: 'ASK_HELM', params: { question: 'x' } }), 'answer');
+    assert.equal(r.evidence.length, 0, 'an unnamed condition is not invented');
+  });
+
   it('a plan longer than the limit is cut, and says so', async () => {
     const many = Array.from({ length: 12 }, () => ({ tool: 'getManagementAttention', args: {} }));
     const b = buildIntelligence(s, scriptedProvider({ statements: [] }, { plan: many }));

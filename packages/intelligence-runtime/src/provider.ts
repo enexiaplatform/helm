@@ -18,6 +18,8 @@ export type PlanInput = {
   readonly question: string;
   /** What the provider may ask for. Nothing else exists as far as it is concerned. */
   readonly tools: readonly ToolCatalogueEntry[];
+  /** The instant the ask is answered at, so "this quarter" names a period. Never a reason to call more tools. */
+  readonly now?: string;
 };
 
 export type SynthesisInput = {
@@ -70,6 +72,22 @@ export function createReferenceProvider(): AiProvider {
       want('getCausalClaims', /caus|why|evidence|hypothes/, {});
       want('getGenomePatterns', /pattern|recurr|learn|lesson/, {});
       want('getSimilarEpisodes', /similar|before|seen this|precedent/, {});
+      // A question about deals reads the pipeline itself (audit 2026-10-12: "which opportunities are at risk of not closing
+      // this quarter?" read only attention, which held nothing). Words become NAMED conditions the answer states back —
+      // a stated probability at most 25%, a close period — never a ranking of which deal is "most" at risk.
+      if (has('getPipelinePositions') && /pipeline|opportunit|deal|clos|quarter|customer|account|probab|forecast|revenue|sales|khách|cơ hội|doanh|chốt|quý|xác suất/.test(q)) {
+        const args: Record<string, unknown> = {};
+        const explicit = q.match(/\b(20\d\d)[-\s]?q([1-4])\b/) ?? q.match(/\bq([1-4])[-\s/]?(20\d\d)\b/);
+        if (explicit) args['closePeriod'] = explicit[1]!.length === 4 ? `${explicit[1]}-Q${explicit[2]}` : `${explicit[2]}-Q${explicit[1]}`;
+        else if (/this quarter|current quarter|quý này/.test(q) && input.now) {
+          const d = new Date(input.now);
+          args['closePeriod'] = `${d.getUTCFullYear()}-Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
+        }
+        if (/risk|not clos|unlikely|low probab|weak|slip|rủi ro|khó chốt/.test(q)) args['probabilityAtMost'] = 0.25;
+        if (/zero|\b0 (sgd|vnd|usd)|no value|without a value|giá trị 0/.test(q)) args['condition'] = 'ZERO_VALUE';
+        else if (/no probab|without a probab|chưa có xác suất/.test(q)) args['condition'] = 'NO_PROBABILITY';
+        calls.push({ tool: 'getPipelinePositions', args });
+      }
       if (calls.length === 0 && has('getManagementAttention')) calls.push({ tool: 'getManagementAttention', args: {} });
       return calls;
     },

@@ -70,7 +70,7 @@ export function createIntelligenceRuntime(opts: IntelligenceRuntimeOptions): Int
       else {
         if (!provider.plan) return fail(IntelligenceErrors.PROVIDER_FAILED, `${provider.id} cannot plan tool calls; an open-ended ask needs a provider that can.`);
         try {
-          plan = await provider.plan({ question: params['question']!, tools: tools.catalogue() });
+          plan = await provider.plan({ question: params['question']!, tools: tools.catalogue(), now: ctx.now });
         } catch (e) {
           return fail(IntelligenceErrors.PROVIDER_FAILED, `The provider failed while planning: ${(e as Error).message}`);
         }

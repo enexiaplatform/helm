@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { HelmLockup } from '../brand/HelmLogo.tsx';
 import { cn } from '../../lib/cn.ts';
+import { Button } from '../ui/Button.tsx';
 
 export type NavGroup = 'Management' | 'Model' | 'Learning' | 'Setup';
 /** hint = the stage of the operating loop the page serves (Sense → Diagnose → Simulate → Decide → Control → Learn). */
@@ -59,6 +60,9 @@ interface Props {
   demo?: boolean;
   /** how current HELM's reading of a live source is — said in the bar, in brick when it failed */
   sourceLine?: { text: string; failed: boolean } | null;
+  /** Read Memoire's changes and everything HELM holds again. Cloud only. */
+  onRefresh?: () => void;
+  refreshing?: boolean;
   /** the two clocks — shown in the bar on instrument pages */
   effectiveAsOf?: string;      // "19 Sep 12:00"
   recordedThrough?: string;    // "21 Sep 09:00"
@@ -79,7 +83,7 @@ const CURRENT = 'border-ink-200 bg-white text-ink-950';
 /* The paper rail: 232px on ink-100 with a hairline edge. Lockup, the organization, nav grouped by what a manager comes
    for with the loop stage in mono, and the reader at the foot. The current page is a white fill with a hairline and a
    teal icon. To the right, a sticky 48px breadcrumb bar on paper (92%, 6px blur) carries the demo pill and the clocks. */
-export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items = HELM_NAV, openSignals = 0, orgName, orgs = [], activeOrgId, onOrgChange, userLabel, orgMeta, crumbDetail, demo, sourceLine, effectiveAsOf, recordedThrough, error, onSignOut, onSettings, wide, children }: Props) {
+export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items = HELM_NAV, openSignals = 0, orgName, orgs = [], activeOrgId, onOrgChange, userLabel, orgMeta, crumbDetail, demo, sourceLine, onRefresh, refreshing, effectiveAsOf, recordedThrough, error, onSignOut, onSettings, wide, children }: Props) {
   // Below 768px the rail is a menu behind a bar: the content keeps the whole width instead of being squeezed beside it.
   const [menuOpen, setMenuOpen] = useState(false);
   const [unfolded, setUnfolded] = useState<ReadonlySet<NavGroup>>(new Set());
@@ -196,6 +200,11 @@ export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items =
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {sourceLine && (
               <span role="status" className={cn('font-mono text-meta', sourceLine.failed ? 'text-red-700' : 'text-ink-500')}>{sourceLine.text}</span>
+            )}
+            {onRefresh && (
+              <Button variant="ghost" size="sm" onClick={onRefresh} disabled={refreshing} title="Read Memoire's changes and everything HELM holds again">
+                {refreshing ? 'Refreshing…' : 'Refresh'}
+              </Button>
             )}
             {/* The boundary a new future forks at. Two equal instants read as one: "now", not a riddle. */}
             {/* Only on instrument pages: a management page states its own "as known on", and two clocks there read as two "nows". */}

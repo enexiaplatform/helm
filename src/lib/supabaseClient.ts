@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { cachingFetch, clearReadCache } from './readCache.ts';
 
 // Same guard as Memoire: `import.meta.env` only exists under Vite. A distinct
 // auth storageKey keeps HELM's session separate from Memoire's in the browser
@@ -25,5 +26,12 @@ export const supabaseClient: SupabaseClient | null = isSupabaseConfigured
         persistSession: true,
         storageKey: 'helm.supabase.auth',
       },
+      // Identical reads within a session are answered once (src/lib/readCache.ts); any write or Refresh drops them.
+      global: { fetch: cachingFetch((...args) => globalThis.fetch(...args)) },
     }))
   : null;
+
+// A reader who signs out leaves nothing held behind (reads are also keyed by token, so another reader never shares them).
+supabaseClient?.auth.onAuthStateChange((event) => {
+  if (event === 'SIGNED_OUT') clearReadCache();
+});

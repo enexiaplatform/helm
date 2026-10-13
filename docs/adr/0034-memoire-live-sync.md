@@ -125,3 +125,26 @@ subject still runs alone. Counts, writes and idempotency are those of the
 sequential run (`integration-runtime/test/concurrency.test.mjs`). Until the
 session's first pass catches up, the Cockpit names the boundary of the state it
 shows instead of passing it off as current.
+
+## Amendment 2026-10-13 — read on Refresh, and hold reads for the session
+
+Opening the Cockpit took seconds. The edge logs for one open (13 Oct, 12:50 UTC)
+show ~300 requests: each genome table read 15 times, `helm_decisions` 9,
+`org_units` 8, the causal tables 5 — every runtime re-read its tables whole for
+every projection — while the live pass ran beside it on open.
+
+- The live sync now runs **manual** (`createLiveSync({ manual: true })`): no
+  Realtime subscription, no focus/online/visibility wake, no fallback tick, no
+  automatic retry. It reads when the reader presses **Refresh** (shell header)
+  or **Sync now** (Sources), when HELM itself changed what the state is composed
+  from (`recomposeCurrentState`), and on open only when no CURRENT state was ever
+  composed. The rest of this ADR (re-read, never apply; one governed pipeline;
+  compose only on change) is unchanged.
+- HELM's REST reads are held for the session (`src/lib/readCache.ts`, the
+  Supabase client's fetch): identical reads share one request and later ones are
+  answered from memory. Any write (POST/PATCH/DELETE, every RPC) drops all of it,
+  and a read in flight across a write is not kept, so HELM never shows less than
+  its own last act. Refresh and sign-out drop it too. Reads are keyed by the
+  bearer token.
+- Cost: what others change — in Memoire or in HELM — reaches this reader on
+  Refresh, not by itself. The header says when Memoire was last read.

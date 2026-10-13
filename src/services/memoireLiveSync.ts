@@ -1,12 +1,13 @@
 /**
- * Memoire → HELM, live (ADR-0034).
+ * Memoire → HELM, on Refresh (ADR-0034, manual since 2026-10-13).
  *
- * While a signed-in reader has HELM open on a cloud organization, HELM keeps its reading of their Memoire
- * opportunities current by itself: on open, on regaining focus or the network, on every Realtime notice that one
- * of their opportunities changed, and on a slow fallback tick. Each wake runs the SAME governed ingestion pipeline
- * "Sync now" runs (drift, identity, provenance, checkpoint) and, when what HELM holds changed, composes a new
- * CURRENT enterprise state for the Cockpit and the Twin. The scheduling lives in @helm/integration-runtime
- * (`createLiveSync`); this module only wires its ports.
+ * HELM no longer re-reads Memoire by itself — not on open, focus, a Realtime notice or a tick: that work ran on every
+ * page open and made it slow. It reads when the reader presses Refresh (or "Sync now"), and on open only when no
+ * current state was ever composed. Each read runs the SAME governed ingestion pipeline (drift, identity, provenance,
+ * checkpoint) and, when what HELM holds changed, composes a new CURRENT enterprise state for the Cockpit and the
+ * Twin. A change made inside HELM (a decision act, a model run) still asks for a recompose. Refresh also drops every
+ * read HELM holds for the session (src/lib/readCache.ts), so what others changed in HELM shows too. The scheduling
+ * lives in @helm/integration-runtime (`createLiveSync`, manual); this module only wires its ports.
  *
  * It reads Memoire and writes only HELM's own records. It never writes into Memoire.
  */
@@ -16,12 +17,14 @@ import { createLiveSync, type LiveSync, type LiveSyncState } from '@helm/integra
 import { fail, ok, type Scope } from '@helm/shared';
 import { subscribeToMemoireOpportunities } from './memoireBridge.ts';
 import { supabaseClient } from '../lib/supabaseClient.ts';
+import { clearReadCache } from '../lib/readCache.ts';
 import { resolveIntegrationContext, sourceHasNews } from './integrationRuntime.ts';
 import { buildCurrentSnapshot, listSnapshots } from './twinRuntime.ts';
 
-type LiveStore = LiveSyncState & { readonly orgId: string | null };
+/** `readEpoch`: bumped when a Refresh finishes — the page is read again from scratch. `refreshing`: one is running. */
+type LiveStore = LiveSyncState & { readonly orgId: string | null; readonly readEpoch: number; readonly refreshing: boolean };
 
-const initial: LiveStore = { orgId: null, phase: 'stopped', listening: false, lastSync: null, caughtUpAt: null, composedAt: null, version: 0, error: null };
+const initial: LiveStore = { orgId: null, phase: 'stopped', listening: false, lastSync: null, caughtUpAt: null, composedAt: null, version: 0, error: null, readEpoch: 0, refreshing: false };
 
 /** What the console and the pages read: the live sync's state, and a version to re-read on. */
 export const useMemoireLive = create<LiveStore>(() => initial);
@@ -31,11 +34,31 @@ const asMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** The console's running live sync, if any — so "Sync now" asks it for a pass instead of running a second, uncomposed one. */
 let active: LiveSync | null = null;
 
-/** Ask the running live sync for a pass now. False when none is running (the demo, or signed out). */
+/** Ask the running sync for a pass now. False when none is running (the demo, or signed out). */
 export function wakeMemoireLiveSync(): boolean {
   if (!active) return false;
+  clearReadCache();
   active.wake();
   return true;
+}
+
+/**
+ * Refresh: drop every read HELM holds, read Memoire's changes through the pipeline, compose a new current state when
+ * something changed, then have the page read again. Without a running sync (the demo) it only re-reads the page.
+ */
+export async function refreshFromMemoire(): Promise<void> {
+  const live = active;
+  if (useMemoireLive.getState().refreshing) return;
+  useMemoireLive.setState({ refreshing: true });
+  try {
+    clearReadCache();
+    if (live) {
+      live.wake();
+      await live.idle();
+    }
+  } finally {
+    useMemoireLive.setState((s) => ({ refreshing: false, readEpoch: s.readEpoch + 1 }));
+  }
 }
 
 /**
@@ -87,11 +110,14 @@ function exclusiveFor(key: string) {
 export function startMemoireLiveSync(scope: Scope): { live: LiveSync | null; stop: () => void } {
   const orgId = String(scope.orgId);
   const userId = String(scope.actorId);
-  useMemoireLive.setState({ ...initial, orgId, phase: 'starting' });
+  useMemoireLive.setState({ ...initial, orgId, phase: 'starting', readEpoch: useMemoireLive.getState().readEpoch });
   // The contexts are resolved once per start: the pipeline, its checkpoint store and the twin are all cloud-backed.
   const contexts = resolveIntegrationContext('cloud', scope).catch(() => null);
 
   const live = createLiveSync({
+    // Nothing reads Memoire by itself: Refresh, "Sync now" and HELM's own changes ask (see the header).
+    manual: true,
+    debounceMs: 0,
     // Each record is several sequential reads and writes; a small page moves the checkpoint often, so a window closed
     // mid-way through a first read resumes where it stopped instead of re-reading everything.
     pageSize: 20,
@@ -147,7 +173,7 @@ export function startMemoireLiveSync(scope: Scope): { live: LiveSync | null; sto
     exclusive: exclusiveFor(`helm:memoire-live:${orgId}:${userId}`),
     onState: (s) => {
       // A state from a sync that was already replaced (another org, a sign-out) is not this console's state.
-      if (useMemoireLive.getState().orgId === orgId) useMemoireLive.setState(s);
+      if (useMemoireLive.getState().orgId === orgId) useMemoireLive.setState({ ...s });
     },
     now: () => new Date().toISOString(),
   });
@@ -158,7 +184,7 @@ export function startMemoireLiveSync(scope: Scope): { live: LiveSync | null; sto
     stop: () => {
       live.stop();
       if (active === live) active = null;
-      if (useMemoireLive.getState().orgId === orgId) useMemoireLive.setState(initial);
+      if (useMemoireLive.getState().orgId === orgId) useMemoireLive.setState({ ...initial, readEpoch: useMemoireLive.getState().readEpoch });
     },
   };
 }
@@ -168,14 +194,16 @@ export function liveSyncLine(s: LiveSyncState, clock: (iso: string) => string): 
   switch (s.phase) {
     case 'stopped':
       return null;
+    case 'idle':
+      return { text: 'Memoire · as last read', failed: false };
     case 'starting':
     case 'reading':
       return { text: 'Memoire · reading changes…', failed: false };
     case 'composing':
       return { text: 'Memoire · composing the current state…', failed: false };
     case 'current':
-      return { text: `Memoire ${s.listening ? 'live' : 'polling'} · current at ${s.caughtUpAt ? clock(s.caughtUpAt) : '—'}`, failed: false };
+      return { text: `Memoire · read at ${s.caughtUpAt ? clock(s.caughtUpAt) : '—'}`, failed: false };
     case 'failed':
-      return { text: `Memoire · ${s.error ?? 'the last read failed'} Retrying.`, failed: true };
+      return { text: `Memoire · ${s.error ?? 'the last read failed'} Refresh to try again.`, failed: true };
   }
 }

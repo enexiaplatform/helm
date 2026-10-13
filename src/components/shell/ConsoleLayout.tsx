@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import type { ForkPoint } from '@helm/scenario-runtime';
 import { useHelmStore } from '../../services/helmStore.ts';
-import { liveSyncLine, startMemoireLiveSync, useMemoireLive } from '../../services/memoireLiveSync.ts';
+import { liveSyncLine, refreshFromMemoire, startMemoireLiveSync, useMemoireLive } from '../../services/memoireLiveSync.ts';
 import { cloudScope, demoScope } from '../../services/ontologyGraph.ts';
 import { displayClock, resolveScenarioWorkspace } from '../../services/scenarioRuntime.ts';
 import { attentionCount } from '../../services/twinRuntime.ts';
@@ -74,25 +74,13 @@ export function ConsoleLayout() {
     };
   }, [mode, scope]);
 
-  // Memoire → HELM, live (ADR-0034): while this console is open on a cloud organization, HELM re-reads the reader's
-  // Memoire opportunities on every change notice, on focus, on reconnect and on a slow tick, and composes a new
-  // current state when what it holds changed. The demo has no live source.
+  // Memoire → HELM on Refresh (ADR-0034, manual since 2026-10-13): opening a page shows what HELM holds at once; the
+  // reader presses Refresh to read Memoire's changes and everything HELM holds again. The demo has no source.
   const live = useMemoireLive();
   useEffect(() => {
     if (mode !== 'cloud' || !scope || !userId) return;
-    const { live: sync, stop } = startMemoireLiveSync(scope);
-    const wake = () => {
-      if (document.visibilityState === 'visible') sync?.wake();
-    };
-    window.addEventListener('focus', wake);
-    window.addEventListener('online', wake);
-    document.addEventListener('visibilitychange', wake);
-    return () => {
-      window.removeEventListener('focus', wake);
-      window.removeEventListener('online', wake);
-      document.removeEventListener('visibilitychange', wake);
-      stop();
-    };
+    const { stop } = startMemoireLiveSync(scope);
+    return stop;
   }, [mode, scope, userId]);
 
   // The rail's count is the attention conditions HELM's own rules hold in the latest current state — not a stored signal.
@@ -109,7 +97,7 @@ export function ConsoleLayout() {
     return () => {
       cancelled = true;
     };
-  }, [mode, scope, live.version, demoReady]);
+  }, [mode, scope, live.version, live.readEpoch, demoReady]);
 
   const active = keyOf(pathname);
   const activeOrg = organizations.find((o) => o.id === activeOrgId);
@@ -129,6 +117,8 @@ export function ConsoleLayout() {
       crumbDetail={pathname.split('/')[2] ? (active === 'decisions' ? 'Decision' : 'Record') : null}
       demo={mode === 'demo'}
       sourceLine={mode === 'cloud' ? liveSyncLine(live, displayClock) : null}
+      onRefresh={mode === 'cloud' ? () => void refreshFromMemoire() : undefined}
+      refreshing={live.refreshing || live.phase === 'reading' || live.phase === 'composing'}
       effectiveAsOf={fork && INSTRUMENTS.has(active) ? displayClock(fork.effectiveAsOf) : undefined}
       recordedThrough={fork && INSTRUMENTS.has(active) ? displayClock(fork.recordedThrough) : undefined}
       error={error}
@@ -144,7 +134,8 @@ export function ConsoleLayout() {
       wide={INSTRUMENTS.has(active)}
     >
       {mode !== 'demo' || demoReady === 'ready' ? (
-        <Outlet />
+        // A finished Refresh reads the page again from scratch.
+        <Outlet key={live.readEpoch} />
       ) : demoReady === 'pending' ? (
         <p className="text-ui text-ink-500">Preparing the demo organization…</p>
       ) : (

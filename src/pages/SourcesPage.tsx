@@ -95,7 +95,6 @@ export function SourcesPage() {
   const [busy, setBusy] = useState(false);
   // In the cloud HELM keeps Memoire current by itself (ADR-0034): every pass it makes is a reason to re-read the history.
   const livePhase = useMemoireLive((st) => st.phase);
-  const liveListening = useMemoireLive((st) => st.listening);
   const liveSync = useMemoireLive((st) => st.lastSync);
   const caughtUpAt = useMemoireLive((st) => st.caughtUpAt);
   // When the reader last asked, and what the live sync held then — so "Sync now" can say what that pass found.
@@ -192,7 +191,7 @@ export function SourcesPage() {
               )}
               <span className="text-meta text-ink-500">
                 {ctx.mode === 'cloud'
-                  ? `Live: HELM re-reads your own Memoire opportunities under your access whenever one changes${liveListening ? '' : ' (change notices are not reaching HELM right now; it re-reads every minute instead)'}, from the last checkpoint, and composes a new current state when what it holds changed.`
+                  ? 'On request: HELM reads your own Memoire opportunities under your access when you press Sync now or Refresh, from the last checkpoint, and composes a new current state when what it holds changed. It does not re-read by itself.'
                   : 'The proof below ran once when the demo was built.'}
               </span>
             </div>

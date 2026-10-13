@@ -21,7 +21,8 @@
 import type { Result } from '@helm/shared';
 import type { SyncRecord } from './types.ts';
 
-export type LiveSyncPhase = 'starting' | 'reading' | 'composing' | 'current' | 'failed' | 'stopped';
+/** `idle`: manual mode, and nobody has asked for a read yet — what HELM holds is shown as it is. */
+export type LiveSyncPhase = 'starting' | 'idle' | 'reading' | 'composing' | 'current' | 'failed' | 'stopped';
 
 export type LiveSyncState = {
   readonly phase: LiveSyncPhase;
@@ -79,6 +80,11 @@ export type LiveSyncDeps = {
   stuckMs?: number;
   /** First retry after a failure; doubles to `fallbackMs`. Default 5 s. */
   retryMs?: number;
+  /**
+   * Manual: nothing wakes it but wake() and recompose() — no notices, no tick, no retry. On start it reads only when
+   * no current state was ever composed, so a first reader still sees one. Default false (live).
+   */
+  manual?: boolean;
 };
 
 export interface LiveSync {
@@ -152,7 +158,7 @@ export function createLiveSync(deps: LiveSyncDeps): LiveSync {
   };
 
   const scheduleTick = (ms: number) => {
-    if (stopped) return;
+    if (stopped || deps.manual) return;
     if (tickTimer !== null) timers.clearTimeout(tickTimer);
     tickTimer = timers.setTimeout(() => {
       tickTimer = null;
@@ -248,6 +254,27 @@ export function createLiveSync(deps: LiveSyncDeps): LiveSync {
     start() {
       if (started || stopped) return;
       started = true;
+      if (deps.manual) {
+        set({ phase: 'idle' });
+        // Held as the running pass, so a wake during the check coalesces and idle() waits for it.
+        running = (async () => {
+          let first = false;
+          try {
+            const held = await deps.hasCurrentState();
+            if (!held.ok) set({ phase: 'failed', error: held.error.message });
+            else first = !held.value;
+          } catch (e) {
+            set({ phase: 'failed', error: e instanceof Error ? e.message : String(e) });
+          } finally {
+            running = null;
+            if ((first || dirty) && !stopped) {
+              if (first) run();
+              else wake();
+            } else settleIfIdle();
+          }
+        })();
+        return;
+      }
       unsubscribe = deps.subscribe(
         () => wake(),
         (on) => {

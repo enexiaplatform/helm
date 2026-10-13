@@ -70,6 +70,7 @@ async function liveStack(options = {}) {
     debounceMs: 1,
     retryMs: 1,
     fallbackMs: 1e9,
+    manual: options.manual,
   });
   return { s, live, calls, notify: () => notify(), listening: (on) => setListening(on), unsubscribed: () => unsubscribed };
 }
@@ -287,6 +288,66 @@ describe('live sync says failure out loud and recovers', () => {
     assert.equal(t.live.state().phase, 'failed');
     assert.match(t.live.state().error, /changed shape/);
     assert.equal(t.calls.composed, 0);
+    t.live.stop();
+  });
+});
+
+describe('manual sync reads only when asked', () => {
+  it('on start it reads nothing when a current state is held, and never listens', async () => {
+    const t = await liveStack({ manual: true, composedBefore: true });
+    t.s.reader.rows.push(row({ id: 'opp-1', updated_at: at(1) }));
+    t.live.start();
+    await t.live.idle();
+    assert.equal(t.calls.pages.length, 0);
+    assert.equal(t.calls.composed, 0);
+    assert.equal(t.live.state().phase, 'idle');
+    assert.equal(t.live.state().version, 0);
+    t.notify();
+    await t.live.idle();
+    assert.equal(t.calls.pages.length, 0, 'a notice does not wake a manual sync');
+    t.live.stop();
+    assert.equal(t.unsubscribed(), 0, 'it never subscribed');
+  });
+
+  it('a first reader with no current state gets one on start', async () => {
+    const t = await liveStack({ manual: true });
+    t.s.reader.rows.push(row({ id: 'opp-1', updated_at: at(1) }));
+    t.live.start();
+    await t.live.idle();
+    assert.equal(t.calls.composed, 1);
+    assert.equal(t.live.state().phase, 'current');
+    t.live.stop();
+  });
+
+  it('wake() reads and composes what changed; nothing reads again until the next wake', async () => {
+    const t = await liveStack({ manual: true, composedBefore: true });
+    t.s.reader.rows.push(row({ id: 'opp-1', updated_at: at(1) }));
+    t.live.start();
+    await t.live.idle();
+    t.live.wake();
+    await t.live.idle();
+    assert.equal(t.calls.passes, 1);
+    assert.equal(t.calls.composed, 1);
+    assert.equal(t.live.state().phase, 'current');
+    assert.equal(t.live.state().version, 1);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(t.calls.passes, 1, 'no tick follows');
+    t.live.stop();
+  });
+
+  it('a failed manual read is said and not retried by itself', async () => {
+    const t = await liveStack({ manual: true, composedBefore: true, failPages: [true] });
+    t.s.reader.rows.push(row({ id: 'opp-1', updated_at: at(1) }));
+    t.live.start();
+    await t.live.idle();
+    t.live.wake();
+    await t.live.idle();
+    assert.equal(t.live.state().phase, 'failed');
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(t.calls.passes, 1, 'no retry until asked');
+    t.live.wake();
+    await t.live.idle();
+    assert.equal(t.live.state().phase, 'current');
     t.live.stop();
   });
 });

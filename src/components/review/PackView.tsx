@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { ReviewPack } from '@helm/review-runtime';
 import { SectionHead } from '../ui/SectionHead.tsx';
 import { Pill } from '../ui/Pill.tsx';
+import { readable } from '../../lib/format.ts';
 
 const day = (iso: string): string => iso.slice(0, 10);
 
@@ -9,8 +10,8 @@ function Block({ title, note, children, count }: { title: string; note?: string 
   return (
     <section className="mt-8">
       {/* An empty section says its note once, as its body — not again as the caveat above it. */}
-      <SectionHead title={title} meta={String(count)} caveat={count > 0 ? (note ?? undefined) : undefined} size="section-sm" />
-      {count === 0 ? <p className="mt-3 text-dense text-ink-500">{note ?? 'Nothing.'}</p> : <div className="mt-2">{children}</div>}
+      <SectionHead title={title} meta={String(count)} caveat={count > 0 && note ? readable(note) : undefined} size="section-sm" />
+      {count === 0 ? <p className="mt-3 text-dense text-ink-500">{note ? readable(note) : 'Nothing.'}</p> : <div className="mt-2">{children}</div>}
     </section>
   );
 }
@@ -22,7 +23,7 @@ function Block({ title, note, children, count }: { title: string; note?: string 
 export function PackView({ pack, limit = 12 }: { pack: ReviewPack; limit?: number }) {
   return (
     <div>
-      <p className="text-dense text-ink-700">{pack.statement}</p>
+      <p className="text-dense text-ink-700">{readable(pack.statement)}</p>
       <p className="mt-1 font-mono text-meta text-ink-500">pack {pack.fingerprint} · read at {pack.lens.recordedThrough.slice(0, 16).replace('T', ' ')} UTC{pack.since ? ` · since ${pack.since.recordedThrough.slice(0, 16).replace('T', ' ')} UTC` : ' · first review'}</p>
 
       <Block title="What changed?" count={pack.changed.changes.length} note={pack.changed.statement}>
@@ -31,7 +32,7 @@ export function PackView({ pack, limit = 12 }: { pack: ReviewPack; limit?: numbe
           {pack.changed.changes.slice(0, limit).map((c) => (
             <li key={`${c.itemKey}-${c.change}`} className="border-b border-ink-200 py-2">
               <span className="font-mono text-meta text-ink-500">{c.category} · {c.change}</span>
-              <span className="block text-dense text-ink-900">{c.statement}</span>
+              <span className="block text-dense text-ink-900">{readable(c.statement)}</span>
             </li>
           ))}
         </ul>
@@ -43,7 +44,7 @@ export function PackView({ pack, limit = 12 }: { pack: ReviewPack; limit?: numbe
           {pack.attention.items.map((a) => (
             <li key={a.itemKey} className="border-b border-ink-200 py-2">
               <Pill tone="open">{a.condition.replaceAll('_', ' ')}</Pill>
-              <span className="mt-1 block text-dense text-ink-900">{a.statement}</span>
+              <span className="mt-1 block text-dense text-ink-900">{readable(a.statement)}</span>
             </li>
           ))}
         </ul>
@@ -67,7 +68,7 @@ export function PackView({ pack, limit = 12 }: { pack: ReviewPack; limit?: numbe
             <li key={o.commitmentId} className="border-b border-ink-200 py-2">
               <span className="block text-dense font-medium text-ink-900">{o.title}</span>
               {o.lines.map((l) => (
-                <span key={l.label} className="block font-mono text-meta text-ink-700">{l.label}: committed {l.committed ?? '—'} · now {l.current ?? '—'} · difference {l.difference ?? '—'}{l.unit ? ` ${l.unit}` : ''}</span>
+                <span key={l.label} className="block font-mono text-meta text-ink-700">{readable(`${l.label}: committed ${l.committed ?? '—'} · now ${l.current ?? '—'} · difference ${l.difference ?? '—'}${l.unit ? ` ${l.unit}` : ''}`)}</span>
               ))}
               {o.unresolved.map((u) => <span key={u} className="block text-meta text-red-700">{u}</span>)}
             </li>
@@ -80,7 +81,7 @@ export function PackView({ pack, limit = 12 }: { pack: ReviewPack; limit?: numbe
           {pack.assumptionsChanged.items.map((a) => (
             <li key={a.assumptionId + a.reviewedAt} className="border-b border-ink-200 py-2">
               <span className={a.outcome === 'DISPROVED' ? 'font-mono text-meta text-red-700' : 'font-mono text-meta text-ink-500'}>{a.outcome} · {day(a.reviewedAt)}</span>
-              <span className="block text-dense text-ink-900">{a.statement}</span>
+              <span className="block text-dense text-ink-900">{readable(a.statement)}</span>
             </li>
           ))}
         </ul>
@@ -91,7 +92,7 @@ export function PackView({ pack, limit = 12 }: { pack: ReviewPack; limit?: numbe
           {pack.outcomesArrived.items.map((o) => (
             <li key={o.outcomeReviewId} className="border-b border-ink-200 py-2">
               <span className="block font-mono text-meta text-ink-500">outcome review {day(o.reviewedAt)}</span>
-              {o.variances.map((v) => <span key={v.label} className="block font-mono text-meta text-ink-800">{v.label}: expected {v.expected ?? '—'} · actual {v.actual ?? '—'} · variance {v.variance ?? '—'}</span>)}
+              {o.variances.map((v) => <span key={v.label} className="block font-mono text-meta text-ink-800">{readable(`${v.label}: expected ${v.expected ?? '—'} · actual ${v.actual ?? '—'} · variance ${v.variance ?? '—'}`)}</span>)}
             </li>
           ))}
         </ul>
@@ -111,14 +112,14 @@ export function PackView({ pack, limit = 12 }: { pack: ReviewPack; limit?: numbe
           {pack.causalChanges.items.map((c) => (
             <li key={c.claimId} className="border-b border-ink-200 py-2">
               <span className="font-mono text-meta text-ink-500">revision {c.revision} · {c.status} · {day(c.recordedAt)}</span>
-              <span className="block text-dense text-ink-900">{c.statement}</span>
+              <span className="block text-dense text-ink-900">{readable(c.statement)}</span>
             </li>
           ))}
         </ul>
       </Block>
 
       {pack.unavailable.length > 0 && (
-        <p className="mt-6 text-dense text-red-700">Not available to this pack: {pack.unavailable.join('; ')}.</p>
+        <p className="mt-6 text-dense text-red-700">Not available to this pack: {readable(pack.unavailable.join('; '))}.</p>
       )}
     </div>
   );

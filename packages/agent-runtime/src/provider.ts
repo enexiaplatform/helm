@@ -15,6 +15,25 @@ import type { OutputSection, PerspectiveId } from './types.ts';
 const CONCERN = /BREACH|BLOCKED|UNKNOWN|SHORT|FALLS|DISPROVED|CONTESTED|HYPOTHESIS|NOT_EVALUATED|AWAITING|PENDING|NOT_AUTHORIZED|ESCALATED|OFF_TRACK|STALE|UNAVAILABLE/i;
 const ASSUMPTION_CHALLENGED = /DISPROVED|CHALLENGED|OPEN|PENDING|UNCHECKED/i;
 const clip = (s: string, n = 220) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+/** Cut at a word, never inside one: a question that ends "NOT EVALUAT…?" reads as broken (audit 2026-10-13). */
+const clipWords = (s: string, n = 90) => (s.length > n ? `${s.slice(0, s.lastIndexOf(' ', n - 1) > n / 2 ? s.lastIndexOf(' ', n - 1) : n - 1).replace(/[,;:\s]+$/, '')}…` : s);
+
+/**
+ * The question a concern raises, asked of the concern itself. Each is a question to gather evidence for — never a
+ * choice — and one kind of condition asks one question, however many commitments it names.
+ */
+export function concernQuestion(e: { label: string; status: string | null }): string {
+  const label = e.label.trim();
+  const authority = label.match(/^Authority over (.+?) is (?:NOT EVALUATED|INDETERMINATE)\.?$/);
+  if (authority || e.status === 'AUTHORITY_UNRESOLVED') return 'Who records the authority verdict for the commitments that carry none?';
+  if (e.status === 'COMMITTED_FUTURE_OFF_TRACK') return `What explains the distance between what was committed and what happened: ${clipWords(label.split(':')[0]!, 70)}?`;
+  if (e.status === 'OBJECTIVE_OFF_TRACK') return `What would bring ${clipWords(label.split(':')[0]!, 70)} back to its target?`;
+  if (e.status === 'CRITICAL_ASSUMPTION_DISPROVED') {
+    const quoted = label.match(/"([^"]+)"/)?.[1];
+    return `What does the disproved assumption change for the commitment it supported${quoted ? `: “${clipWords(quoted.replace(/\.$/, ''), 70)}”` : ''}?`;
+  }
+  return `What would resolve: ${clipWords(label).replace(/[.?:]+$/, '')}?`;
+}
 const body = (e: { label: string; values: readonly string[] }) => (e.values.length === 0 ? e.label : e.values[0]!.toLowerCase().startsWith(e.label.toLowerCase()) ? e.values.join('; ') : `${e.label}: ${e.values.join('; ')}`);
 
 export function sectionOf(e: EvidenceItem): OutputSection {
@@ -47,8 +66,8 @@ export function createReferencePerspectiveProvider(base: AiProvider = createRefe
           continue;
         }
         statements.push({ text: clip(`${body(e)}${e.status ? ` [${e.status}]` : ''}`), class: e.kind, evidenceIds: [e.id], section });
-        if (section === 'CHALLENGED_ASSUMPTIONS') questions.push(`What would confirm or disprove: ${clip(e.label, 90).replace(/[.?]+$/, '')}?`);
-        if (section === 'CONCERNS' && questions.length < 4) questions.push(`What would resolve: ${clip(e.label, 90).replace(/[.?:]+$/, '')}?`);
+        if (section === 'CHALLENGED_ASSUMPTIONS') questions.push(`What would confirm or disprove: ${clipWords(e.label).replace(/[.?]+$/, '')}?`);
+        if (section === 'CONCERNS' && new Set(questions).size < 4) questions.push(concernQuestion(e));
       }
       // A perspective states what it notices in kernel order, and says how much it leaves out — never "the most important".
       const CAP = 6;

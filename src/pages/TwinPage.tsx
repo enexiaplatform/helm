@@ -385,7 +385,8 @@ export function TwinPage() {
                   <span className="mt-[2px] block font-mono text-meta text-ink-500">{lensText(x)}</span>
                 </span>
                 <span className="flex flex-wrap items-center justify-end gap-2">
-                  <Pill tone="neutral">{x.spec.kind === 'CURRENT' && x.id !== newestCurrentId ? 'CURRENT · SUPERSEDED' : x.spec.kind}</Pill>
+                  {/* A state of the enterprise is the newest one or an earlier one — never "current" and "superseded" at once (audit 2026-10-13). */}
+                  <Pill tone="neutral">{x.spec.kind === 'CURRENT' ? (x.id === newestCurrentId ? 'NEWEST STATE' : 'EARLIER STATE') : x.spec.kind.replaceAll('_', ' ')}</Pill>
                   <Pill tone={COMPLETENESS_TONE[x.completeness]}>{x.completeness}</Pill>
                   <span className="font-mono text-meta text-ink-500">{x.fingerprint.slice(0, 20)}</span>
                 </span>

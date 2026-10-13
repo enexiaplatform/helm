@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { cadences, type Cadence, type ProjectedReviews, type ReviewPack, type ReviewView } from '@helm/review-runtime';
 import { parsePeriodText, periodContaining, periodKey, quarterPeriod, type Period } from '@helm/shared';
 import { useHelmStore } from '../services/helmStore.ts';
@@ -49,10 +49,16 @@ function quartersOf(p: Period): string[] {
 }
 
 function OpenForm({ ctx, onOpened }: { ctx: ReviewContext; onOpened: (id: string) => void }) {
-  const current = periodKey(periodContaining(new Date(), 'QUARTER'));
+  // The quarter is the state's own, not the wall clock's (audit 2026-10-13: the demo stands in 2027-Q2 and the form
+  // offered 2026-Q4); a link from Getting started names the period it means.
+  const [params] = useSearchParams();
+  const [current] = useState(() => params.get('open') ?? periodKey(periodContaining(ctx.genome.causal.twin.kernel.clock.now(), 'QUARTER')));
   const [cadence, setCadence] = useState<Cadence>('QUARTERLY');
-  const [title, setTitle] = useState('');
+  // The title is written for the reader and stays theirs once they edit it: a placeholder that looks filled in and a
+  // button that stays disabled was the audit's finding.
+  const [edited, setEdited] = useState<string | null>(null);
   const [period, setPeriod] = useState(current);
+  const title = edited ?? `${cadence.charAt(0)}${cadence.slice(1).toLowerCase()} business review — ${period.trim() || current}`;
   const [err, setErr] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
   const field = 'rounded-lg border border-ink-200 bg-white px-3 py-2 text-ui';
@@ -83,8 +89,11 @@ function OpenForm({ ctx, onOpened }: { ctx: ReviewContext; onOpened: (id: string
       <div className="flex flex-wrap items-end gap-3">
         <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1"><span className="helm-label">Cadence</span><select className={field} value={cadence} onChange={(e) => setCadence(e.target.value as Cadence)}>{cadences.map((c) => <option key={c} value={c}>{c.toLowerCase()}</option>)}</select></label>
         <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1"><span className="helm-label">Period</span><input className={field} placeholder={current} value={period} onChange={(e) => setPeriod(e.target.value)} /></label>
-        <label className="grid min-w-[220px] flex-1 gap-1"><span className="helm-label">Title</span><input className={field} placeholder={`${cadence.charAt(0)}${cadence.slice(1).toLowerCase()} business review — ${current}`} value={title} onChange={(e) => setTitle(e.target.value)} /></label>
+        <label className="grid min-w-[220px] flex-1 gap-1"><span className="helm-label">Title</span><input className={field} value={title} onChange={(e) => setEdited(e.target.value)} /></label>
         <Button variant="secondary" onClick={() => void submit()} disabled={opening || !title.trim() || !period.trim()}>{opening ? 'Opening the review…' : 'Open the review'}</Button>
+      </div>
+      <div>
+        {(!title.trim() || !period.trim()) && <p className="text-meta text-ink-600">A review needs a period and a title.</p>}
       </div>
       <p className={cn('font-mono text-meta', parsed.ok ? 'text-ink-500' : 'text-red-700')}>
         {parsed.ok ? `period ${periodKey(parsed.value)} · the opening state reads value state for ${reads!.join(', ')}` : parsed.error.message}
@@ -209,6 +218,13 @@ export function ReviewsPage() {
   const [lensKey, setLensKey] = useState('now');
   const [selected, setSelected] = useState<string | null>(null);
   const [which, setWhich] = useState<Which>('PREPARATION');
+  // "#open-review" (from Getting started) lands on the form at the foot of the page once it is drawn.
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (hash !== '#open-review' || !ctx) return;
+    const t = setTimeout(() => document.getElementById('open-review')?.scrollIntoView({ block: 'start' }), 300);
+    return () => clearTimeout(t);
+  }, [hash, ctx]);
   const [tick, setTick] = useState(0);
   const [state, setState] = useState<{ key: string; value: ProjectedReviews } | null>(null);
   const [packState, setPackState] = useState<{ key: string; pack: ReviewPack | null; withheld: number; statement: string } | null>(null);
@@ -338,7 +354,7 @@ export function ReviewsPage() {
                     <span className="text-dense text-ink-900">{v.review.title}</span>
                   </div>
                   <p className="mt-1 font-mono text-meta text-ink-500">
-                    {v.review.periodLabel} · opened {stamp(v.review.openingLens.recordedThrough)}{v.closure ? ` · closed ${stamp(v.closure.closingLens.recordedThrough)}` : ''} · {v.items.length} item(s){v.previous ? ` · follows ${v.previous.periodLabel}` : ' · first review'}
+                    {v.review.periodLabel} · opened {stamp(v.review.openingLens.recordedThrough)}{v.closure ? ` · closed ${stamp(v.closure.closingLens.recordedThrough)}` : ''} · {v.items.length} {v.items.length === 1 ? 'item' : 'items'}{v.previous ? ` · follows ${v.previous.periodLabel}` : ' · first review'}
                   </p>
                 </li>
               ))}
@@ -419,7 +435,7 @@ export function ReviewsPage() {
       {chosen && <CouncilPanel question={`What does each management function make of ${chosen.review.title}?`} request={{ reviewId: chosen.review.id, ...(chosen.items.find((i) => i.kind === 'DECISION') ? { decisionId: chosen.items.find((i) => i.kind === 'DECISION')!.ref!.id } : {}) }} viewer={viewer} />}
 
       {(!openReview || ctx.mode === 'demo') && (
-        <section className="mt-10">
+        <section id="open-review" className="mt-10 scroll-mt-6">
           <SectionHead title="Open the next review" caveat="what the previous review left open is carried forward by reference" />
           {openReview ? <p className="mt-3 text-dense text-ink-600">{openReview.review.title} is open; close it before opening the next of its cadence.</p> : null}
           <OpenForm ctx={ctx} onOpened={(id) => { setSelected(id); setTick((t) => t + 1); }} />

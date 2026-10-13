@@ -243,7 +243,9 @@ export function rollUpItems(items: readonly { kind: string; layer: string | null
 // ---------------------------------------------------------- display helpers
 
 const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 });
-const plain = new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 });
+// Two decimals for reading (audit 2026-10-13: "35.4731%", "10.909091 units"); the exact value stays one hover away.
+const plain = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+const minus = (x: string): string => x.replace(/^-/, '−');
 
 /** For reading only: the exact value is always one hover away. */
 export function displayValue(value: string | null, unit: QuantityUnit | null, currency: string | null): string {
@@ -252,15 +254,15 @@ export function displayValue(value: string | null, unit: QuantityUnit | null, cu
   if (!Number.isFinite(n)) return value;
   switch (unit) {
     case 'currency':
-      return `${compact.format(n)} ${currency ?? ''}`.trim();
+      return minus(`${compact.format(n)} ${currency ?? ''}`.trim());
     case 'percentage':
-      return `${plain.format(n)}%`;
+      return `${minus(plain.format(n))}%`;
     case 'days':
-      return `${plain.format(n)} d`;
+      return `${minus(plain.format(n))} d`;
     case 'units':
-      return `${plain.format(n)} u`;
+      return `${minus(plain.format(n))} u`;
     default:
-      return plain.format(n);
+      return minus(Math.abs(n) >= 1_000_000 ? compact.format(n) : plain.format(n));
   }
 }
 
@@ -281,8 +283,8 @@ export const displayInstant = (iso: string): string =>
     day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
   }) + ' UTC';
 
-/** The short form the console's clock strip uses: "19 Sep 12:00 UTC". */
+/** The short form the console's clock strip uses: "19 Sep 2026, 12:00 UTC" — with its year, which the demo's story spans. */
 export const displayClock = (iso: string): string =>
   new Date(iso).toLocaleString('en-GB', {
-    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
-  }).replace(',', '') + ' UTC';
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
+  }) + ' UTC';

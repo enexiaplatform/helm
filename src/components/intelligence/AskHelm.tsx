@@ -21,18 +21,18 @@ export function AskHelm({ viewer, suggestions = [] }: { viewer: TwinViewer | nul
   const myRole = useHelmStore((s) => s.myRole);
   const scope = useMemo(() => (mode === 'demo' ? demoScope() : activeOrgId ? cloudScope(activeOrgId, userId ?? '', myRole()) : null), [mode, activeOrgId, userId, myRole]);
   const [question, setQuestion] = useState('');
-  const [state, setState] = useState<{ answer: IntelligenceAnswer | null; error: string | null; busy: boolean } | null>(null);
+  const [state, setState] = useState<{ asked: string; answer: IntelligenceAnswer | null; error: string | null; busy: boolean } | null>(null);
 
   const ask = async (asked: string = question) => {
     if (!scope || !viewer || asked.trim().length < 4 || state?.busy) return;
-    setState({ answer: null, error: null, busy: true });
+    setState({ asked, answer: null, error: null, busy: true });
     try {
       const ctx = await resolveIntelligenceContext(mode ?? 'demo', scope);
       if (!ctx) throw new Error('The AI layer is unavailable in this mode.');
-      setState({ answer: await askHelm(ctx, viewer, 'ASK_HELM', { question: asked }), error: null, busy: false });
+      setState({ asked, answer: await askHelm(ctx, viewer, 'ASK_HELM', { question: asked }), error: null, busy: false });
       markAsked();
     } catch (e) {
-      setState({ answer: null, error: e instanceof Error ? e.message : String(e), busy: false });
+      setState({ asked, answer: null, error: e instanceof Error ? e.message : String(e), busy: false });
     }
   };
 
@@ -73,7 +73,7 @@ export function AskHelm({ viewer, suggestions = [] }: { viewer: TwinViewer | nul
         <span className="text-meta text-ink-500">Answers only from governed, read-only tools, as you.</span>
       </div>
       {state?.error && <p role="alert" className="mt-2 text-dense text-red-700">{state.error}</p>}
-      {state?.answer && <AnswerView answer={state.answer} />}
+      {state?.answer && <AnswerView answer={state.answer} question={state.asked} />}
     </div>
   );
 }

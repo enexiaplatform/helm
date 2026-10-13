@@ -6,7 +6,8 @@ export type NavGroup = 'Management' | 'Model' | 'Learning' | 'Setup';
 export interface NavItem { key: string; label: string; group?: NavGroup }
 /**
  * Grouped by what a manager comes for (audit 2026-10-12: fourteen flat entries, five of them pages that only explain
- * why they are empty). Learning and Setup fold away until opened or until one of their pages is the current one.
+ * why they are empty). Setup folds away until opened or until one of its pages is the current one; Learning stays open,
+ * because the Cockpit links into it (audit 2026-10-13).
  */
 export const HELM_NAV: NavItem[] = [
   { key: 'cockpit', label: 'Cockpit', group: 'Management' },
@@ -24,7 +25,7 @@ export const HELM_NAV: NavItem[] = [
   { key: 'governance', label: 'Governance' },
   { key: 'ontology', label: 'Ontology' },
 ];
-const FOLDED: readonly NavGroup[] = ['Learning', 'Setup'];
+const FOLDED: readonly NavGroup[] = ['Setup'];
 
 /** The group an item belongs to: its own, or the last one declared above it. */
 function groupOf(items: readonly NavItem[], idx: number): NavGroup | null {
@@ -173,7 +174,8 @@ export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items =
               )}
             </span>
             {/* The boundary a new future forks at. Two equal instants read as one: "now", not a riddle. */}
-            {effectiveAsOf && <span>{effectiveAsOf === recordedThrough ? `New futures fork at ${effectiveAsOf}` : `Effective ${effectiveAsOf} · recorded through ${recordedThrough}`}</span>}
+            {/* Only on instrument pages: a management page states its own "as known on", and two clocks there read as two "nows". */}
+            {effectiveAsOf && <span>{effectiveAsOf === recordedThrough ? `New futures fork at ${effectiveAsOf}` : `New futures fork at ${effectiveAsOf} · recorded through ${recordedThrough}`}</span>}
           </div>
         )}
         {error && (

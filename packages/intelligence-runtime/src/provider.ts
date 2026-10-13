@@ -44,6 +44,8 @@ export interface AiProvider extends ProviderIdentity {
 // ------------------------------------------------------------------ reference
 
 const clip = (s: string, n = 220) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+/** A capitalised word of three letters or more with no digit: a name, not "Q1" or "2027". */
+const NAMES_SOMETHING = /(?:^|[\s"“(])\p{Lu}\p{L}{2,}/u;
 
 /**
  * The reference provider: no model, no network, no randomness. It states what the
@@ -67,7 +69,10 @@ export function createReferenceProvider(): AiProvider {
         if (has(tool) && re.test(q)) calls.push({ tool, args });
       };
       // A question about commitments, targets or what is waiting on management is a question about attention, whatever else it asks.
-      want('getManagementAttention', /attention|matters|off.?track|risk|issue|commit|target|objective|behind|short of|furthest|gap|decision|approv|breach|challeng|chú ý|quan trọng|cần làm|quyết định|mục tiêu/, {});
+      // A deal's "risk" is a pipeline condition, not an attention one (audit 2026-10-13: "which deals are at risk this quarter?"
+      // came back with nine authority and margin conditions).
+      const aboutDeals = /pipeline|opportunit|deal|clos|customer|account|probab|forecast|revenue|sales|khách|cơ hội|doanh|chốt|xác suất/.test(q);
+      want('getManagementAttention', aboutDeals ? /attention|matters|off.?track|commit|target|objective|behind|short of|decision|approv|breach|challeng|chú ý|quan trọng|cần làm|quyết định|mục tiêu/ : /attention|matters|off.?track|risk|issue|commit|target|objective|behind|short of|furthest|gap|decision|approv|breach|challeng|chú ý|quan trọng|cần làm|quyết định|mục tiêu/, {});
       want('getEnterpriseState', /state|now|current|where are we/, {});
       want('getCausalClaims', /caus|why|evidence|hypothes/, {});
       want('getGenomePatterns', /pattern|recurr|learn|lesson/, {});
@@ -84,11 +89,21 @@ export function createReferenceProvider(): AiProvider {
           args['closePeriod'] = `${d.getUTCFullYear()}-Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
         }
         if (/risk|not clos|unlikely|low probab|weak|slip|rủi ro|khó chốt/.test(q)) args['probabilityAtMost'] = 0.25;
-        if (/zero|value of 0|\b0 (sgd|vnd|usd)|no value|without a value|giá trị 0|giá trị bằng 0/.test(q)) args['condition'] = 'ZERO_VALUE';
+        if (/zero|value of 0|\b0 (sgd|vnd|usd)|giá trị 0|giá trị bằng 0/.test(q)) args['condition'] = 'ZERO_VALUE';
+        else if (/no value|without a value|chưa có giá trị/.test(q)) args['condition'] = 'NO_VALUE';
         else if (/no probab|without a probab|chưa có xác suất/.test(q)) args['condition'] = 'NO_PROBABILITY';
+        else if (/no (expected )?close|without a close|no close period|chưa có (kỳ|thời điểm) chốt/.test(q)) args['condition'] = 'NO_CLOSE_PERIOD';
+        // The question may name a customer or a deal — a capitalised word past its first ("… with Rohto Vietnam?"); the
+        // tool reads which names the state holds. A question that names nothing keeps exactly its named conditions.
+        if (NAMES_SOMETHING.test(input.question.trim().replace(/^\S+\s*/, ''))) args['mentioning'] = input.question;
         calls.push({ tool: 'getPipelinePositions', args });
       }
-      if (calls.length === 0 && has('getManagementAttention')) calls.push({ tool: 'getManagementAttention', args: {} });
+      if (calls.length === 0) {
+        // No word of the question routes it. It may still name a customer or a deal ("How is Rohto doing?"): read what
+        // the state holds about that name — its pipeline and the conditions that name it — before the general attention.
+        if (has('getPipelinePositions')) calls.push({ tool: 'getPipelinePositions', args: { mentioning: input.question, onlyIfMentioned: 'yes' } });
+        if (has('getManagementAttention')) calls.push({ tool: 'getManagementAttention', args: { mentioning: input.question } });
+      }
       return calls;
     },
 

@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { ClaimExplanation, ClaimView, CorrelationFinding, EvidenceAssessment, ModelDependency, ProjectedCausalView, QuestionInvestigation, Traversal } from '@helm/causal-runtime';
 import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.tsx';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
 import {
@@ -101,7 +101,9 @@ export function CausalPage() {
   const [error, setError] = useState<string | null>(null);
   const [viewerKey, setViewerKey] = useState('');
   const [lensKey, setLensKey] = useState('now');
-  const [selected, setSelected] = useState<string | null>(null);
+  // ?claim=<id> opens one claim: the Cockpit links each belief it shows to its own evidence.
+  const [params] = useSearchParams();
+  const [selected, setSelected] = useState<string | null>(() => params.get('claim'));
   // Async results are keyed by the inputs they were read for.
   const [claimsState, setClaimsState] = useState<{ key: string; value: ProjectedCausalView } | null>(null);
   const [questionsState, setQuestionsState] = useState<{ key: string; value: readonly QuestionInvestigation[] } | null>(null);
@@ -121,7 +123,7 @@ export function CausalPage() {
         setCtx(c);
         setCorrelations(corr);
         setViewerKey(c.viewers.find((v) => v.key === 'countryGM')?.key ?? c.viewers[0]?.key ?? '');
-        if (c.story) setSelected(c.story.claims.H1.claim.id);
+        if (c.story) setSelected((s) => s ?? c.story!.claims.H1.claim.id);
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : String(e));
       }

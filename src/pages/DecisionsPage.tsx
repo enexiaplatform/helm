@@ -166,14 +166,18 @@ export function DecisionsPage() {
     { title: 'Cancelled', items: cancelled },
   ];
 
-  const sentences = [
-    preparing.length > 0 &&
-      `${word(preparing.length)} ${plural(preparing.length, 'question is', 'questions are')} still being prepared.`,
-    awaiting.length > 0 &&
-      `${word(awaiting.length)} ${plural(awaiting.length, 'commitment is waiting for its review.', 'commitments are waiting for their review.')}`,
-    reviewed.length > 0 && `${word(reviewed.length)} ${plural(reviewed.length, 'has', 'have')} been looked at again.`,
-  ].filter(Boolean);
-  const headline = items.length === 0 ? 'No decision has been framed yet.' : sentences.join(' ') || 'Every decision here was cancelled.';
+  // The headline answers "where do our decisions stand?" in one sentence (audit 2026-10-13: "One has been looked at again.").
+  const parts = [
+    preparing.length > 0 && `${word(preparing.length).toLowerCase()} still being prepared`,
+    awaiting.length > 0 && `${word(awaiting.length).toLowerCase()} committed and waiting for review`,
+    reviewed.length > 0 && `${word(reviewed.length).toLowerCase()} reviewed against what happened`,
+    cancelled.length > 0 && `${word(cancelled.length).toLowerCase()} cancelled`,
+  ].filter((x): x is string => typeof x === 'string');
+  const all = parts.length === 1 ? parts[0]!.replace(/^\S+ /, items.length === 1 ? '' : items.length === 2 ? 'both ' : 'all ') : null;
+  const headline =
+    items.length === 0
+      ? 'No decision has been framed yet.'
+      : `${word(items.length)} ${plural(items.length, 'decision', 'decisions')} on record${all ? `, ${all}` : `: ${parts.join(', ')}`}.`;
   const frame = ctx ? (
     <Button variant="primary" onClick={() => setFraming(true)}>
       Frame a decision

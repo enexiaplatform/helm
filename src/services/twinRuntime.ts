@@ -62,6 +62,7 @@ import {
 import { createPostgresTwinStore } from '@helm/twin-runtime/postgres';
 import { createInMemoryReviewStore, createMeridianReviewDriver, createReviewRuntime, type MeridianReviewDriver, type ReviewRuntime, type ReviewSources } from '@helm/review-runtime';
 import { seqIdGen, systemClock, type Clock, type Scope, type UserId } from '@helm/shared';
+import { attentionTiers } from './attentionTiers.ts';
 import { supabaseClient } from '../lib/supabaseClient.ts';
 import { calculations, getCloudGraphs, registry, valueMetrics } from './ontologyGraph.ts';
 import { resolveScenarioWorkspace } from './scenarioRuntime.ts';
@@ -383,7 +384,8 @@ export async function attentionCount(mode: 'demo' | 'cloud', scope: Scope): Prom
   const last = [...all].filter((s) => s.spec.kind === 'CURRENT').reverse().find((s) => canSeeSnapshot(viewer, s, ctx.units).visible);
   if (!last) return 0;
   const projected = await ctx.twin.projectForViewer(ctx.scope, last.id, viewer, ctx.units);
-  return projected.ok ? projected.value.items.filter((i) => i.kind === 'ATTENTION').length : 0;
+  // The lines the Cockpit shows, so the brass count and the headline never disagree.
+  return projected.ok ? attentionTiers(projected.value.items).lines : 0;
 }
 
 export async function buildCurrentSnapshot(ctx: TwinContext, twinScope: TwinScope): Promise<ComposedSnapshot> {

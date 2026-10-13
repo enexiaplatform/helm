@@ -15,6 +15,6 @@
 export * from './types.ts';
 export { PERSPECTIVES, perspectiveOf, coverageOf, relevantTo } from './perspectives.ts';
 export type { PerspectiveDef, Coverage } from './perspectives.ts';
-export { createReferencePerspectiveProvider, sectionOf } from './provider.ts';
+export { createReferencePerspectiveProvider, sectionOf, concernQuestion } from './provider.ts';
 export { createCouncil, planFor, tensionsOf, COUNCIL_TEMPLATE_VERSION } from './council.ts';
 export type { Council, CouncilOptions } from './council.ts';

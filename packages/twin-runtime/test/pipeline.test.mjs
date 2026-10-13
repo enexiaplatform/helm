@@ -34,7 +34,15 @@ describe('the pipeline as the state holds it', () => {
   });
 
   it('counts what the pipeline states about itself, never a score', () => {
-    assert.deepEqual(pipelineFacts(readPipeline(items)), { opportunities: 3, withValue: 2, zeroValue: 1, noValue: 1, noProbability: 2, modelled: 1, withoutCustomer: 2, noClosePeriod: 1 });
+    assert.deepEqual(pipelineFacts(readPipeline(items)), { opportunities: 3, withValue: 2, zeroValue: 1, noValue: 1, noProbability: 2, modelled: 1, withoutCustomer: 2, noClosePeriod: 1, valueWithheld: 0, probabilityWithheld: 0 });
+  });
+
+  it('counts a reading above the reader\'s clearance as withheld, never as missing (audit 2026-10-13)', () => {
+    const f = pipelineFacts(readPipeline(items), { value: false, probability: false });
+    assert.equal(f.noValue, 0);
+    assert.equal(f.noProbability, 0);
+    assert.equal(f.valueWithheld, 1);
+    assert.equal(f.probabilityWithheld, 2);
   });
 
   it('reads a close period as Memoire states it, and does not guess a missing year', () => {

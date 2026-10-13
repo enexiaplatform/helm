@@ -96,7 +96,9 @@ export async function resolveDecisionContext(
 // ---------------------------------------------------------- display helpers
 
 const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 });
-const plain = new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 });
+// Two decimals for reading, a true minus (audit 2026-10-13); the exact value stays one hover away.
+const plain = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+const minus = (x: string): string => x.replace(/^-/, '−');
 
 /** For reading only: the exact value is always one hover away. */
 export function displayValue(value: string | null, unit: string | null, currency: string | null): string {
@@ -105,16 +107,24 @@ export function displayValue(value: string | null, unit: string | null, currency
   if (!Number.isFinite(n)) return value;
   switch (unit) {
     case 'currency':
-      return `${compact.format(n)} ${currency ?? ''}`.trim();
+      return minus(`${compact.format(n)} ${currency ?? ''}`.trim());
     case 'percentage':
-      return `${plain.format(n)}%`;
+      return `${minus(plain.format(n))}%`;
     case 'days':
-      return `${plain.format(n)} d`;
+      return `${minus(plain.format(n))} d`;
     case 'units':
-      return `${plain.format(n)} u`;
+      return `${minus(plain.format(n))} u`;
     default:
-      return plain.format(n);
+      return minus(Math.abs(n) >= 1_000_000 ? compact.format(n) : plain.format(n));
   }
+}
+
+/** A signed difference, alternative against reference: a percentage moves in points. */
+export function displaySignedDelta(diff: number, unit: string | null, currency: string | null): string {
+  if (!Number.isFinite(diff)) return '—';
+  const sign = diff > 0 ? '+' : diff < 0 ? '−' : '±';
+  if (unit === 'percentage') return `${sign}${plain.format(Math.abs(diff))} pts`;
+  return `${sign}${displayValue(String(Math.abs(diff)), unit, currency)}`;
 }
 
 export const displayConfidence = (c: number | null): string => (c === null ? '—' : c.toFixed(2));

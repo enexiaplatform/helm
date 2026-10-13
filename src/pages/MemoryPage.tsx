@@ -23,6 +23,7 @@ import { MemoryEntry, type MemoryView } from '../components/memory/MemoryEntry.t
 import {
   displayDate,
   displayInstant,
+  displaySignedDelta,
   displayValue,
   readable,
   resolveDecisionContext,
@@ -65,7 +66,8 @@ function toView(workspace: DecisionWorkspace): MemoryView | null {
         label: v.label,
         expected: displayValue(v.expected, v.unit, v.currency),
         actual: displayValue(v.actual, v.unit, v.currency),
-        variance: displayValue(v.variance, v.unit, v.currency),
+        // A variance is signed and a percentage moves in points (audit 2026-10-13: "-0.6878%").
+        variance: v.variance === null ? '—' : displaySignedDelta(Number(v.variance), v.unit, v.currency),
       })),
       assumptions: review.assumptionResults.map((a) => ({
         outcome: a.outcome,
@@ -128,13 +130,15 @@ export function MemoryPage() {
       ? 'Nothing is on record yet.'
       : `${word(entries.length)} ${plural(entries.length, 'commitment', 'commitments')} on record. ` +
         (reviewed === 0
-          ? 'None has been looked at again yet.'
-          : `${word(reviewed)} ${plural(reviewed, 'has', 'have')} been looked at again.`);
+          ? 'None has met its outcome yet.'
+          : reviewed === entries.length
+            ? `${entries.length === 1 ? 'It has' : entries.length === 2 ? 'Both have' : 'All have'} been reviewed against what happened.`
+            : `${word(reviewed)} ${plural(reviewed, 'has', 'have')} been reviewed against what happened.`);
 
   return (
     <>
       <PageHeader
-        kicker="Management · Memory"
+        kicker="Management · Decision memory"
         title={headline}
         lede="HELM keeps the reasoning and the outcome apart on purpose: a careful decision can still go badly, and a careless one can get lucky."
       />

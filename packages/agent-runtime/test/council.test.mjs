@@ -7,7 +7,7 @@
 import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
-import { PERSPECTIVES } from '../src/index.ts';
+import { PERSPECTIVES, concernQuestion } from '../src/index.ts';
 import { adminCaller, buildCouncil, buildCouncilStory, expectFail, gmCaller, scriptedProvider, unwrap, ALL_CLASSES, USERS, viewer, caller } from './harness.mjs';
 
 let s;
@@ -196,5 +196,17 @@ describe('an agent that misbehaves is held to the same grounding', () => {
 
   it('a question shorter than a sentence is refused before anything is read', async () => {
     assert.equal(expectFail(await s.council.convene(s.scope, adminCaller(), { question: 'why' }), 'short').code, 'agents.invalid_input');
+  });
+});
+
+describe('the questions a concern raises', () => {
+  it('ask one question per kind of condition, and never cut a word in half (audit 2026-10-13)', () => {
+    const a = concernQuestion({ label: 'Authority over Vietnam Pharma second-account allocation, expedited (demo) is NOT EVALUATED.', status: 'AUTHORITY_UNRESOLVED' });
+    const b = concernQuestion({ label: 'Authority over Thailand Pharma tender allocation (demo) is NOT EVALUATED.', status: 'AUTHORITY_UNRESOLVED' });
+    assert.equal(a, b, 'four commitments without a verdict raise one question');
+    const long = concernQuestion({ label: 'Something long enough to be clipped at a word boundary rather than in the middle of a word, which reads as broken text', status: null });
+    assert.match(long, /^What would resolve: .*\S…\?$/);
+    assert.ok(!/\w+…\w/.test(long));
+    assert.match(concernQuestion({ label: 'Disproved (material): "The provincial tender remains material this quarter."', status: 'CRITICAL_ASSUMPTION_DISPROVED' }), /“The provincial tender remains material this quarter”\?$/);
   });
 });

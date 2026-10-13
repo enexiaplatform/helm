@@ -1,4 +1,9 @@
+import { Fragment } from 'react';
 import { cn } from '../../lib/cn.ts';
+import { readable } from '../../lib/format.ts';
+
+/** Blocked reasons that differ only in their instants are one reason, said once under the row. */
+const sameReason = (r: string): string => r.replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, '…');
 
 export type Interp = 'FAVORABLE' | 'UNFAVORABLE' | 'CONTEXT_DEPENDENT' | 'NEUTRAL' | 'UNRESOLVED';
 export interface CompareCol { key: string; mark: string; title: string; state: string; partial?: boolean; selectable?: boolean }
@@ -35,8 +40,15 @@ export function ScenarioCompare({ cols, rows, selected, onSelect }: { cols: Comp
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.key ?? r.label} className="border-t border-ink-200">
+          {rows.map((r) => {
+            // A row blocked in several futures said its long reason once per column (audit 2026-10-13: seven copies of
+            // one red paragraph). Two or more blocked cells: each says BLOCKED, the reason is said once beneath.
+            const blocked = r.cells.filter((x) => x.blocked && x.delta);
+            const collapse = blocked.length >= 2;
+            const reasons = [...new Map(blocked.map((x) => [sameReason(x.delta!), x.delta!])).values()];
+            return (
+            <Fragment key={r.key ?? r.label}>
+            <tr className="border-t border-ink-200">
               <td className="py-[14px] pr-3 align-top">
                 <span className="block text-ui font-semibold leading-[22px]">{r.label}</span>
                 {r.meta && <span className="helm-meta block">{r.meta}</span>}
@@ -50,11 +62,21 @@ export function ScenarioCompare({ cols, rows, selected, onSelect }: { cols: Comp
                   ) : (
                     <span className={cn('block font-mono text-read font-medium leading-[22px]', x.blocked ? 'text-red-700' : 'text-ink-950')}>{x.value}</span>
                   )}
-                  {x.delta && <span className={cn('block font-mono text-meta font-medium', I[x.interp ?? 'NEUTRAL'])}>{x.delta}</span>}
+                  {x.delta && !(collapse && x.blocked) && <span className={cn('block font-mono text-meta font-medium', I[x.interp ?? 'NEUTRAL'])}>{x.delta}</span>}
                 </td>
               ))}
             </tr>
-          ))}
+            {collapse && (
+              <tr>
+                <td />
+                <td colSpan={cols.length} className="px-3 pb-[14px] text-meta text-red-700">
+                  <p className="max-w-reading">Blocked in {blocked.length} of {cols.length}: {reasons.map((x) => readable(x)).join(' · ')}</p>
+                </td>
+              </tr>
+            )}
+            </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

@@ -35,11 +35,25 @@ import { AssumptionList } from '../components/decision/AssumptionList.tsx';
 import { ChallengeList } from '../components/decision/ChallengeList.tsx';
 import { DecisionAuthoring } from '../components/decision/DecisionAuthoring.tsx';
 import { cn } from '../lib/cn.ts';
+import { readable as readableText, tidyText } from '../lib/format.ts';
+
+/** What raised a decision, in words. */
+const TRIGGER_WORDS: Record<string, string> = {
+  MANUAL: 'management',
+  OPPORTUNITY: 'an opportunity',
+  RISK: 'a risk',
+  ISSUE: 'an issue',
+  PLANNED_REVIEW: 'a planned review',
+  STRATEGIC_INITIATIVE: 'a strategic initiative',
+  EXCEPTION: 'an exception',
+  SIGNAL: 'a signal',
+};
 import {
   displayConfidence,
   displayDate,
   displayInstant,
   displayValue,
+  displaySignedDelta,
   readable,
   resolveDecisionContext,
   type DecisionWorkspaceContext,
@@ -74,7 +88,7 @@ const OUTCOME_TONE: Record<string, PillTone> = {
 
 function toCell(e: CriterionEvaluation | undefined): MatrixCell {
   if (!e) return { display: '—', outcome: 'NOT_ASSESSED' };
-  const note = [e.confidence !== null ? `c ${displayConfidence(e.confidence)}` : null, e.assessment?.author.label ?? null]
+  const note = [e.confidence !== null ? `confidence ${displayConfidence(e.confidence)}` : null, e.assessment?.author.label ?? null]
     .filter(Boolean)
     .join(' · ');
   return e.assessment
@@ -203,8 +217,13 @@ export function DecisionDetailPage() {
             value: `${readable(decision.reversibility)}${decision.reversalWindowDays ? ` · ${decision.reversalWindowDays} days` : ''}`,
           },
           {
-            label: 'Triggered by',
-            value: decision.triggerRefs.length > 0 ? decision.triggerRefs.map((t) => t.label).join(' · ') : readable(decision.triggerType),
+            // What raised the question — never the futures it was framed with (audit 2026-10-13: "Triggered by: A — Expedite
+            // supply · C — …" for a question raised by an opportunity). A figure in a label reads as a figure.
+            label: 'Raised by',
+            value: [
+              TRIGGER_WORDS[decision.triggerType] ?? readable(decision.triggerType),
+              ...decision.triggerRefs.filter((t) => t.kind !== 'SCENARIO').map((t) => tidyText(t.label)),
+            ].join(' · '),
           },
           { label: 'Commitment carries', value: 'no authority verdict — see governance below' },
         ]}
@@ -286,7 +305,10 @@ export function DecisionDetailPage() {
           title="What each alternative does, on the criteria management wrote down"
           caveat="nothing is ranked, weighted or totalled"
         />
-        {alts.length > 0 ? (
+        {alts.length > 0 && rows.length === 0 ? (
+          // A table of headers with no rows reads as broken (audit 2026-10-13): say what is missing instead.
+          <p className="mt-4 text-base text-ink-600">No criterion is written down yet, so there is nothing to read the alternatives against. Add one under Prepare the decision.</p>
+        ) : alts.length > 0 ? (
           <CriteriaMatrix alternatives={alts} rows={rows} />
         ) : (
           <p className="mt-4 text-base text-ink-600">No alternative has a computed future yet, so there is nothing to read against the criteria.</p>
@@ -299,7 +321,7 @@ export function DecisionDetailPage() {
         ))}
       </section>
 
-      {workspace.tradeOffs && <TradeOffs workspace={workspace} />}
+      {workspace.tradeOffs && rows.length > 0 && <TradeOffs workspace={workspace} />}
 
       {/* ---------------------------------------- assumptions and challenges */}
       <div className="mt-11 flex flex-wrap items-start gap-10">
@@ -473,7 +495,7 @@ function Readiness({ readiness }: { readiness: DecisionWorkspace['readiness'] })
             <span className={cn('font-mono text-[11px] font-semibold leading-5 tracking-[0.04em]', g.severity === 'BLOCKING' ? 'text-red-700' : 'text-amber-700')}>
               {g.severity}
             </span>
-            <span className="text-dense text-ink-700">{g.message}</span>
+            <span className="text-dense text-ink-700" title={g.message}>{readableText(g.message)}</span>
           </div>
         ))
       )}
@@ -501,6 +523,7 @@ function TradeOffs({ workspace }: { workspace: DecisionWorkspace }) {
             <Lines title="Gains" tone="text-emerald-700" lines={c.gains} />
             <Lines title="Gives up" tone="text-amber-700" lines={c.concessions} />
             <Lines title="Not comparable" tone="text-ink-500" lines={c.unresolved} />
+            {c.gains.length + c.concessions.length + c.unresolved.length === 0 && <p className="mt-3 text-dense text-ink-500">The same as {reference?.label ?? 'the reference'} on every criterion written down.</p>}
           </div>
         ))}
       </div>
@@ -525,17 +548,27 @@ function TradeOffs({ workspace }: { workspace: DecisionWorkspace }) {
   );
 }
 
+/** A trade-off value for reading: a figure in its unit, a judgement in words ("SUPPORT" → "support"). */
+const tradeValue = (v: string | null, l: TradeLine): string => (v === null ? '—' : Number.isFinite(Number(v)) ? displayValue(v, l.unit, l.currency) : readable(v));
+/** The signed difference, alternative against reference — a concession reads with its sign (audit: "gives up 5.5363"). */
+const tradeDelta = (l: TradeLine): string | null => {
+  const a = Number(l.alternativeValue);
+  const r = Number(l.referenceValue);
+  if (l.alternativeValue === null || l.referenceValue === null || !Number.isFinite(a) || !Number.isFinite(r)) return null;
+  return a === r ? null : displaySignedDelta(a - r, l.unit, l.currency);
+};
+
 function Lines({ title, tone, lines }: { title: string; tone: string; lines: readonly TradeLine[] }) {
   if (lines.length === 0) return null;
   return (
     <div className="mt-3">
       <p className={cn('font-sans text-label font-medium uppercase', tone)}>{title}</p>
       {lines.map((l, i) => (
-        <div key={`${l.label}-${i}`} title={l.note ?? ''} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-b border-ink-100 py-[6px]">
+        <div key={`${l.label}-${i}`} title={[l.note, `${l.referenceValue ?? '—'} → ${l.alternativeValue ?? '—'}`].filter(Boolean).join(' · ')} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-b border-ink-100 py-[6px]">
           <span className="text-dense text-ink-700">{l.label}</span>
           <span className="text-right font-mono text-meta text-ink-800">
-            {l.referenceValue ?? '—'} → {l.alternativeValue ?? '—'}
-            {l.delta && <span className="block text-ink-500">{l.delta}</span>}
+            {tradeValue(l.referenceValue, l)} → {tradeValue(l.alternativeValue, l)}
+            {tradeDelta(l) && <span className="block text-ink-500">{tradeDelta(l)}</span>}
           </span>
         </div>
       ))}

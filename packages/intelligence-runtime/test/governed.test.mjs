@@ -212,6 +212,36 @@ describe('no tool can be summoned outside the catalogue', () => {
     assert.deepEqual((await plan('What needs my attention?')).map((c) => c.tool), ['getManagementAttention']);
   });
 
+  it('a question that names a customer reads what the state holds about it; a deal question is not an attention one (audit 2026-10-13)', async () => {
+    const tools = ['getManagementAttention', 'getPipelinePositions', 'getEnterpriseState'].map((name) => ({ name, description: '', args: [] }));
+    const plan = (question) => createReferenceProvider().plan({ question, tools, now: '2026-10-12T12:00:00.000Z' });
+    assert.deepEqual(await plan('How is Rohto doing?'), [
+      { tool: 'getPipelinePositions', args: { mentioning: 'How is Rohto doing?', onlyIfMentioned: 'yes' } },
+      { tool: 'getManagementAttention', args: { mentioning: 'How is Rohto doing?' } },
+    ]);
+    assert.deepEqual((await plan('Which deals with Rohto close in 2026-Q4?')).find((c) => c.tool === 'getPipelinePositions').args, { closePeriod: '2026-Q4', mentioning: 'Which deals with Rohto close in 2026-Q4?' });
+    assert.deepEqual((await plan('Which deals are at risk this quarter?')).map((c) => c.tool), ['getPipelinePositions'], 'a deal at risk is a pipeline condition, not nine attention conditions');
+    assert.deepEqual((await plan('Which opportunities have no close period?')).find((c) => c.tool === 'getPipelinePositions').args, { condition: 'NO_CLOSE_PERIOD' });
+  });
+
+  it('the pipeline tool reads a name from the state, and says a withheld value is withheld — never missing', async () => {
+    const run = async (c, args) => {
+      const b = buildIntelligence(s, scriptedProvider(() => ({ statements: [], questions: [], unknowns: [] }), { plan: [{ tool: 'getPipelinePositions', args }] }));
+      return unwrap(await b.intelligence.run(s.scope, c, { task: 'ASK_HELM', params: { question: 'pipeline' } }), 'answer');
+    };
+    const named = await run(gmCaller(), { mentioning: 'How is Rohto doing?' });
+    const rows = named.evidence.filter((e) => e.status !== 'SUMMARY');
+    assert.ok(rows.length > 0 && rows.every((e) => /Rohto/.test(e.label)), 'only what the question names');
+    assert.ok(named.evidence.find((e) => e.status === 'SUMMARY').values.some((v) => /named in the question/.test(v)));
+    const nobody = await run(gmCaller(), { mentioning: 'How is Zebulon doing?', onlyIfMentioned: 'yes' });
+    assert.equal(nobody.evidence.length, 0);
+    assert.ok(nobody.notes.some((n) => /names no customer or opportunity/.test(n)));
+    const uncleared = await run(caller(viewer(USERS.countryGM, ['FINANCIAL_SENSITIVE'])), {});
+    const summary = uncleared.evidence.find((e) => e.status === 'SUMMARY').values;
+    assert.ok(summary.some((v) => /values are above your clearance and withheld/.test(v)), summary.join(' | '));
+    assert.ok(!summary.some((v) => /without one/.test(v)), 'a withheld value is never counted as missing');
+  });
+
   it('the pipeline tool answers from the state, states its conditions, and says it does not rank', async () => {
     const b = buildIntelligence(s, scriptedProvider(() => ({ statements: [], questions: [], unknowns: [] }), { plan: [{ tool: 'getPipelinePositions', args: { probabilityAtMost: 1 } }] }));
     const a = unwrap(await b.intelligence.run(s.scope, adminCaller(), { task: 'ASK_HELM', params: { question: 'pipeline' } }), 'answer');

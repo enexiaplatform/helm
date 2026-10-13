@@ -94,6 +94,23 @@ const ev = (kind: EvidenceKind, ref: { kind: string; id: string; pin?: string | 
 const done = (evidence: RawEvidence[], notes: string[] = [], withheld = 0): Result<ToolResult> => ok({ evidence, notes, withheld });
 const withheldNote = (n: number, what: string) => (n > 0 ? [`${n} ${what} withheld: they exist and are above your clearance or rest on something you may not see.`] : []);
 
+// A question names a customer or a deal by a word of its name ("How is Rohto doing?"). Words every name shares
+// ("company", "Vietnam", "tender") name nothing; diacritics are folded so "Công ty" and "cong ty" read alike.
+const GENERIC_NAME_WORDS: ReadonlySet<string> = new Set([
+  'company', 'cong', 'tnhh', 'vietnam', 'viet', 'limited', 'corp', 'corporation', 'group', 'joint', 'stock', 'trading',
+  'service', 'services', 'technology', 'international', 'tender', 'order', 'opportunity', 'deal', 'deals', 'hospital',
+  'provincial', 'next', 'month', 'quarter', 'account', 'customer', 'pharma', 'thuong', 'xuat', 'khau', 'nhap', 'phan',
+  'what', 'which', 'with', 'doing', 'about', 'their', 'there', 'this', 'that', 'have', 'from',
+]);
+const fold = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase();
+const nameWords = (s: string): string[] => fold(s).split(/[^a-z0-9]+/).filter((t) => t.length >= 4 && !GENERIC_NAME_WORDS.has(t));
+/** Whether a text names something by a distinctive word of its name. */
+const names = (text: string, name: string | null): boolean => {
+  if (!name) return false;
+  const words = new Set(fold(text).split(/[^a-z0-9]+/));
+  return nameWords(name).some((w) => words.has(w));
+};
+
 type ItemLike = { key: string; kind: string; label: string; layer: string | null; status: string; sensitivity: string; categories: readonly string[]; state: Readonly<Record<string, unknown>>; reason: string | null };
 
 /** A twin item as evidence, classed by what it IS: a source claim, a model result, a management record. */
@@ -110,7 +127,9 @@ function evidenceOfItem(item: ItemLike, lens: Lens, section: string | null): Raw
     // alone ("Opportunity Value") made thirty answers indistinguishable (audit 2026-10-09).
     return { ...ev(kind, ref, item.label || String(st['metricName'] ?? ''), [value, `layer ${layer}`, source ? `source ${source}` : 'computed by HELM', st['period'] ? `period ${String(st['period'])}` : ''], { status: layer || null, section, lens }), dimension: st['dimension'] ? String(st['dimension']) : null, metricKey: st['metricKey'] ? String(st['metricKey']) : null };
   }
-  if (item.kind === 'ATTENTION') return ev('MODEL_RESULT', ref, item.label, [String(st['statement'] ?? item.reason ?? '')], { status: String(st['condition'] ?? ''), section, lens });
+  // An attention condition is a named rule's finding over the state — a management record, not a model computation
+  // (audit 2026-10-13: "Authority … is NOT EVALUATED" was shown as a MODEL RESULT).
+  if (item.kind === 'ATTENTION') return ev('MANAGEMENT_RECORD', ref, item.label, [String(st['statement'] ?? item.reason ?? '')], { status: String(st['condition'] ?? ''), section, lens });
   if (item.kind === 'ASSUMPTION') return ev('MANAGEMENT_ASSUMPTION', ref, item.label, [String(st['statement'] ?? '')], { status: String(st['outcome'] ?? st['status'] ?? ''), section, lens });
   return ev('MANAGEMENT_RECORD', ref, item.label, [String(st['statement'] ?? item.reason ?? `${item.kind} ${item.status}`)], { status: item.status, section, lens });
 }
@@ -181,16 +200,26 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
   tool({
     name: 'getManagementAttention',
     description: 'The conditions that require management attention in the current state, each with its named rule — never a ranking.',
-    args: [A.str('snapshotId', 'A specific twin snapshot. Default: the latest current state you can see.', false)],
+    args: [
+      A.str('snapshotId', 'A specific twin snapshot. Default: the latest current state you can see.', false),
+      A.str('mentioning', 'Only conditions that name what this text names (a customer, a deal); the rest are counted, not dropped silently.', false),
+    ],
     async run(ctx, args) {
       const s = await latestVisibleSnapshot(ctx, src.twin, str(args['snapshotId']), null);
       if (!s.ok) return s;
       const lens = lensOf(s.value.snapshot.spec.lens);
       const proj = await src.twin.projectForViewer(ctx.scope, s.value.snapshot.id, ctx.viewer, ctx.units);
       if (!proj.ok) return proj;
-      const att = (proj.value.items as unknown as ItemLike[]).filter((i) => i.kind === 'ATTENTION');
+      const all = (proj.value.items as unknown as ItemLike[]).filter((i) => i.kind === 'ATTENTION');
       const withheld = proj.value.withheld.reduce((n, w) => n + w.count, 0);
-      return done(att.slice(0, MAX.items).map((i) => evidenceOfItem(i, lens, 'What matters?')), att.length === 0 ? ['No attention condition holds in this state.'] : withheldNote(withheld, 'item(s)'), withheld);
+      const mentioning = str(args['mentioning']);
+      // The subjects the text names, read from the state's own entities: a condition is kept when it names one of them.
+      const subjects = mentioning
+        ? (proj.value.items as unknown as ItemLike[]).filter((i) => i.kind === 'ENTITY' && names(mentioning, String(i.state['name'] ?? i.label))).map((i) => String(i.state['name'] ?? i.label))
+        : [];
+      const att = subjects.length > 0 ? all.filter((i) => subjects.some((n) => nameWords(n).some((w) => fold(i.label).includes(w)))) : all;
+      const scoped = subjects.length > 0 ? [`${att.length} of ${all.length} attention conditions name ${[...new Set(subjects)].join(' or ')}; the others are not shown here.`] : [];
+      return done(att.slice(0, MAX.items).map((i) => evidenceOfItem(i, lens, 'What matters?')), att.length === 0 ? [...scoped, subjects.length > 0 ? 'No attention condition names it.' : 'No attention condition holds in this state.'] : [...scoped, ...withheldNote(withheld, 'item(s)')], withheld);
     },
   });
 
@@ -201,8 +230,10 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
     args: [
       A.str('closePeriod', 'Only opportunities Memoire expects to close in this period, e.g. "2026-Q4".', false),
       A.num('probabilityAtMost', 'Only opportunities whose stated probability is at most this ratio (0–1).', false),
-      A.str('condition', 'One named condition: ZERO_VALUE (a stated value of 0), NO_VALUE, NO_PROBABILITY.', false),
+      A.str('condition', 'One named condition: ZERO_VALUE (a stated value of 0), NO_VALUE, NO_PROBABILITY, NO_CLOSE_PERIOD.', false),
       A.str('customer', 'Only opportunities held by a customer whose name contains this text.', false),
+      A.str('mentioning', 'Only opportunities whose customer or own name this text names, when it names any.', false),
+      A.str('onlyIfMentioned', '"yes": answer only when the text names a customer or an opportunity of the state.', false),
       A.str('snapshotId', 'A specific twin snapshot. Default: the latest current state you can see.', false),
     ],
     async run(ctx, args) {
@@ -216,7 +247,14 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
       const atMost = typeof args['probabilityAtMost'] === 'number' && Number.isFinite(args['probabilityAtMost']) ? (args['probabilityAtMost'] as number) : null;
       const condition = str(args['condition'])?.toUpperCase() ?? null;
       const customer = str(args['customer'])?.toLowerCase() ?? null;
-      if (condition && !['ZERO_VALUE', 'NO_VALUE', 'NO_PROBABILITY'].includes(condition)) return fail(IntelligenceErrors.INVALID, `Unknown pipeline condition "${condition}".`);
+      if (condition && !['ZERO_VALUE', 'NO_VALUE', 'NO_PROBABILITY', 'NO_CLOSE_PERIOD'].includes(condition)) return fail(IntelligenceErrors.INVALID, `Unknown pipeline condition "${condition}".`);
+      const mentioning = str(args['mentioning']);
+      const mentioned = mentioning ? all.filter((p) => names(mentioning, p.customer) || names(mentioning, p.opportunity)) : [];
+      if (mentioning && mentioned.length === 0 && str(args['onlyIfMentioned']) === 'yes') {
+        return done([], ['The question names no customer or opportunity HELM can read in this state.']);
+      }
+      // A reading above the reader's clearance is withheld, not missing: it is never counted as "no value".
+      const readable = { value: isCleared(ctx.viewer, sensitivityOfMetric('OpportunityValue'), ctx.now), probability: isCleared(ctx.viewer, sensitivityOfMetric('OpportunityProbability'), ctx.now) };
       // Each filter is a stated condition, said back in the answer: the reader sees exactly what was asked of the data.
       const named: string[] = [];
       if (period) named.push(`expected to close in ${period} (a quarter Memoire states without a year is kept and marked)`);
@@ -224,7 +262,9 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
       if (condition === 'ZERO_VALUE') named.push('a stated value of 0');
       if (condition === 'NO_VALUE') named.push('no stated value');
       if (condition === 'NO_PROBABILITY') named.push('no stated probability');
+      if (condition === 'NO_CLOSE_PERIOD') named.push('no stated close period');
       if (customer) named.push(`held by a customer named like "${customer}"`);
+      if (mentioned.length > 0) named.push(`named in the question (${[...new Set(mentioned.map((p) => p.customer ?? p.opportunity))].join(', ')})`);
       const rows = all.filter(
         (p) =>
           (!period || closesIn(p.expectedClosePeriod, period) !== 'NO') &&
@@ -232,18 +272,21 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
           (condition !== 'ZERO_VALUE' || (p.value !== null && Number(p.value) === 0)) &&
           (condition !== 'NO_VALUE' || p.value === null) &&
           (condition !== 'NO_PROBABILITY' || p.probability === null) &&
+          (condition !== 'NO_CLOSE_PERIOD' || p.expectedClosePeriod === null) &&
+          (mentioned.length === 0 || mentioned.includes(p)) &&
           (!customer || (p.customer ?? '').toLowerCase().includes(customer)),
       );
-      const facts = pipelineFacts(all);
+      const facts = pipelineFacts(all, readable);
       const ref = { kind: 'TWIN_SNAPSHOT', id: s.value.snapshot.id };
       const summary = ev(
         'SOURCE_FACT',
         ref,
-        'The pipeline as Memoire states it',
+        // Named by what it is, not by one source: the demo's source is a fixture, a pilot's is Memoire.
+        'The pipeline as its source states it',
         [
           `${facts.opportunities} opportunities in the state you may read`,
-          `${facts.withValue} with a value (${facts.zeroValue} of them 0), ${facts.noValue} without one`,
-          `${facts.noProbability} without a probability; ${facts.modelled} carry both and are modelled`,
+          readable.value ? `${facts.withValue} with a value (${facts.zeroValue} of them 0), ${facts.noValue} without one` : 'their values are above your clearance and withheld',
+          readable.probability ? `${facts.noProbability} without a probability; ${facts.modelled} carry both and are modelled` : 'their probabilities are above your clearance and withheld',
           named.length > 0 ? `${rows.length} match: ${named.join(', ')}` : '',
         ],
         { status: 'SUMMARY', section: 'pipeline', lens },
@@ -513,7 +556,8 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
       if (!r.ok) return r.error.code === 'review.not_found' ? done([], ['That review is not visible to you.'], 1) : r;
       const p = r.value.pack;
       const lens = lensOf(p.lens);
-      const sum = (section: string, n: number, what: string, extra: string[] = []) => ev('MODEL_RESULT', { kind: 'REVIEW_PACK', id: reviewId }, `${section} — summary`, [`${n} ${what}`, ...extra], { status: 'SUMMARY', section, lens });
+      // The pack's own counts are a management record, as is every non-value change and every attention condition.
+      const sum = (section: string, n: number, what: string, extra: string[] = []) => ev('MANAGEMENT_RECORD', { kind: 'REVIEW_PACK', id: reviewId }, `${section} — summary`, [`${n} ${what}`, ...extra], { status: 'SUMMARY', section, lens });
       const out: RawEvidence[] = [
         sum('What changed?', p.changed.changes.length, 'change(s) since the previous review', Object.entries(p.changed.counts).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${k}`)),
         sum('What matters?', p.attention.items.length, 'attention condition(s)'),
@@ -521,8 +565,8 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
         sum('What decisions are required?', p.decisionsNeeded.items.length, 'decision(s) opened and not yet committed'),
         sum('What assumptions are challenged?', p.assumptionsChanged.items.length, 'assumption result(s) recorded in the window'),
         sum('What outcomes arrived?', p.outcomesArrived.items.length, 'outcome review(s) recorded in the window'),
-        ...p.changed.changes.slice(0, MAX.changes).map((c) => ev('MODEL_RESULT', { kind: 'TWIN_ITEM', id: c.itemKey }, c.label, [c.statement, `${c.change} in ${c.category}`], { status: c.category, section: 'What changed?', lens })),
-        ...p.attention.items.slice(0, MAX.items).map((a) => ev('MODEL_RESULT', { kind: 'TWIN_ITEM', id: a.itemKey }, a.label, [a.statement], { status: a.condition, section: 'What matters?', lens })),
+        ...p.changed.changes.slice(0, MAX.changes).map((c) => ev(c.category === 'VALUE_CHANGE' ? 'MODEL_RESULT' : 'MANAGEMENT_RECORD', { kind: 'TWIN_ITEM', id: c.itemKey }, c.label, [c.statement, `${c.change} in ${c.category}`], { status: c.category, section: 'What changed?', lens })),
+        ...p.attention.items.slice(0, MAX.items).map((a) => ev('MANAGEMENT_RECORD', { kind: 'TWIN_ITEM', id: a.itemKey }, a.label, [a.statement], { status: a.condition, section: 'What matters?', lens })),
         ...p.commitmentsOffTrack.items.flatMap((o) => o.lines.map((l) => ev('MODEL_RESULT', { kind: 'COMMITMENT', id: o.commitmentId }, `${o.title}: ${l.label}`, [`committed ${l.committed ?? '—'}`, `current ${l.current ?? '—'}`, `difference ${l.difference ?? '—'}${l.unit ? ` ${l.unit}` : ''}`], { status: o.relation, section: 'What is off-track?', lens }))),
         ...p.decisionsNeeded.items.map((d) => ev('MANAGEMENT_RECORD', { kind: 'DECISION', id: d.decisionId }, d.title, [d.question, `opened ${d.openedAt}`], { status: 'AWAITING_COMMITMENT', section: 'What decisions are required?', lens })),
         ...p.assumptionsChanged.items.map((a) => ev('MANAGEMENT_ASSUMPTION', { kind: 'ASSUMPTION', id: a.assumptionId }, a.statement, [`outcome ${a.outcome}`, `reviewed ${a.reviewedAt}`], { status: a.outcome, section: 'What assumptions are challenged?', lens })),

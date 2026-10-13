@@ -40,7 +40,14 @@ export type PipelineFacts = {
   readonly modelled: number;
   readonly withoutCustomer: number;
   readonly noClosePeriod: number;
+  /** Opportunities whose value the reader may not read: withheld above their clearance, never counted as missing. */
+  readonly valueWithheld: number;
+  /** Opportunities whose probability the reader may not read. */
+  readonly probabilityWithheld: number;
 };
+
+/** Which of the commercial readings the reader is cleared for. A reading above clearance is withheld, not absent. */
+export type PipelineReadable = { readonly value: boolean; readonly probability: boolean };
 
 /** Opportunity and its seeded subtype: a tender is an opportunity (packages/ontology seed). */
 const OPPORTUNITY_TYPES: ReadonlySet<string> = new Set(['Opportunity', 'Tender']);
@@ -88,18 +95,28 @@ export function readPipeline(items: readonly TwinItem[]): PipelinePosition[] {
   return out;
 }
 
-/** What the pipeline as read states about its own completeness — counts of facts, never a score. */
-export function pipelineFacts(rows: readonly PipelinePosition[]): PipelineFacts {
+/**
+ * What the pipeline as read states about its own completeness — counts of facts, never a score.
+ *
+ * A reader without clearance for a commercial reading sees no value item for it; that is a withheld reading, not a
+ * missing one, and it is counted apart (audit 2026-10-13: an analyst was told "2 state no value at all" and asked to
+ * correct Memoire, about values that were only above their clearance).
+ */
+export function pipelineFacts(rows: readonly PipelinePosition[], readable: PipelineReadable = { value: true, probability: true }): PipelineFacts {
   const withValue = rows.filter((r) => r.value !== null);
+  const missingValue = rows.length - withValue.length;
+  const missingProbability = rows.filter((r) => r.probability === null).length;
   return {
     opportunities: rows.length,
     withValue: withValue.length,
     zeroValue: withValue.filter((r) => Number(r.value) === 0).length,
-    noValue: rows.length - withValue.length,
-    noProbability: rows.filter((r) => r.probability === null).length,
+    noValue: readable.value ? missingValue : 0,
+    noProbability: readable.probability ? missingProbability : 0,
     modelled: rows.filter((r) => r.value !== null && r.probability !== null).length,
     withoutCustomer: rows.filter((r) => r.customer === null).length,
     noClosePeriod: rows.filter((r) => r.expectedClosePeriod === null).length,
+    valueWithheld: readable.value ? 0 : missingValue,
+    probabilityWithheld: readable.probability ? 0 : missingProbability,
   };
 }
 

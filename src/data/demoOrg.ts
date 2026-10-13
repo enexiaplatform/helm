@@ -20,17 +20,23 @@ export const demoOrganization: Organization = {
   role: 'admin',
 };
 
+// The same people and units the demo's governance, twin and reviews are read as (audit 2026-10-13: Settings listed a
+// different cast and different units from Governance and the "Read as" readers of the same organization).
 export const demoMembers: OrgMember[] = [
-  { userId: DEMO_USER_ID, email: 'you@meridian.example', displayName: 'You — Country Manager', role: 'admin' },
-  { userId: 'demo-lan', email: 'lan.pham@meridian.example', displayName: 'Lan Pham — Pharma Sales Manager', role: 'manager' },
-  { userId: 'demo-minh', email: 'minh.tran@meridian.example', displayName: 'Minh Tran — Technical Service Lead', role: 'manager' },
-  { userId: 'demo-thu', email: 'thu.nguyen@meridian.example', displayName: 'Thu Nguyen — Finance', role: 'member' },
+  { userId: DEMO_USER_ID, email: 'you@meridian.example', displayName: 'You — Organization admin (demo)', role: 'admin' },
+  { userId: 'demo-mai', email: 'mai.nguyen@meridian.example', displayName: 'Nguyen Thi Mai — Country GM Vietnam', role: 'manager' },
+  { userId: 'demo-hoa', email: 'hoa.le@meridian.example', displayName: 'Le Thi Hoa — Finance Director Vietnam', role: 'manager' },
+  { userId: 'demo-trang', email: 'trang.hoang@meridian.example', displayName: 'Hoang Thu Trang — Commercial Director Vietnam', role: 'manager' },
+  { userId: 'demo-huy', email: 'huy.vo@meridian.example', displayName: 'Vo Quang Huy — Industrial BU Head Vietnam', role: 'manager' },
+  { userId: 'demo-chau', email: 'chau.pham@meridian.example', displayName: 'Pham Minh Chau — Pharma Commercial Analyst Vietnam', role: 'member' },
 ];
 
 export const demoUnits: OrgUnit[] = [
-  { id: 'unit-vn', orgId: DEMO_ORG_ID, parentId: null, name: 'Vietnam', unitType: 'country' },
-  { id: 'unit-pharma', orgId: DEMO_ORG_ID, parentId: 'unit-vn', name: 'Pharma Sales', unitType: 'team' },
-  { id: 'unit-fnb', orgId: DEMO_ORG_ID, parentId: 'unit-vn', name: 'F&B Ingredients Sales', unitType: 'team' },
-  { id: 'unit-service', orgId: DEMO_ORG_ID, parentId: 'unit-vn', name: 'Technical Service', unitType: 'team' },
-  { id: 'unit-ops', orgId: DEMO_ORG_ID, parentId: 'unit-vn', name: 'Operations', unitType: 'department' },
+  { id: 'unit-meridian', orgId: DEMO_ORG_ID, parentId: null, name: 'Meridian Life Sciences', unitType: 'company' },
+  { id: 'unit-sea', orgId: DEMO_ORG_ID, parentId: 'unit-meridian', name: 'Southeast Asia', unitType: 'region' },
+  { id: 'unit-vn', orgId: DEMO_ORG_ID, parentId: 'unit-sea', name: 'Vietnam', unitType: 'country' },
+  { id: 'unit-vn-pharma', orgId: DEMO_ORG_ID, parentId: 'unit-vn', name: 'Vietnam Pharma BU', unitType: 'business_unit' },
+  { id: 'unit-vn-industrial', orgId: DEMO_ORG_ID, parentId: 'unit-vn', name: 'Vietnam Industrial BU', unitType: 'business_unit' },
+  { id: 'unit-vn-finance', orgId: DEMO_ORG_ID, parentId: 'unit-vn', name: 'Vietnam Finance', unitType: 'department' },
+  { id: 'unit-vn-commercial', orgId: DEMO_ORG_ID, parentId: 'unit-vn', name: 'Vietnam Commercial', unitType: 'department' },
 ];

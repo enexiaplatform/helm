@@ -49,7 +49,8 @@ export function SettingsPage() {
               <Pill tone="neutral">{m.role}</Pill>
             </div>
           ))}
-          {isAdmin && (
+          {/* The demo's membership is read-only: no form that looks live and does nothing (audit 2026-10-13). */}
+          {isAdmin && mode !== 'demo' && (
             <form
               className="mt-4 flex flex-wrap gap-2"
               onSubmit={(e) => {
@@ -102,7 +103,7 @@ export function SettingsPage() {
           A commitment is what management decided. Whether the person who committed was allowed to is a separate,
           recorded judgement: HELM evaluates it from the enterprise scope the commitment touches and the consequences the
           model computed for it, under the delegation-of-authority policy in force when it was made. The commitment itself
-          still carries <span className="font-mono text-meta">authorityStatus: NOT_EVALUATED</span> and never changes.
+          never changes: its authority verdict is a separate record, made by HELM&rsquo;s trusted authority service.
         </p>
         <p className="mt-3 text-base text-ink-700">
           Roles, policy versions, rules, delegations, evaluations and approval acts are on the{' '}

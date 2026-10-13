@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { pipelineFacts, readPipeline, type TwinItem } from '@helm/twin-runtime';
+import { pipelineFacts, readPipeline, type PipelineReadable, type TwinItem } from '@helm/twin-runtime';
 import type { ReviewView } from '@helm/review-runtime';
 import { cn } from '../../lib/cn.ts';
 import { ASKED_KEY, DISMISSED_KEY, GUIDE_EVENT, read, write } from './gettingStarted.ts';
@@ -23,7 +23,7 @@ const quarterOf = (iso: string) => {
 
 type Item = { key: string; title: string; detail: string; done: boolean; cta: { label: string; to?: string; onClick?: () => void } };
 
-export function StartHere({ items, reviews, now, onDismiss }: { items: readonly TwinItem[]; reviews: readonly ReviewView[]; now: string; onDismiss?: () => void }) {
+export function StartHere({ items, readable, reviews, now, onDismiss }: { items: readonly TwinItem[]; readable: PipelineReadable; reviews: readonly ReviewView[]; now: string; onDismiss?: () => void }) {
   const [dismissed, setDismissed] = useState(() => read(DISMISSED_KEY));
   // Ask HELM lives elsewhere on the page: its first answer checks its item off here without a reload.
   const [asked, setAsked] = useState(() => read(ASKED_KEY));
@@ -33,7 +33,7 @@ export function StartHere({ items, reviews, now, onDismiss }: { items: readonly 
     return () => globalThis.removeEventListener(GUIDE_EVENT, on);
   }, []);
 
-  const f = pipelineFacts(readPipeline(items));
+  const f = pipelineFacts(readPipeline(items), readable);
   const gaps = [
     f.zeroValue > 0 && `${f.zeroValue} at a value of 0`,
     f.noProbability > 0 && `${f.noProbability} without a probability`,
@@ -71,7 +71,8 @@ export function StartHere({ items, reviews, now, onDismiss }: { items: readonly 
       title: `Open the ${quarter} review`,
       detail: review ? `${review.status === 'OPEN' ? 'Open' : 'Closed'} · carries forward what is left open` : 'Captures where the quarter stands',
       done: !!review,
-      cta: { label: review?.status === 'OPEN' ? 'Continue' : 'Open', to: '/reviews' },
+      // The form that opens a review is at the foot of a long page: the link lands on it, period already set.
+      cta: { label: review?.status === 'OPEN' ? 'Continue' : 'Open', to: review ? '/reviews' : `/reviews?open=${quarter}#open-review` },
     },
   ];
   const done = list.filter((i) => i.done).length;

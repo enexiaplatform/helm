@@ -232,7 +232,7 @@ export function FrameDecisionModal({
           void submit();
         }}
       >
-        <Field label="The management question" hint='A question, not a topic: "How should we price the Tailin renewal given the competing quote?", not "Pricing".'>
+        <Field label="The management question" hint='A question, not a topic: "How should we price the renewal given the competing quote?", not "Pricing".'>
           <textarea className={controlClass} rows={2} value={question} onChange={(e) => setQuestion(e.target.value)} required minLength={12} autoFocus />
         </Field>
         <div className="grid gap-[14px] sm:grid-cols-2">
@@ -390,11 +390,10 @@ export function DecisionAuthoring({
   return (
     <section className="mt-10">
       <SectionHead title="Prepare the decision" meta={`r${revision.revisionNumber} · draft`} caveat="each act is yours, recorded with your name" />
-      <ReadinessLine readiness={workspace.readiness} />
+      <ReadinessLine readiness={workspace.readiness} state={decision.state} />
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="text-dense text-ink-700">
-          It is <span className="font-mono">{readable(decision.state)}</span>
-          {decision.state !== 'READY_FOR_DECISION' ? ' — only a decision marked ready for decision can be committed.' : ' — it can be committed.'}
+          State: <span className="font-mono">{readable(decision.state)}</span>
         </span>
         {moves.map((m) =>
           m === 'CANCELLED' ? (
@@ -445,7 +444,23 @@ export function DecisionAuthoring({
         {open === 'criterion' && <CriterionForm ctx={ctx} busy={busy} author={author} onSubmit={(input) => act('Criterion written down.', () => ctx.runtime.addCriterion(ctx.scope, revision.id, input))} />}
         {open === 'assumption' && <AssumptionForm busy={busy} author={author} onSubmit={(input) => act('Assumption written down.', () => ctx.runtime.addAssumption(ctx.scope, revision.id, input))} />}
         {open === 'assess' && <AssessForm workspace={workspace} busy={busy} author={author} onSubmit={(input) => act('Assessment recorded.', () => ctx.runtime.recordAssessment(ctx.scope, input))} />}
-        {open === 'commit' && <CommitForm workspace={workspace} busy={busy} author={author} onSubmit={(input) => act('Committed.', () => ctx.runtime.commit(ctx.scope, revision.id, input))} />}
+        {open === 'commit' && (
+          <CommitForm
+            workspace={workspace}
+            busy={busy}
+            author={author}
+            onSubmit={(input, reviewDate) =>
+              act('Committed.', async () => {
+                // The date to look again is part of the decision's own horizon, set before the commitment seals it.
+                if (reviewDate && reviewDate !== decision.horizon.reviewDate) {
+                  const framed = await ctx.runtime.updateFraming(ctx.scope, decision.id, { horizon: { ...decision.horizon, reviewDate } });
+                  if (!framed.ok) return framed;
+                }
+                return ctx.runtime.commit(ctx.scope, revision.id, input);
+              })
+            }
+          />
+        )}
       </div>
       {busy && <p className="mt-3 text-dense text-ink-600">Recording it…</p>}
       {done && !busy && <p className="mt-3 text-dense text-ink-700">{done}</p>}
@@ -454,9 +469,18 @@ export function DecisionAuthoring({
   );
 }
 
-function ReadinessLine({ readiness }: { readiness: ReadinessReport }) {
+// One sentence about what stands before a commitment (audit 2026-10-13: "Nothing blocks a commitment" sat beside
+// "only a decision marked ready for decision can be committed").
+function ReadinessLine({ readiness, state }: { readiness: ReadinessReport; state: string }) {
   const blocking = readiness.gaps.filter((g) => g.severity === 'BLOCKING');
-  if (blocking.length === 0) return <p className="mt-3 text-dense text-ink-600">Nothing blocks a commitment. What management chooses, and why, is recorded when it happens.</p>;
+  if (blocking.length === 0)
+    return (
+      <p className="mt-3 text-dense text-ink-600">
+        {state === 'READY_FOR_DECISION'
+          ? 'It is ready for decision. What management chooses, and why, is recorded when it is committed.'
+          : 'Nothing in the preparation blocks it. Mark it ready for decision to commit it.'}
+      </p>
+    );
   return (
     <div className="mt-3">
       <p className="text-dense text-ink-700">Before it can be committed:</p>
@@ -604,7 +628,7 @@ function CriterionForm({
       }
     >
       <Field label="What matters" className="sm:col-span-2">
-        <input className={controlClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="Expected revenue on the Tailin deal" required />
+        <input className={controlClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="Expected revenue on the renewal" required />
       </Field>
       <Field label="How it is judged">
         <select className={controlClass} value={style} onChange={(e) => setStyle(e.target.value as CriterionStyle)}>
@@ -632,7 +656,7 @@ function CriterionForm({
               ))}
             </select>
           </Field>
-          <Field label={`On which position${positions.length > 0 ? ` · ${positions.length}` : ''}`} hint={positions.length === 0 ? 'no position carries it yet — it will read UNKNOWN until one does' : undefined}>
+          <Field label="On which position" hint={positions.length === 0 ? 'no position carries it yet — it will read UNKNOWN until one does' : `${positions.length} ${positions.length === 1 ? 'position carries' : 'positions carry'} this metric`}>
             <input className={controlClass} list="criterion-positions" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={positions[0] ?? ''} required={positions.length > 1} />
             <datalist id="criterion-positions">
               {positions.map((p) => (
@@ -685,7 +709,7 @@ function AssumptionForm({
       }
     >
       <Field label="What this rests on" className="sm:col-span-2">
-        <input className={controlClass} value={statement} onChange={(e) => setStatement(e.target.value)} placeholder="Tailin confirms the renewal before the end of the quarter." required minLength={8} />
+        <input className={controlClass} value={statement} onChange={(e) => setStatement(e.target.value)} placeholder="The customer confirms the renewal before the end of the quarter." required minLength={8} />
       </Field>
       <Field label="Who stands behind it">
         <input className={controlClass} value={owner} onChange={(e) => setOwner(e.target.value)} required />
@@ -771,9 +795,11 @@ function CommitForm({
   workspace: DecisionWorkspace;
   busy: boolean;
   author: Author;
-  onSubmit: (input: Parameters<DecisionWorkspaceContext['runtime']['commit']>[2]) => void;
+  onSubmit: (input: Parameters<DecisionWorkspaceContext['runtime']['commit']>[2], reviewDate: string | null) => void;
 }) {
   const candidates = useMemo(() => workspace.alternatives.filter((a) => a.status !== 'WITHDRAWN'), [workspace]);
+  // A commitment without a date to look again never comes back to a review (audit 2026-10-13).
+  const [reviewDate, setReviewDate] = useState(workspace.decision.horizon.reviewDate?.slice(0, 10) ?? '');
   const [chosen, setChosen] = useState(candidates[0]?.id ?? '');
   const [summary, setSummary] = useState('');
   const [why, setWhy] = useState('');
@@ -796,7 +822,7 @@ function CommitForm({
           rationale: [{ kind: 'JUDGEMENT', ref: null, label: 'Management judgement', statement: why.trim() }],
           acceptedTradeOffs: tradeOff.trim() ? [{ label: 'Accepted trade-off', statement: tradeOff.trim(), criterionId: null, metricKey: null, givenUp: null, inFavourOf: choice?.label ?? null }] : [],
           acknowledgeOpenChallenges: openChallenges.length > 0 ? acknowledge : undefined,
-        })
+        }, reviewDate || null)
       }
     >
       {workspace.readiness.state === 'NOT_READY' && <p className="text-dense text-red-700 sm:col-span-2">This decision is not ready: the gaps above block a commitment.</p>}
@@ -818,6 +844,9 @@ function CommitForm({
       </Field>
       <Field label="What management accepts by choosing it" className="sm:col-span-2" hint="optional — what is given up">
         <input className={controlClass} value={tradeOff} onChange={(e) => setTradeOff(e.target.value)} />
+      </Field>
+      <Field label="Look again on" hint="when the outcome is read against what was expected">
+        <input type="date" className={controlClass} value={reviewDate} onChange={(e) => setReviewDate(e.target.value)} required />
       </Field>
       {openChallenges.length > 0 && (
         <label className="inline-flex items-start gap-2 text-dense text-red-700 sm:col-span-2">

@@ -25,7 +25,7 @@ export { readStructure, classificationOf, ACCOUNT_CLASSES } from './structure.ts
 export type { StructureView, AccountClass } from './structure.ts';
 export { decisionStateAt, OPEN_DECISION_STATES } from './management.ts';
 export { readPipeline, pipelineFacts, opportunityLabel, customerOfSubject, closesIn } from './pipeline.ts';
-export type { PipelinePosition, PipelineFacts } from './pipeline.ts';
+export type { PipelinePosition, PipelineFacts, PipelineReadable } from './pipeline.ts';
 export { snapshotAttention, attentionItem, MATERIALITY_V1, ATTENTION_RULES_VERSION, isMaterial, isDeterioration } from './attention.ts';
 export {
   METRIC_SENSITIVITY,

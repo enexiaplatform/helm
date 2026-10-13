@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { featureNames, type EpisodeView, type FeatureName, type GenomeScope, type LessonView, type PatternCharacteristic, type PatternView, type ProjectedGenome, type SimilarSituations } from '@helm/genome-runtime';
 import type { ClaimView } from '@helm/causal-runtime';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { TwinViewer } from '@helm/twin-runtime';
 import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.tsx';
 import { useHelmStore } from '../services/helmStore.ts';
@@ -340,7 +340,9 @@ export function GenomePage() {
   const [error, setError] = useState<string | null>(null);
   const [viewerKey, setViewerKey] = useState('');
   const [lensKey, setLensKey] = useState('now');
-  const [selected, setSelected] = useState<Selection | null>(null);
+  // ?pattern=<id> opens one pattern: the Cockpit links each pattern it shows here.
+  const [params] = useSearchParams();
+  const [selected, setSelected] = useState<Selection | null>(() => (params.get('pattern') ? { kind: 'pattern', id: params.get('pattern')! } : null));
   // Async results are keyed by the inputs they were read for.
   const [genomeState, setGenomeState] = useState<{ key: string; value: ProjectedGenome; labels: ReadonlyMap<string, string> } | null>(null);
 
@@ -354,7 +356,7 @@ export function GenomePage() {
         if (!live) return;
         setCtx(c);
         setViewerKey(c.viewers.find((v) => v.key === 'countryGM')?.key ?? c.viewers[0]?.key ?? '');
-        if (c.story) setSelected({ kind: 'episode', id: c.story.episodes.E1.episode.id });
+        if (c.story) setSelected((s) => s ?? { kind: 'episode', id: c.story!.episodes.E1.episode.id });
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : String(e));
       }

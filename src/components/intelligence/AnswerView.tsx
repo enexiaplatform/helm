@@ -3,6 +3,7 @@ import type { EvidenceItem, GroundedStatement, IntelligenceAnswer } from '@helm/
 import { Pill } from '../ui/Pill.tsx';
 import { classLabel, classTone } from '../../services/intelligenceRuntime.ts';
 import { cn } from '../../lib/cn.ts';
+import { plurals, readable, readInstant } from '../../lib/format.ts';
 
 /**
  * A grounded AI answer. Every statement wears what it IS (a source fact, a model
@@ -26,7 +27,7 @@ function Statement({ s, evidence }: { s: GroundedStatement; evidence: ReadonlyMa
     <li className="border-b border-ink-200 py-2">
       <div className="flex flex-wrap items-baseline gap-2">
         <Pill tone={classTone(s.class)}>{classLabel(s.class)}</Pill>
-        <span className={cn('text-dense text-ink-900', s.class === 'AI_INFERENCE' && 'italic')}>{s.text}</span>
+        <span className={cn('text-dense text-ink-900', s.class === 'AI_INFERENCE' && 'italic')} title={readable(s.text) === s.text ? undefined : s.text}>{readable(s.text)}</span>
       </div>
       {(cited.length > 0 || s.note) && (
         <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -45,9 +46,9 @@ function Statement({ s, evidence }: { s: GroundedStatement; evidence: ReadonlyMa
           {cited.map((e) => (
             <li key={e.id} className="font-mono text-meta text-ink-600">
               {e.kind.toLowerCase().replaceAll('_', ' ')} · {e.ref.kind} <span className="text-ink-500">{e.ref.id}</span>
-              {e.lens ? <> · as known through {e.lens.recordedThrough.slice(0, 16).replace('T', ' ')}</> : null}
+              {e.lens ? <> · as known on {readInstant(e.lens.recordedThrough)}</> : null}
               {e.status ? <> · {e.status}</> : null}
-              <span className="block text-ink-800">{e.label}{e.values.length > 0 ? ` — ${e.values.join('; ')}` : ''}</span>
+              <span className="block text-ink-800">{readable(`${e.label}${e.values.length > 0 ? ` — ${e.values.filter(Boolean).join('; ')}` : ''}`)}</span>
             </li>
           ))}
         </ul>
@@ -77,14 +78,16 @@ function Section({ sec, statements, evidence }: { sec: string | null; statements
   );
 }
 
-export function AnswerView({ answer }: { answer: IntelligenceAnswer }) {
+export function AnswerView({ answer, question }: { answer: IntelligenceAnswer; question?: string }) {
   const evidence = new Map(answer.evidence.map((e) => [e.id, e]));
   const sections = [...new Set(answer.statements.map((s) => s.section))];
   const g = answer.grounding;
   return (
     <div className="mt-3">
+      {/* The question this answers, so an answer is never read against another one (audit 2026-10-13). */}
+      {question && <p className="mb-2 font-serif text-panel italic text-ink-800">“{question}”</p>}
       {/* What the reading comes to, before the statements it rests on. */}
-      {answer.notes.length > 0 && <p className="mb-2 text-dense text-ink-900">{answer.notes.join(' ')}</p>}
+      {answer.notes.length > 0 && <p className="mb-2 text-dense text-ink-900">{readable(answer.notes.join(' '))}</p>}
       {sections.map((sec) => (
         <Section key={sec ?? '_'} sec={sec} statements={answer.statements.filter((s) => s.section === sec)} evidence={evidence} />
       ))}
@@ -93,7 +96,7 @@ export function AnswerView({ answer }: { answer: IntelligenceAnswer }) {
         <div className="mt-3">
           <p className="helm-label">What is not known, or may not be shown</p>
           <ul className="mt-1 grid gap-1">
-            {answer.unknowns.map((u, i) => <li key={i} className="text-dense text-red-700">{u}</li>)}
+            {answer.unknowns.map((u, i) => <li key={i} className="text-dense text-red-700">{readable(u)}</li>)}
           </ul>
         </div>
       )}
@@ -106,7 +109,7 @@ export function AnswerView({ answer }: { answer: IntelligenceAnswer }) {
         </div>
       )}
       <p className="mt-3 font-mono text-meta text-ink-500">
-        {g.kept} kept · {g.reclassified} reclassified · {g.downgradedToInference} marked as inference · {g.removed} removed · {answer.toolCalls.length} governed tool call(s) · {answer.provider.id} · run {answer.runId}
+        {g.kept} kept · {g.reclassified} reclassified · {g.downgradedToInference} marked as inference · {g.removed} removed · {plurals(`${answer.toolCalls.length} governed tool call(s)`)} · {answer.provider.id} · run {answer.runId}
       </p>
       {g.removals.length > 0 && (
         <ul className="mt-1 grid gap-1">

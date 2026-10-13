@@ -6,6 +6,7 @@ import { liveSyncLine, startMemoireLiveSync, useMemoireLive } from '../../servic
 import { cloudScope, demoScope } from '../../services/ontologyGraph.ts';
 import { displayClock, resolveScenarioWorkspace } from '../../services/scenarioRuntime.ts';
 import { attentionCount } from '../../services/twinRuntime.ts';
+import { prepareDemoWorld } from '../../services/demoWorld.ts';
 import { AppShell } from './AppShell.tsx';
 
 /** Kernel instruments run full width; everything else is the 1240px management register. */
@@ -35,6 +36,8 @@ export function ConsoleLayout() {
   const exitDemo = useHelmStore((s) => s.exitDemo);
   const [openSignals, setOpenSignals] = useState(0);
   const [fork, setFork] = useState<ForkPoint | null>(null);
+  // The demo is built whole before any page reads it, so every page sees the same organization (src/services/demoWorld.ts).
+  const [demoReady, setDemoReady] = useState<'pending' | 'ready' | string>('pending');
 
   const scope = useMemo(
     () => (mode === 'demo' ? demoScope() : activeOrgId ? cloudScope(activeOrgId, userId ?? '', myRole()) : null),
@@ -50,6 +53,21 @@ export function ConsoleLayout() {
       })
       .catch(() => {
         if (!cancelled) setFork(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, scope]);
+
+  useEffect(() => {
+    if (mode !== 'demo' || !scope) return;
+    let cancelled = false;
+    prepareDemoWorld(scope)
+      .then(() => {
+        if (!cancelled) setDemoReady('ready');
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setDemoReady(e instanceof Error ? e.message : String(e));
       });
     return () => {
       cancelled = true;
@@ -79,7 +97,7 @@ export function ConsoleLayout() {
 
   // The brass count is the attention conditions HELM's own rules hold in the latest current state — not a stored signal.
   useEffect(() => {
-    if (!scope || !mode) return;
+    if (!scope || !mode || (mode === 'demo' && demoReady !== 'ready')) return;
     let cancelled = false;
     attentionCount(mode, scope)
       .then((n) => {
@@ -91,7 +109,7 @@ export function ConsoleLayout() {
     return () => {
       cancelled = true;
     };
-  }, [mode, scope, live.version]);
+  }, [mode, scope, live.version, demoReady]);
 
   const active = keyOf(pathname);
   const activeOrg = organizations.find((o) => o.id === activeOrgId);
@@ -109,8 +127,8 @@ export function ConsoleLayout() {
       userLabel={userEmail ?? myRole()}
       demo={mode === 'demo'}
       sourceLine={mode === 'cloud' ? liveSyncLine(live, displayClock) : null}
-      effectiveAsOf={fork ? displayClock(fork.effectiveAsOf) : undefined}
-      recordedThrough={fork ? displayClock(fork.recordedThrough) : undefined}
+      effectiveAsOf={fork && INSTRUMENTS.has(active) ? displayClock(fork.effectiveAsOf) : undefined}
+      recordedThrough={fork && INSTRUMENTS.has(active) ? displayClock(fork.recordedThrough) : undefined}
       error={error}
       onSettings={() => navigate('/settings')}
       onSignOut={() => {
@@ -123,7 +141,13 @@ export function ConsoleLayout() {
       }}
       wide={INSTRUMENTS.has(active)}
     >
-      <Outlet />
+      {mode !== 'demo' || demoReady === 'ready' ? (
+        <Outlet />
+      ) : demoReady === 'pending' ? (
+        <p className="text-ui text-ink-500">Preparing the demo organization…</p>
+      ) : (
+        <p role="alert" className="text-ui text-red-700">The demo organization could not be prepared: {demoReady}</p>
+      )}
     </AppShell>
   );
 }

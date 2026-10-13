@@ -140,10 +140,9 @@ export function GovernancePage() {
 
       {mode === 'cloud' && !latest && (
         <Notice tone="warning" label="Nothing governs a commitment here yet" className="mt-6">
-          No delegation-of-authority policy, role or occupancy is recorded for this organization, so every commitment made in{' '}
-          <Link to="/decisions" className="underline">Decisions</Link> carries authority NOT EVALUATED. Recording them is an
-          administrator&rsquo;s act the authority runtime accepts, but this page does not record them yet; and the verdicts and
-          approval acts themselves are written only by the trusted authority service, which is not deployed to this environment.
+          No delegation of authority is set up for this organization — who may approve what, up to which value — so every
+          commitment made in <Link to="/decisions" className="underline">Decisions</Link> carries authority NOT EVALUATED.
+          Until one is set up, HELM cannot say whether a commitment was within anyone&rsquo;s authority.
         </Notice>
       )}
 

@@ -292,7 +292,9 @@ export function CausalPage() {
           </section>
 
           <section className="mt-10">
-            <SectionHead title="Known value dependencies" meta={`${deps.length}`} caveat="arithmetic in the model — not evidence of influence" />
+            <SectionHead title="Value dependencies beside a claim" meta={`${deps.length}`} caveat="arithmetic in the model — not evidence of influence" />
+            {/* Audit 2026-10-13: "0 dependencies" read as contradicting the Value Graph's DRIVES links. These are only the ones a causal claim names. */}
+            {deps.length === 0 && <p className="mt-3 text-ui text-ink-500">No causal claim names a model dependency yet. The model's own links are in the <Link to="/value-graph" className="text-accent-700 underline">Value Graph</Link>.</p>}
             <ul>
               {deps.map((d) => (
                 <Row key={d.claim.claim.id}>

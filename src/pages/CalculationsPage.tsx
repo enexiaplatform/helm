@@ -147,6 +147,8 @@ export function CalculationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<PropagationResult | null>(null);
+  // Whether the last run on record has been looked for: until then the page does not claim nothing ever ran (audit 2026-10-13).
+  const [runChecked, setRunChecked] = useState(false);
   const [selectedCalc, setSelectedCalc] = useState<string>(calculations.active()[0]?.key ?? '');
   const [explaining, setExplaining] = useState<Explanation | null>(null);
   const [nodeLabels, setNodeLabels] = useState<Map<string, ValueNode>>(new Map());
@@ -181,11 +183,16 @@ export function CalculationsPage() {
     let cancelled = false;
     (async () => {
       const runs = await loaded.engine.listRuns(loaded.scope, 20);
-      if (cancelled || !runs.ok) return;
-      const last = runs.value.find((r) => r.context.scenarioEntityId === null && r.context.scenarioRevisionId === null);
-      if (!last) return;
+      if (cancelled) return;
+      const last = runs.ok ? [...runs.value].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).find((r) => r.context.scenarioEntityId === null && r.context.scenarioRevisionId === null) : undefined;
+      if (!last) {
+        setRunChecked(true);
+        return;
+      }
       const trace = await loaded.engine.getTrace(loaded.scope, last.id);
-      if (cancelled || !trace.ok) return;
+      if (cancelled) return;
+      setRunChecked(true);
+      if (!trace.ok) return;
       const summary = { CALCULATED: 0, UNCHANGED: 0, BLOCKED: 0, FAILED: 0, SKIPPED: 0 } as Record<StepStatus, number>;
       for (const st of trace.value) summary[st.status] += 1;
       setResult((current) => current ?? { run: last, steps: trace.value, written: [], summary, uncomputable: [] });
@@ -395,7 +402,9 @@ export function CalculationsPage() {
             />
             {busy && <p className="mt-3 text-base text-ink-600">Running the model over every value position it can compute…</p>}
             {!result ? (
-              !busy && (
+              !busy && !runChecked ? (
+                <p className="mt-3 text-base text-ink-600">Reading the last run on record…</p>
+              ) : !busy && (
                 <p className="mt-3 text-base text-ink-600">
                   Nothing has been run yet. Running the model writes DERIVED observations and an append-only trace; it never
                   overwrites a stated fact.

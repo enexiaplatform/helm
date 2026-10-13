@@ -60,7 +60,7 @@ interface Props {
   crumbDetail?: string | null;
   demo?: boolean;
   /** how current HELM's reading of a live source is — said in the bar, in brick when it failed */
-  sourceLine?: { text: string; failed: boolean } | null;
+  sourceLine?: { text: string; failed: boolean; stale?: boolean } | null;
   /** Read Memoire's changes and everything HELM holds again. Cloud only. */
   onRefresh?: () => void;
   refreshing?: boolean;
@@ -200,7 +200,7 @@ export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items =
           </span>
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {sourceLine && (
-              <span role="status" className={cn('font-mono text-meta', sourceLine.failed ? 'text-red-700' : 'text-ink-500')}>{sourceLine.text}</span>
+              <span role="status" className={cn('font-mono text-meta', sourceLine.failed ? 'text-red-700' : sourceLine.stale ? 'text-amber-700' : 'text-ink-500')}>{sourceLine.text}</span>
             )}
             {onRefresh && (
               <Button variant="ghost" size="sm" onClick={onRefresh} disabled={refreshing} title="Read Memoire's changes and everything HELM holds again">

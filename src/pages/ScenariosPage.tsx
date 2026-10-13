@@ -729,11 +729,13 @@ function ScenarioDetail({
           </button>
         ))}
 
-      {report && report.issues.some((i) => i.severity !== 'INFO') && (
+      {/* An archived scenario is not broken: it is read and compared, not run (audit 2026-10-13: a red "ERROR" said otherwise). */}
+      {terminal && <p className="mt-6 text-dense text-ink-600">This scenario is {scenario.status.toLowerCase()}: it can be read and compared, not run again.</p>}
+      {report && report.issues.some((i) => i.severity !== 'INFO' && !(terminal && i.code === 'scenario.not_executable')) && (
         <div className="mt-6">
           <p className="helm-label mb-1">Validation</p>
           {report.issues
-            .filter((i) => i.severity !== 'INFO')
+            .filter((i) => i.severity !== 'INFO' && !(terminal && i.code === 'scenario.not_executable'))
             .map((i, n) => (
               <div key={n} className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-4 border-b border-ink-200 py-2">
                 <span className={cn('font-mono text-[11px] font-semibold leading-5', i.severity === 'ERROR' ? 'text-red-700' : 'text-amber-700')}>
@@ -863,6 +865,11 @@ function AddOverrideForm({
           </select>
           <input className={controlClass + ' font-mono'} value={value} onChange={(e) => setValue(e.target.value)} placeholder={node?.unitType ?? ''} required />
         </div>
+        {/* Audit 2026-10-13: "reduce by 20%" was entered as "set to 0.05", a 50% cut. Say what the number means as it is typed. */}
+        <p className="mt-1 font-mono text-meta text-ink-500">
+          {operation === 'SET' ? 'The new value, not a change.' : 'Added to the value (negative to reduce).'}
+          {node?.unitType === 'ratio' && value.trim() !== '' && Number.isFinite(Number(value)) ? ` ${value} is ${Math.round(Number(value) * 1000) / 10}%${operation === 'ADD' ? ' points' : ''}.` : ''}
+        </p>
       </Field>
       <Field label="Period">
         <select className={controlClass} value={periodChoice} onChange={(e) => setPeriodChoice(e.target.value)}>

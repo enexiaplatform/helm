@@ -22,9 +22,10 @@ import { resolveIntegrationContext, sourceHasNews } from './integrationRuntime.t
 import { buildCurrentSnapshot, listSnapshots } from './twinRuntime.ts';
 
 /** `readEpoch`: bumped when a Refresh finishes — the page is read again from scratch. `refreshing`: one is running. */
-type LiveStore = LiveSyncState & { readonly orgId: string | null; readonly readEpoch: number; readonly refreshing: boolean };
+/** `lastReadAt`: when HELM last took anything from Memoire, from its own sync history — so the bar can say how old it is. */
+type LiveStore = LiveSyncState & { readonly orgId: string | null; readonly readEpoch: number; readonly refreshing: boolean; readonly lastReadAt: string | null };
 
-const initial: LiveStore = { orgId: null, phase: 'stopped', listening: false, lastSync: null, caughtUpAt: null, composedAt: null, version: 0, error: null, readEpoch: 0, refreshing: false };
+const initial: LiveStore = { orgId: null, phase: 'stopped', listening: false, lastSync: null, caughtUpAt: null, composedAt: null, version: 0, error: null, readEpoch: 0, refreshing: false, lastReadAt: null };
 
 /** What the console and the pages read: the live sync's state, and a version to re-read on. */
 export const useMemoireLive = create<LiveStore>(() => initial);
@@ -113,6 +114,14 @@ export function startMemoireLiveSync(scope: Scope): { live: LiveSync | null; sto
   useMemoireLive.setState({ ...initial, orgId, phase: 'starting', readEpoch: useMemoireLive.getState().readEpoch });
   // The contexts are resolved once per start: the pipeline, its checkpoint store and the twin are all cloud-backed.
   const contexts = resolveIntegrationContext('cloud', scope).catch(() => null);
+  // The last read on record (audit 2026-10-13: the bar said "as last read" and not when).
+  void contexts.then(async (ctx) => {
+    if (!ctx) return;
+    const syncs = await ctx.store.listSyncs(ctx.scope, { system: 'memoire' });
+    if (!syncs.ok || useMemoireLive.getState().orgId !== orgId) return;
+    const last = syncs.value.filter((x) => x.outcome === 'SUCCEEDED' || x.outcome === 'PARTIAL').reduce<string | null>((m, x) => (m === null || x.recordedAt > m ? x.recordedAt : m), null);
+    if (last) useMemoireLive.setState((st) => ({ lastReadAt: st.lastReadAt && st.lastReadAt > last ? st.lastReadAt : last }));
+  });
 
   const live = createLiveSync({
     // Nothing reads Memoire by itself: Refresh, "Sync now" and HELM's own changes ask (see the header).
@@ -173,7 +182,7 @@ export function startMemoireLiveSync(scope: Scope): { live: LiveSync | null; sto
     exclusive: exclusiveFor(`helm:memoire-live:${orgId}:${userId}`),
     onState: (s) => {
       // A state from a sync that was already replaced (another org, a sign-out) is not this console's state.
-      if (useMemoireLive.getState().orgId === orgId) useMemoireLive.setState({ ...s });
+      if (useMemoireLive.getState().orgId === orgId) useMemoireLive.setState({ ...s, ...(s.caughtUpAt ? { lastReadAt: s.caughtUpAt } : {}) });
     },
     now: () => new Date().toISOString(),
   });
@@ -190,12 +199,22 @@ export function startMemoireLiveSync(scope: Scope): { live: LiveSync | null; sto
 }
 
 /** One line for the console strip: what HELM knows about its reading of Memoire, said plainly. */
-export function liveSyncLine(s: LiveSyncState, clock: (iso: string) => string): { text: string; failed: boolean } | null {
+export function liveSyncLine(s: LiveSyncState & { readonly lastReadAt?: string | null }, clock: (iso: string) => string, nowIso: string = new Date().toISOString()): { text: string; failed: boolean; stale?: boolean } | null {
+  const age = (iso: string): { words: string; stale: boolean } => {
+    const h = (Date.parse(nowIso) - Date.parse(iso)) / 3_600_000;
+    if (h < 1) return { words: 'less than an hour ago', stale: false };
+    if (h < 24) return { words: `${Math.floor(h)} h ago`, stale: false };
+    const d = Math.floor(h / 24);
+    return { words: `${d} ${d === 1 ? 'day' : 'days'} ago`, stale: true };
+  };
   switch (s.phase) {
     case 'stopped':
       return null;
-    case 'idle':
-      return { text: 'Memoire · as last read', failed: false };
+    case 'idle': {
+      if (!s.lastReadAt) return { text: 'Memoire · press Refresh to read new changes', failed: false };
+      const a = age(s.lastReadAt);
+      return { text: `Memoire · last read ${clock(s.lastReadAt)}, ${a.words}${a.stale ? ' — press Refresh' : ''}`, failed: false, stale: a.stale };
+    }
     case 'starting':
     case 'reading':
       return { text: 'Memoire · reading changes…', failed: false };

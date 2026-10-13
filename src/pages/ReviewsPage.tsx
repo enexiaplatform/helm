@@ -363,7 +363,7 @@ export function ReviewsPage() {
 
           {chosen && (
             <section className="mt-10">
-              <SectionHead title="Prepared from the kernel" meta={chosen.review.periodLabel} caveat="kernel order — never ranked" />
+              <SectionHead title="Prepared from the kernel" meta={chosen.review.periodLabel} caveat="in the order HELM holds them" />
               <div className="mt-3 flex gap-2">
                 {(['PREPARATION', 'CLOSING'] as const).map((w) => (
                   <button key={w} type="button" disabled={w === 'CLOSING' && chosen.status === 'OPEN'} onClick={() => setWhich(w)} className={cn('rounded-full border px-3 py-1 font-mono text-meta transition-colors ease-helm disabled:opacity-40', which === w ? 'border-ink-950 bg-ink-950 text-paper' : 'border-ink-300 text-ink-700 hover:bg-ink-100')}>

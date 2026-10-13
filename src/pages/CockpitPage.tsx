@@ -169,6 +169,10 @@ export function CockpitPage() {
   const items: readonly TwinItem[] = d?.projection?.items ?? [];
   const tiers = attentionTiers(items);
   const decisions = items.filter((i) => i.kind === 'DECISION');
+  // A cancelled decision stays on record in Decisions; the Cockpit lists what is in play (audit 2026-10-13: a cancelled test decision sat here).
+  const isCancelled = (i: TwinItem) => /CANCELLED/.test(String(st<string>(i, 'decisionState') ?? st<string>(i, 'state') ?? ''));
+  const liveDecisions = decisions.filter((i) => !isCancelled(i));
+  const cancelledDecisions = decisions.length - liveDecisions.length;
   const governance = new Map(items.filter((i) => i.kind === 'GOVERNANCE').map((i) => [String(st<string>(i, 'commitmentId') ?? i.key), i]));
   const currentItems = d?.current.items ?? [];
   const itemByKey = new Map(currentItems.map((i) => [i.key, i]));
@@ -407,7 +411,7 @@ export function CockpitPage() {
       <div className="mt-9 flex flex-wrap gap-10">
         <div className="min-w-0 flex-[1_1_560px]">
           <section>
-            <SectionHead title="Cannot wait" meta={d ? String(urgent) : '…'} caveat="named conditions with a cause — not a ranking" dot={urgent > 0 ? 'warning' : undefined} />
+            <SectionHead title="Cannot wait" meta={d ? String(urgent) : '…'} caveat="each with its cause" dot={urgent > 0 ? 'warning' : undefined} />
             {d && urgent === 0 && <p className="mt-3 max-w-reading text-ui text-ink-500">Nothing here: no line is breached, no commitment has moved off what it committed, no critical assumption is disproved.</p>}
             <ul>
               {tiers.cannotWait.map((a) => {
@@ -431,7 +435,7 @@ export function CockpitPage() {
           </section>
 
           <section className="mt-10">
-            <SectionHead title="Needs a look this week" meta={d ? String(look) : '…'} caveat="one line each, in kernel order" />
+            <SectionHead title="Needs a look this week" meta={d ? String(look) : '…'} caveat="one line each" />
             {d && look === 0 && (
               // An empty state is one line and one action (audit 2026-10-12): what is watched, and how to give the rules something to watch.
               <p className="mt-3 max-w-reading text-ui text-ink-500">
@@ -554,10 +558,10 @@ export function CockpitPage() {
           )}
 
           <section className="mt-10">
-            <SectionHead title="Decisions and governance" meta={d ? String(decisions.length) : '…'} caveat="visibility is not authority" />
-            {d && decisions.length === 0 && <p className="mt-3 text-ui text-ink-500">No decision is visible to this reader.</p>}
+            <SectionHead title="Decisions and governance" meta={d ? String(liveDecisions.length) : '…'} caveat="visibility is not authority" />
+            {d && liveDecisions.length === 0 && <p className="mt-3 text-ui text-ink-500">{cancelledDecisions > 0 ? 'No decision is in play.' : 'No decision is visible to this reader.'}</p>}
             <ul>
-              {decisions.map((dec) => {
+              {liveDecisions.map((dec) => {
                 const cid = String(st<string | null>(dec, 'commitmentId') ?? '');
                 const gov = governance.get(cid) ?? [...governance.values()].find((g) => g.label === `Governance of ${dec.label}`);
                 const gs = gov?.state as { state?: string; statement?: string } | undefined;
@@ -573,7 +577,7 @@ export function CockpitPage() {
                 );
               })}
             </ul>
-            <p className="mt-3 text-meta text-ink-600">Frame, weigh and commit in <Link to="/decisions" className="text-accent-700 underline">Decisions</Link>; see who must approve in <Link to="/governance" className="text-accent-700 underline">Governance</Link>.</p>
+            <p className="mt-3 text-meta text-ink-600">{cancelledDecisions > 0 ? `${word(cancelledDecisions)} cancelled ${cancelledDecisions === 1 ? 'decision is' : 'decisions are'} kept on record in Decisions. ` : ''}Frame, weigh and commit in <Link to="/decisions" className="text-accent-700 underline">Decisions</Link>; see who must approve in <Link to="/governance" className="text-accent-700 underline">Governance</Link>.</p>
           </section>
 
           {((d?.claims.length ?? 0) > 0 || (d?.genome.patterns.length ?? 0) > 0 || (d?.counterfactuals.cases.length ?? 0) > 0) && (

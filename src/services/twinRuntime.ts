@@ -384,7 +384,7 @@ export async function attentionCount(mode: 'demo' | 'cloud', scope: Scope): Prom
   const last = [...all].filter((s) => s.spec.kind === 'CURRENT').reverse().find((s) => canSeeSnapshot(viewer, s, ctx.units).visible);
   if (!last) return 0;
   const projected = await ctx.twin.projectForViewer(ctx.scope, last.id, viewer, ctx.units);
-  // The lines the Cockpit shows, so the brass count and the headline never disagree.
+  // The lines the Cockpit shows, so the rail's count and the headline never disagree.
   return projected.ok ? attentionTiers(projected.value.items).lines : 0;
 }
 

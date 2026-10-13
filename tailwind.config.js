@@ -1,15 +1,19 @@
-/** HELM v2 — "Chart room". Drop-in replacement for the repo's tailwind.config.js.
- *  The colour families keep Tailwind names (emerald, amber, red…) but carry HELM values,
- *  so existing classes re-skin immediately. Off-palette families are aliased onto HELM ones.
+/** HELM — "Chart room" (design system of 2026-10-13). Warm paper, navy ink, sea-teal instruments.
+ *  Ramp names are kept (ink/accent/red/amber/emerald/violet/slate) so every component remaps cleanly.
  *  Every hex here is final — do not add colours outside this file. */
-const ink = { 50:'#f8f6f1',100:'#efece5',200:'#e2ded4',300:'#c9c4b8',400:'#8e8f8c',500:'#646a73',600:'#4f5560',700:'#3a404a',800:'#2a303a',900:'#1d222b',950:'#12161d' };
-const accent = { 50:'#eef2f9',100:'#dce5f3',200:'#bacbe6',300:'#8da8d4',400:'#5f82be',500:'#3b63a8',600:'#284c8f',700:'#1f3e78',800:'#19325f',900:'#14284b',950:'#0d1a2e' };
-const emerald = { 50:'#edf6f1',100:'#d8ede2',200:'#b5dac6',500:'#3c9a70',600:'#2a7f5a',700:'#1f6a4a',800:'#195539',900:'#13442e' };
-const amber = { 50:'#fbf4e4',100:'#f6e7c3',200:'#edd49a',500:'#c8922a',600:'#a8761a',700:'#875d12',800:'#6f4c10',900:'#5a3e0e' };
-const red = { 50:'#fbeeec',100:'#f7dcd8',200:'#eebdb6',500:'#cc4a3d',600:'#b23a2e',700:'#962e24',800:'#7c261e',900:'#661f19' };
-const violet = { 50:'#f4f0f8',100:'#e8e0f1',200:'#d3c4e5',700:'#5e3f8e',800:'#4e3476',900:'#3f2a60' };
-const sky = { 50:'#edf5f7',100:'#d9ebef',200:'#b6d7e0',700:'#22627a',800:'#1b5064' };
-const indigo = { 50:'#eff0f9',100:'#e0e2f3',200:'#c5c9e8',800:'#373d86',900:'#2d316c' };
+const ink = { 50:'#f7f5f0',100:'#eeebe3',200:'#dfdace',300:'#c4beb0',400:'#9a958a',500:'#6f6c66',600:'#55534f',700:'#3e3f42',800:'#2a2f38',900:'#1b2230',950:'#0e1624' };
+// Sea teal, like navigation instruments: focus, the active place, modelled values, the mark's knobs.
+const accent = { 50:'#eaf5f3',100:'#cfe8e4',200:'#a4d3cc',300:'#6db6ac',400:'#3a9a8f',500:'#1e8075',600:'#136a61',700:'#0f574f',800:'#0d4540',900:'#0b3632',950:'#082925' };
+// Muted status: brick (critical), ochre (warning), forest (good). Violet is reserved for scenarios.
+const red = { 50:'#fbefec',100:'#f6dcd5',200:'#edbfb3',300:'#e29d8b',400:'#d77a64',500:'#c2553b',600:'#a8412a',700:'#8e3522',800:'#742b1c',900:'#5a2216' };
+const amber = { 50:'#fbf4e6',100:'#f5e6c4',200:'#ebd199',300:'#e1bb6f',400:'#d6a445',500:'#c08a23',600:'#a06f17',700:'#835914',800:'#6b4812',900:'#4f350e' };
+const emerald = { 50:'#edf5ef',100:'#d5e9db',200:'#afd3ba',300:'#86bc97',400:'#5aa173',500:'#3f8a5c',600:'#2f7a4b',700:'#26653e',800:'#1f5233',900:'#173d26' };
+const violet = { 50:'#f3f0f9',100:'#e8e2f4',200:'#cfc4e8',300:'#b2a1da',400:'#9580cc',500:'#7a62c0',600:'#6a4fb0',700:'#584198',800:'#46357f',900:'#352862' };
+// Slate = what the business says: forecast, target, policy (the "stated" truth layer).
+const slate = { 50:'#eef2f8',100:'#dbe3ef',200:'#c3cfe2',300:'#9fb2cf',400:'#7590b8',500:'#5676a3',600:'#3f5f8f',700:'#354f78',800:'#2b4366',900:'#22344f' };
+const sky = { 50:'#edf3f6',100:'#d8e6ec',200:'#b3cdd8',700:'#2d5f75',800:'#244c5e' };
+const lime = { 50:'#f2f4e6',100:'#e4e9c9',200:'#d6dcae',800:'#4b561c' };
+const orange = { 50:'#fbf1ea',100:'#f6e1d3',200:'#ecc4a8',800:'#7f3d1a',900:'#6e3416' };
 
 /** @type {import('tailwindcss').Config} */
 export default {
@@ -17,57 +21,58 @@ export default {
   theme: {
     colors: {
       transparent: 'transparent', current: 'currentColor', white: '#ffffff', black: '#000000',
-      paper: '#f3f1eb',             // Chart Paper — the page
-      navy: '#0d1a2e',              // Night Navy — sidebar, auth, commitment banner
-      brass: { 300:'#dcc38e', 400:'#c9a45c', 500:'#b08a3e', 600:'#9c7a32' }, // mark, active nav dot, Attention count ONLY
-      ink, accent, prussian: accent,
-      emerald, amber, red, violet, sky, indigo,
-      teal: { 50:'#ecf6f4', 200:'#b3dcd4', 800:'#1a5c55' },
-      lime: { 50:'#f3f5e6', 200:'#d7deaf', 800:'#4e5a1a' },
-      orange: { 100:'#f8e4d6', 900:'#7a3512' },
+      paper: ink[50],               // the workspace
+      sheet: '#fbfaf7',             // inner blocks on a white sheet, table headers
+      navy: ink[950],               // the one night surface: Auth
+      ink, accent, red, amber, emerald, violet, slate, sky, lime, orange,
+      // truth layers — HELM never lets these blur into one number
+      truth: { actual: ink[950], modelled: accent[600], stated: slate[600], scenario: violet[600] },
       // aliases so stock classes land on HELM hues
-      slate: ink, gray: ink, zinc: ink, neutral: ink, stone: ink,
-      blue: accent, green: emerald, yellow: amber, rose: red, purple: violet, cyan: sky,
-      chrome: { fg: '#b6c3d9', muted: '#8da8d4', line: 'rgb(243 241 235 / 0.10)', hover: 'rgb(243 241 235 / 0.07)', active: 'rgb(243 241 235 / 0.09)' },
+      gray: ink, zinc: ink, neutral: ink, stone: ink,
+      teal: accent, cyan: accent, indigo: slate, blue: slate,
+      green: emerald, yellow: amber, rose: red, purple: violet,
     },
     fontFamily: {
       sans: ['"Be Vietnam Pro"', 'system-ui', '-apple-system', '"Segoe UI"', 'sans-serif'],
-      serif: ['Newsreader', '"Iowan Old Style"', '"Palatino Linotype"', 'Georgia', 'serif'],
-      mono: ['"IBM Plex Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+      serif: ['"Source Serif 4"', 'Georgia', '"Times New Roman"', 'serif'],
+      mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
     },
     fontSize: {
-      // management voice (serif)
-      display: ['44px', { lineHeight: '50px', letterSpacing: '-0.015em' }],   // Attention headline
-      title: ['36px', { lineHeight: '44px', letterSpacing: '-0.015em' }],     // decision question
-      instrument: ['28px', { lineHeight: '36px', letterSpacing: '-0.012em' }],// kernel page titles
-      signal: ['24px', { lineHeight: '31px', letterSpacing: '-0.01em' }],     // critical signal title
-      section: ['22px', { lineHeight: '28px' }],                              // section head over 2px rule
-      'section-sm': ['20px', { lineHeight: '26px' }],
-      panel: ['17px', { lineHeight: '24px' }],                                // side panel titles
-      figure: ['26px', { lineHeight: '32px' }],
-      'figure-sm': ['24px', { lineHeight: '30px' }],
-      // interface (sans) + values (mono)
-      lede: ['16px', { lineHeight: '26px' }],
-      read: ['15px', { lineHeight: '24px' }],
+      // the record's voice (serif)
+      display: ['28px', { lineHeight: '36px', letterSpacing: '-0.01em' }],    // page title / computed headline
+      title: ['26px', { lineHeight: '34px', letterSpacing: '-0.01em' }],      // the question in the decision header
+      instrument: ['28px', { lineHeight: '36px', letterSpacing: '-0.01em' }], // kernel page titles
+      signal: ['20px', { lineHeight: '28px' }],                               // a condition that cannot wait
+      section: ['17px', { lineHeight: '24px' }],                              // questions in lists, section heads
+      'section-sm': ['15px', { lineHeight: '22px' }],
+      panel: ['14px', { lineHeight: '22px' }],                                // panel titles (sans semibold)
+      figure: ['22px', { lineHeight: '30px' }],
+      'figure-sm': ['18px', { lineHeight: '28px' }],                          // stat value
+      // interface (sans) + provenance (mono)
+      lede: ['15px', { lineHeight: '24px' }],
+      read: ['14px', { lineHeight: '22px' }],
       base: ['14px', { lineHeight: '22px' }],
-      ui: ['14px', { lineHeight: '20px' }],
-      dense: ['13px', { lineHeight: '20px' }],
-      meta: ['12px', { lineHeight: '18px' }],
-      label: ['11px', { lineHeight: '16px', letterSpacing: '0.08em' }],       // always uppercase
-      tag: ['10px', { lineHeight: '16px', letterSpacing: '0.06em' }],         // mono enum pills
+      ui: ['14px', { lineHeight: '22px' }],
+      dense: ['12px', { lineHeight: '18px' }],
+      meta: ['11px', { lineHeight: '16px' }],
+      label: ['11px', { lineHeight: '16px', letterSpacing: '0.06em' }],       // eyebrow, always uppercase
+      tag: ['10.5px', { lineHeight: '14px', letterSpacing: '0.08em' }],       // ledger caps, provenance
     },
+    // This is a record, not a bubble: 2px tags and bars, 4px controls, 6px sheets.
+    borderRadius: { none: '0', sm: '2px', DEFAULT: '2px', md: '4px', lg: '4px', xl: '6px', '2xl': '6px', full: '9999px' },
     extend: {
-      borderRadius: { md: '6px', lg: '8px', xl: '12px', '2xl': '16px' },
       boxShadow: {
-        panel: '0 1px 2px rgb(13 26 46 / 0.05), 0 4px 12px rgb(13 26 46 / 0.04)',
-        overlay: '0 2px 6px rgb(13 26 46 / 0.08), 0 24px 48px rgb(13 26 46 / 0.18)',
-        focus: '0 0 0 3px rgb(59 99 168 / 0.35)',
+        panel: '0 1px 0 rgb(14 22 36 / 0.04)',
+        overlay: '0 0 0 1px rgb(14 22 36 / 0.06), 0 24px 48px -12px rgb(14 22 36 / 0.28)',
+        focus: '0 0 0 2px #f7f5f0, 0 0 0 4px #1e8075',
+        field: '0 0 0 3px rgb(30 128 117 / 0.15)',
+        decision: 'inset 0 2px 0 #136a61',  // the 2px teal rule on a ledger's decision column
       },
-      maxWidth: { management: '1240px', reading: '680px', headline: '820px' },
-      width: { sidebar: '224px' },
-      spacing: { 'page-x': '40px', 'page-y': '36px' },
-      transitionTimingFunction: { helm: 'cubic-bezier(0.2, 0, 0, 1)' },
-      transitionDuration: { DEFAULT: '160ms' },
+      maxWidth: { management: '1152px', reading: '680px', headline: '820px' },
+      width: { sidebar: '232px' },
+      spacing: { 'page-x': '24px', 'page-y': '24px' },
+      transitionTimingFunction: { helm: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+      transitionDuration: { DEFAULT: '150ms' },
     },
   },
   plugins: [],

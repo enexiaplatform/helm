@@ -321,7 +321,7 @@ export function OntologyPage() {
                 <Pill tone="neutral">{selected.entityTypeKey}</Pill>
                 <span className="helm-meta font-medium">{selected.canonicalKey}</span>
               </div>
-              <h2 className="mt-2 text-[26px] leading-[33px] tracking-[-0.01em]">{selected.name}</h2>
+              <h2 className="mt-2 text-figure">{selected.name}</h2>
               <Facts
                 rows={[
                   ['Entity id', selected.id, true],

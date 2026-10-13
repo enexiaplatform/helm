@@ -338,7 +338,7 @@ export function CalculationsPage() {
                   {selected.key}@{selected.version}
                 </span>
               </div>
-              <h2 className="mt-2 text-[26px] leading-[33px] tracking-[-0.01em]">{selected.name}</h2>
+              <h2 className="mt-2 text-figure">{selected.name}</h2>
               <p className="mt-2 font-mono text-read font-medium text-ink-800">{selected.expression}</p>
               <dl className="mt-4 grid grid-cols-[160px_minmax(0,1fr)] gap-x-4">
                 {(

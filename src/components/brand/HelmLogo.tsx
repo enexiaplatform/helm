@@ -1,87 +1,77 @@
 import { cn } from '../../lib/cn.ts';
 
-/* HELM v2 mark — "Bearing". A bearing ring with a compass needle set to 012.5°
-   (the brand heading). North half brass, south half ink. Wordmark is drawn,
-   not typed: 2-unit strokes, bracket-less slab serifs, 30-unit cap height.
-   Geometry is final; mirrors public/brand/*.svg. Never retype HELM in a font. */
+/* HELM mark — a six-spoke helm wheel. Paper spokes and teal knobs on a navy tile,
+   or a tileless navy wheel for paper grounds. The wordmark is HELM in Source Serif 4
+   semibold caps, tracked 0.16em. Geometry is final; mirrors public/brand/*.svg. */
 
-const NAVY = '#0d1a2e';
-const PAPER = '#f3f1eb';
-const BRASS = '#c9a45c';
+const NAVY = '#0e1624';
+const PAPER = '#f7f5f0';
+const SHEET = '#fbfaf7';
+const KNOB_ON_NAVY = '#3a9a8f';   // accent-400
+const KNOB_ON_PAPER = '#136a61';  // accent-600
 
-type Tone = 'light' | 'dark' | 'black' | 'white';
-const TONES: Record<Tone, { ink: string; accent: string; bg: string }> = {
-  light: { ink: NAVY, accent: BRASS, bg: PAPER },   // on paper / white
-  dark: { ink: PAPER, accent: BRASS, bg: NAVY },    // on navy (sidebar, auth)
-  black: { ink: '#000', accent: '#000', bg: '#fff' },
-  white: { ink: '#fff', accent: '#fff', bg: '#000' },
+const SPOKES = [[16, 6], [24.66, 11], [24.66, 21], [16, 26], [7.34, 21], [7.34, 11]] as const;
+const KNOBS = [[16, 4.4], [26.05, 10.2], [26.05, 21.8], [16, 27.6], [5.95, 21.8], [5.95, 10.2]] as const;
+
+/** tile = paper wheel on a navy tile (the default); light = navy wheel for paper grounds; bare = currentColor. */
+type MarkTone = 'tile' | 'light' | 'bare';
+const MARK: Record<MarkTone, { tile: string | null; stroke: string; knob: string; hub: string }> = {
+  tile: { tile: NAVY, stroke: PAPER, knob: KNOB_ON_NAVY, hub: NAVY },
+  light: { tile: null, stroke: NAVY, knob: KNOB_ON_PAPER, hub: SHEET },
+  bare: { tile: null, stroke: 'currentColor', knob: 'currentColor', hub: 'none' },
 };
 
-const WORD_D = 'M1 0V30M25 0V30M1 15H25M-3 1H5M-3 29H5M21 1H29M21 29H29M61 1H42V29H61M42 15H58M38 1H42M38 29H42M60 0V5M60 25V30M57 12.5V17.5M77 0V29H94M73 1H81M73 29H77M93 24V30M110 30V0.2L125 22.2L140 0.2V30M106 29H114M136 29H144M106 1H110M140 1H144';
+interface SymbolProps { size?: number; tone?: MarkTone; className?: string; title?: string }
 
-interface SymbolProps { size?: number; tone?: Tone; compact?: boolean; className?: string; title?: string }
-
-/** The bearing. Below 28px it switches to the compact cut (heavier ring, no ticks). */
-export function HelmSymbol({ size = 32, tone = 'light', compact, className, title = 'HELM' }: SymbolProps) {
-  const { ink, accent, bg } = TONES[tone];
-  const small = compact ?? size < 28;
-  const tip = small ? 11 : 13;
-  const hw = small ? 6 : 4.6;
+/** The wheel. */
+export function HelmSymbol({ size = 32, tone = 'tile', className, title = 'HELM' }: SymbolProps) {
+  const t = MARK[tone];
   return (
-    <svg viewBox="0 0 64 64" width={size} height={size} role="img" aria-label={title} className={cn('block shrink-0', className)}>
-      <circle cx="32" cy="32" r={small ? 25 : 26} fill="none" stroke={ink} strokeWidth={small ? 4.5 : 2.6} />
-      {!small && [0, 90, 180, 270].map((a) => (
-        <line key={a} x1="32" y1="6" x2="32" y2="11" stroke={ink} strokeWidth="2.6" transform={'rotate(' + a + ' 32 32)'} />
-      ))}
-      {!small && [45, 135, 225, 315].map((a) => (
-        <line key={a} x1="32" y1="6.5" x2="32" y2="9" stroke={ink} strokeWidth="1.4" transform={'rotate(' + a + ' 32 32)'} />
-      ))}
-      <g transform="rotate(12.5 32 32)">
-        <polygon points={'32,' + tip + ' ' + (32 + hw) + ',32 ' + (32 - hw) + ',32'} fill={accent} />
-        <polygon points={(32 - hw) + ',32 ' + (32 + hw) + ',32 32,' + (64 - tip)} fill={ink} />
-        <circle cx="32" cy="32" r={small ? 2.4 : 2} fill={bg} />
+    <svg viewBox="0 0 32 32" width={size} height={size} role="img" aria-label={title || undefined} aria-hidden={title ? undefined : true} className={cn('block shrink-0', className)}>
+      {t.tile && <rect width="32" height="32" rx="6" fill={t.tile} />}
+      <g stroke={t.stroke} strokeWidth="2" strokeLinecap="round">
+        {SPOKES.map(([x, y]) => <line key={`${x}-${y}`} x1="16" y1="16" x2={x} y2={y} />)}
       </g>
+      <circle cx="16" cy="16" r="7" fill="none" stroke={t.stroke} strokeWidth="2.25" />
+      <g fill={t.knob}>{KNOBS.map(([x, y]) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.7" />)}</g>
+      <circle cx="16" cy="16" r="3" fill={t.hub} stroke={t.stroke} strokeWidth="2" />
     </svg>
   );
 }
 
-interface WordmarkProps { height?: number; tone?: Tone; className?: string; title?: string }
+/** Where the lockup sits: on paper / white, or on the navy night surface. */
+type Ground = 'light' | 'dark';
 
-/** Drawn HELM wordmark. height = rendered cap-box height in px (min 12). */
-export function HelmWordmark({ height = 20, tone = 'light', className, title = 'HELM' }: WordmarkProps) {
-  const { ink } = TONES[tone];
+/** HELM in serif semibold caps, tracked 0.16em. size = font size in px. */
+export function HelmWordmark({ size = 15, tone = 'light', className }: { size?: number; tone?: Ground; className?: string }) {
   return (
-    <svg viewBox="-6 -2 153 34" height={height} width={(height * 153) / 34} role="img" aria-label={title} className={cn('block shrink-0', className)}>
-      <path d={WORD_D} fill="none" stroke={ink} strokeWidth="2" strokeMiterlimit="2" />
-    </svg>
+    <span className={cn('font-serif font-semibold leading-none', tone === 'dark' ? 'text-ink-50' : 'text-ink-950', className)} style={{ fontSize: size, letterSpacing: '0.16em' }}>
+      HELM
+    </span>
   );
 }
 
-interface LockupProps { height?: number; tone?: Tone; className?: string }
+interface LockupProps { height?: number; tone?: Ground; subtitle?: string | null; className?: string }
 
-/** Symbol + wordmark. height = overall height; symbol is the full height, gap = 0.39 × height. */
-export function HelmLockup({ height = 26, tone = 'dark', className }: LockupProps) {
+/** Tiled mark + wordmark, with an optional subline. height = the mark's size; the wordmark is half of it. */
+export function HelmLockup({ height = 30, tone = 'light', subtitle = 'System of decision', className }: LockupProps) {
+  const word = Math.round(height * 0.5);
   return (
-    <span className={cn('inline-flex items-center', className)} style={{ gap: Math.round(height * 0.39) }} aria-label="HELM" role="img">
-      <HelmSymbol size={height} tone={tone} compact={height < 28} title="" />
-      <HelmWordmark height={height * 0.74} tone={tone} title="" />
+    <span className={cn('inline-flex items-center', className)} style={{ gap: Math.round(height * 0.34) }} aria-label="HELM" role="img">
+      <HelmSymbol size={height} tone="tile" title="" />
+      <span className="flex flex-col" style={{ lineHeight: 1.15 }}>
+        <HelmWordmark size={word} tone={tone} />
+        {subtitle && (
+          <span className={cn('mt-[3px] font-sans', tone === 'dark' ? 'text-ink-400' : 'text-ink-500')} style={{ fontSize: Math.max(11, Math.round(word * 0.72)) }}>
+            {subtitle}
+          </span>
+        )}
+      </span>
     </span>
   );
 }
 
 /** App icon / favicon tile. */
 export function HelmAppIcon({ size = 32, className }: { size?: number; className?: string }) {
-  return (
-    <svg viewBox="0 0 64 64" width={size} height={size} role="img" aria-label="HELM" className={cn('block shrink-0', className)}>
-      <rect width="64" height="64" rx="14" fill={NAVY} />
-      <g transform="translate(9 9) scale(0.72)">
-        <circle cx="32" cy="32" r="25" fill="none" stroke={PAPER} strokeWidth="4.5" />
-        <g transform="rotate(12.5 32 32)">
-          <polygon points="32,11 38,32 26,32" fill={BRASS} />
-          <polygon points="26,32 38,32 32,53" fill={PAPER} />
-          <circle cx="32" cy="32" r="2.4" fill={NAVY} />
-        </g>
-      </g>
-    </svg>
-  );
+  return <HelmSymbol size={size} tone="tile" className={className} />;
 }

@@ -519,7 +519,7 @@ function TradeOffs({ workspace }: { workspace: DecisionWorkspace }) {
       <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-x-10 gap-y-7">
         {columns.map((c) => (
           <div key={c.alternativeId}>
-            <p className="border-b border-ink-950 pb-2 font-serif text-panel font-medium">{c.alternativeLabel}</p>
+            <p className="border-b border-ink-300 pb-2 font-serif text-section font-semibold">{c.alternativeLabel}</p>
             <Lines title="Gains" tone="text-emerald-700" lines={c.gains} />
             <Lines title="Gives up" tone="text-amber-700" lines={c.concessions} />
             <Lines title="Not comparable" tone="text-ink-500" lines={c.unresolved} />

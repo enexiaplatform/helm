@@ -95,7 +95,7 @@ export function ConsoleLayout() {
     };
   }, [mode, scope, userId]);
 
-  // The brass count is the attention conditions HELM's own rules hold in the latest current state — not a stored signal.
+  // The rail's count is the attention conditions HELM's own rules hold in the latest current state — not a stored signal.
   useEffect(() => {
     if (!scope || !mode || (mode === 'demo' && demoReady !== 'ready')) return;
     let cancelled = false;
@@ -125,6 +125,8 @@ export function ConsoleLayout() {
       activeOrgId={activeOrgId}
       onOrgChange={(id) => void setActiveOrg(id)}
       userLabel={userEmail ?? myRole()}
+      orgMeta={myRole()}
+      crumbDetail={pathname.split('/')[2] ? (active === 'decisions' ? 'Decision' : 'Record') : null}
       demo={mode === 'demo'}
       sourceLine={mode === 'cloud' ? liveSyncLine(live, displayClock) : null}
       effectiveAsOf={fork && INSTRUMENTS.has(active) ? displayClock(fork.effectiveAsOf) : undefined}

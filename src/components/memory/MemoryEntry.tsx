@@ -22,10 +22,10 @@ export interface MemoryView {
    "What was reasoned" (chosen, summary, accepted, expected) | "What happened" (review or pending). */
 export function MemoryEntry({ m, onOpen }: { m: MemoryView; onOpen: (id: string) => void }) {
   return (
-    <article className="mt-10 border-t-2 border-ink-950 pt-4">
+    <article className="mt-8 border-t border-ink-300 pt-4">
       <p className="helm-meta">{m.meta}</p>
       <a href={'/decisions/' + m.id} onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); onOpen(m.id); }}
-        className="mt-[6px] block max-w-[900px] font-serif text-[26px] font-medium leading-[33px] tracking-[-0.01em] text-ink-950 hover:text-accent-800 hover:no-underline">{m.question}</a>
+        className="mt-[6px] block max-w-[900px] font-serif text-signal font-semibold text-ink-950 hover:text-accent-700 hover:no-underline">{m.question}</a>
       <div className="mt-[22px] grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-x-10 gap-y-7">
         <div>
           <p className="helm-label mb-[10px]">What was reasoned</p>

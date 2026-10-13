@@ -481,7 +481,7 @@ export function TwinPage() {
               {groups.filter((g) => g.changes.length > 0).map((g) => (
                 <div key={g.key} className="mt-6">
                   <p className="helm-label">{g.title} <span className="font-mono">{g.changes.length}</span></p>
-                  <div className="mt-1 grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)] gap-x-4 border-b border-ink-950 pb-1 pt-2">
+                  <div className="mt-1 grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)] gap-x-4 border-b border-ink-300 pb-1 pt-2">
                     <span className="helm-label">Before</span>
                     <span className="helm-label">Change</span>
                     <span className="helm-label">After</span>
@@ -580,7 +580,7 @@ export function TwinPage() {
               </ol>
               {lineage.disclaimer && <p className="helm-caveat mt-4">{lineage.disclaimer}</p>}
               {lineage.causal && (
-                <div className="mt-6 border-t-2 border-ink-950 pt-3">
+                <div className="mt-6 border-t border-ink-300 pt-3">
                   <p className="helm-label">Causal hypotheses</p>
                   {lineage.causal.causal.map((ci) => {
                     const candidates = ci.questions[0]?.candidates.map((k) => k.view) ?? ci.claims;

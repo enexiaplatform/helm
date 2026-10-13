@@ -15,7 +15,7 @@ export function DecisionRow({ d, onOpen }: { d: DecisionRowView; onOpen: (id: st
     <a href={'/decisions/' + d.id} onClick={(e) => { if (e.metaKey || e.ctrlKey || e.shiftKey) return; e.preventDefault(); onOpen(d.id); }}
       className="flex flex-wrap gap-x-10 gap-y-4 border-b border-ink-200 py-[22px] text-ink-950 no-underline hover:bg-white/45 hover:text-ink-950 hover:no-underline">
       <div className="grid min-w-0 flex-[1_1_520px] gap-[6px]">
-        <span className="font-serif text-[22px] font-medium leading-[29px] tracking-[-0.01em]">{d.question}</span>
+        <span className="font-serif text-section font-medium">{d.question}</span>
         <span className="text-ui font-medium text-ink-700">{d.line}</span>
         <span className="helm-meta">{d.meta}</span>
       </div>

@@ -1,12 +1,13 @@
 import type { InputHTMLAttributes } from 'react';
+import { controlClass } from './Field.tsx';
 
-/* Label 12/500 ink-600 over a 14px input. Border ink-300, radius 8, padding 10 × 12, focus halo. */
+/* Uppercase 11px label over a 14px input (.field-label + .field-input). */
 export function TextField({ label, id, ...rest }: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
   const fid = id ?? label.toLowerCase().replace(/\s+/g, '-');
   return (
-    <label htmlFor={fid} className="grid gap-[6px]">
-      <span className="text-meta font-medium text-ink-600">{label}</span>
-      <input id={fid} className="rounded-lg border border-ink-300 bg-white px-3 py-[10px] text-ui text-ink-950 placeholder:text-ink-400 focus-visible:border-accent-500" {...rest} />
+    <label htmlFor={fid} className="block">
+      <span className="mb-1 block helm-label">{label}</span>
+      <input id={fid} className={controlClass} {...rest} />
     </label>
   );
 }

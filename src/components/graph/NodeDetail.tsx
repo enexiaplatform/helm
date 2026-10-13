@@ -52,7 +52,7 @@ export function NodeDetail(p: Props) {
         <span className={'rounded-full px-2 py-px font-mono text-tag font-semibold ' + DIM_PILL[p.dimension]}>{p.dimension}</span>
         <span className="helm-meta font-medium">{p.metricKey}</span>
       </div>
-      <h2 className="mt-2 text-[26px] leading-[33px] tracking-[-0.01em]">{p.label}</h2>
+      <h2 className="mt-2 text-figure">{p.label}</h2>
       <p className="mt-[6px] max-w-reading text-read text-ink-700">{p.description}</p>
       <FactRow facts={p.facts} className="mt-[18px] gap-x-8 border-b border-ink-200 pb-[18px]" />
       {p.contention && (

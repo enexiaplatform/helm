@@ -31,17 +31,28 @@ export function quarterHeadline(rows: readonly PipelinePosition[], quarter: stri
   return `${label}: ${closing}.${late}`;
 }
 
-const Figure = ({ label, value, sub, to }: { label: string; value: string; sub: string; to?: string }) => (
+const Figure = ({ label, value, sub, to, change }: { label: string; value: string; sub: string; to?: string; change?: string | null }) => (
   <div className="min-w-0">
     <dt className="text-meta text-ink-500">{label}</dt>
     <dd className="font-serif text-figure-sm text-ink-950">{to ? <Link to={to} className="hover:text-accent-700">{value}</Link> : value}</dd>
     <dd className="font-mono text-meta text-ink-500">{sub}</dd>
+    {change && <dd className="font-mono text-meta text-ink-600">{change}</dd>}
   </div>
 );
 
-export function QuarterPanel({ rows, quarter, now, readable, source }: { rows: readonly PipelinePosition[]; quarter: string; now: string; readable: PipelineReadable; source: string }) {
+/** "+12.5K SGD since 6 Oct": the difference of two sums in one currency, or nothing. */
+const changeOf = (now: Money, before: Money | undefined, since: string): string | null => {
+  if (!before || now.value === null || before.value === null || now.currency !== before.currency) return null;
+  const d = Number(now.value) - Number(before.value);
+  if (d === 0) return `unchanged since ${since}`;
+  return `${d > 0 ? '+' : '−'}${displayValue(String(Math.abs(d)), 'currency', now.currency)} since ${since}`;
+};
+
+export function QuarterPanel({ rows, previous, quarter, now, readable, source }: { rows: readonly PipelinePosition[]; previous?: { at: string; rows: readonly PipelinePosition[] } | null; quarter: string; now: string; readable: PipelineReadable; source: string }) {
   if (rows.length === 0) return null;
   const q = readQuarter(rows, quarter);
+  const p = previous ? readQuarter(previous.rows, quarter) : null;
+  const since = previous ? new Date(previous.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '';
   const label = quarterLabel(quarter);
   const { stale, neverTouched } = staleDeals(rows, now);
   const open = rows.filter((r) => r.state === 'OPEN');
@@ -69,10 +80,10 @@ export function QuarterPanel({ rows, quarter, now, readable, source }: { rows: r
     <section id="pipeline" className="mt-8 scroll-mt-6">
       <SectionHead title={`This quarter · ${label}`} meta={`${q.open.count} open`} caveat={`from ${source}, by deal state`} />
       <dl className="mt-4 flex flex-wrap gap-x-10 gap-y-4">
-        <Figure label={`Weighted, due in ${label}`} value={readable.value && readable.probability ? moneyText(q.inQuarter.weighted) : 'withheld'} sub={`value × probability · ${q.inQuarter.count} deals`} to="/pipeline?when=quarter&sort=weighted" />
-        <Figure label={`Due to close in ${label}`} value={readable.value ? moneyText(q.inQuarter.value) : 'withheld'} sub="full value, open deals" to="/pipeline?when=quarter&sort=value" />
+        <Figure label={`Weighted, due in ${label}`} value={readable.value && readable.probability ? moneyText(q.inQuarter.weighted) : 'withheld'} sub={`value × probability · ${q.inQuarter.count} deals`} to="/pipeline?when=quarter&sort=weighted" change={readable.value && readable.probability ? changeOf(q.inQuarter.weighted, p?.inQuarter.weighted, since) : null} />
+        <Figure label={`Due to close in ${label}`} value={readable.value ? moneyText(q.inQuarter.value) : 'withheld'} sub="full value, open deals" to="/pipeline?when=quarter&sort=value" change={readable.value ? changeOf(q.inQuarter.value, p?.inQuarter.value, since) : null} />
         <Figure label={`Won in ${label}`} value={readable.value ? moneyText(q.won.inQuarterValue) : 'withheld'} sub={`${q.won.inQuarter} won · as ${source} records it`} to="/pipeline?state=won" />
-        <Figure label="Open pipeline" value={readable.value ? moneyText(q.open.value) : 'withheld'} sub={`${q.open.count} open deals, any quarter`} to="/pipeline" />
+        <Figure label="Open pipeline" value={readable.value ? moneyText(q.open.value) : 'withheld'} sub={`${q.open.count} open deals, any quarter`} to="/pipeline" change={readable.value ? changeOf(q.open.value, p?.open.value, since) : null} />
         <Figure label="Lost" value={String(q.lost.count)} sub={readable.value ? `${moneyText(q.lost.value)} · never forecast` : 'never forecast'} to="/pipeline?state=lost" />
       </dl>
 

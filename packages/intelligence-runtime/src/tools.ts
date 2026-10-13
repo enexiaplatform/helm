@@ -330,13 +330,14 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
         // Named by what it is, not by one source: the demo's source is a fixture, a pilot's is Memoire.
         'The pipeline as its source states it',
         [
+          // What the answer did with the question first: a long summary is clipped when it is read out.
+          notUnderstood ? `not understood, so not applied: ${notUnderstood} — these rows are NOT filtered by it` : '',
+          sortBy ? `ordered as the question asks: by ${sortBy}, ${asc ? 'lowest' : 'highest'} first${limit ? `, the first ${limit}` : ''} — HELM does not rank on its own` : '',
+          named.length > 0 ? `${rows.length} match: ${named.join(', ')}` : '',
+          quarterLine ? `of these, ${quarterLine.inQuarter.count} open deals are due in ${period}: ${moneyOf(quarterLine.inQuarter.value)} in value, ${moneyOf(quarterLine.inQuarter.weighted)} weighted by probability; won and lost deals are never forecast` : '',
           `${facts.opportunities} opportunities in the state you may read`,
           readable.value ? `${facts.withValue} with a value (${facts.zeroValue} of them 0), ${facts.noValue} without one` : 'their values are above your clearance and withheld',
           readable.probability ? `${facts.noProbability} without a probability; ${facts.modelled} carry both and are modelled` : 'their probabilities are above your clearance and withheld',
-          named.length > 0 ? `${rows.length} match: ${named.join(', ')}` : '',
-          quarterLine ? `of these, ${quarterLine.inQuarter.count} open deals are due in ${period}: ${moneyOf(quarterLine.inQuarter.value)} in value, ${moneyOf(quarterLine.inQuarter.weighted)} weighted by probability; won and lost deals are never forecast` : '',
-          sortBy ? `ordered as the question asks: by ${sortBy}, ${asc ? 'lowest' : 'highest'} first${limit ? `, the first ${limit}` : ''} — HELM does not rank on its own` : '',
-          notUnderstood ? `not understood, so not applied: ${notUnderstood} — these rows are NOT filtered by it` : '',
         ],
         { status: 'SUMMARY', section: 'pipeline', lens },
       );

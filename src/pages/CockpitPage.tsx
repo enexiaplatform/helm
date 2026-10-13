@@ -20,7 +20,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { canSeeSnapshot, quarterKeyOf, readPipeline, type ComposedSnapshot, type ProjectedSnapshot, type Trajectory, type TrajectoryLine, type TwinItem, type TwinItemExplanation, type TwinSnapshot } from '@helm/twin-runtime';
+import { canSeeSnapshot, quarterKeyOf, readPipeline, type ComposedSnapshot, type PipelinePosition, type ProjectedSnapshot, type Trajectory, type TrajectoryLine, type TwinItem, type TwinItemExplanation, type TwinSnapshot } from '@helm/twin-runtime';
 import type { QuantityUnit } from '@helm/shared';
 import type { ClaimView } from '@helm/causal-runtime';
 import type { ProjectedReviews } from '@helm/review-runtime';
@@ -69,6 +69,8 @@ type Loaded = {
   readonly genome: ProjectedGenome;
   readonly counterfactuals: ProjectedCounterfactuals;
   readonly reviews: ProjectedReviews;
+  /** The pipeline as a state composed a week or more before this one held it, for "since last week". */
+  readonly previous: { readonly at: string; readonly rows: readonly PipelinePosition[] } | null;
 };
 
 type Lineage = { title: string; statement: string; lines: { depth: number; label: string; detail: string }[] };
@@ -152,7 +154,12 @@ export function CockpitPage() {
           reviewsForViewer(ic.reviews, viewer, null),
         ]);
         const integration = await resolveIntegrationContext(ic.mode, scope).catch(() => null);
-        if (live) setLoaded({ key, version: memoireVersion, value: { ic, integration, current: view.composed, projection: view.projection, trajectory, claims: claims.claims, genome, counterfactuals, reviews }, note: view.refusal });
+        // A week back: the latest current state composed at least six days before this one (audit 2026-10-13: "no change since last week").
+        const weekAgo = Date.parse(currentHeader.createdAt) - 6 * 86_400_000;
+        const prevHeader = [...all].filter((s) => s.spec.kind === 'CURRENT' && visible(s) && Date.parse(s.createdAt) <= weekAgo).at(-1);
+        const prevView = prevHeader ? await loadSnapshotView(twin, prevHeader.id, viewer).catch(() => null) : null;
+        const previous = prevHeader && prevView?.projection ? { at: prevHeader.spec.lens.effectiveAsOf, rows: readPipeline(prevView.projection.items) } : null;
+        if (live) setLoaded({ key, version: memoireVersion, value: { ic, integration, current: view.composed, projection: view.projection, trajectory, claims: claims.claims, genome, counterfactuals, reviews, previous }, note: view.refusal });
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : String(e));
       }
@@ -333,7 +340,13 @@ export function CockpitPage() {
         kicker={`Management · ${twinCtx.story ? twinCtx.story.scopes.vietnam.label : 'Enterprise'} · ${d ? `state as known on ${readInstant(d.current.snapshot.spec.lens.recordedThrough)}` : '…'}`}
         title={headline}
         lede="Your quarter, what is at risk, what needs fixing, and what has already been decided."
-      />
+      >
+        {d && (
+          <button type="button" onClick={() => window.print()} className="mt-2 text-meta font-medium text-accent-700 hover:underline print:hidden">
+            Print or save as PDF
+          </button>
+        )}
+      </PageHeader>
 
       {ic.mode === 'demo' && (
         <Notice tone="neutral" label="Demo organization" className="mt-6">
@@ -355,7 +368,7 @@ export function CockpitPage() {
 
       {d && <StartHere key={guideKey} items={items} readable={pipelineReadable(viewer, now)} reviews={d.reviews.reviews} now={now} onDismiss={() => setGuideKey((k) => k + 1)} />}
 
-      {d && <QuarterPanel rows={pipelineRows} quarter={quarter} now={now} readable={pipelineReadable(viewer, now)} source={source} />}
+      {d && <QuarterPanel rows={pipelineRows} previous={d.previous} quarter={quarter} now={now} readable={pipelineReadable(viewer, now)} source={source} />}
 
       {/* Full width: an answer that lists deals is a table (audit 2026-10-13: it was a narrow column of paragraphs). */}
       <section className="mt-8 max-w-[960px]">

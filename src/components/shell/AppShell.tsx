@@ -97,7 +97,7 @@ export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items =
   const current = active === 'settings' ? 'Settings' : items.find((i) => i.key === active)?.label ?? active;
   return (
     <div className="flex min-h-screen flex-col bg-paper md:flex-row">
-      <div className="flex items-center justify-between border-b border-ink-200 bg-ink-100 px-4 py-3 md:hidden">
+      <div className="flex items-center justify-between border-b border-ink-200 bg-ink-100 px-4 py-3 md:hidden print:hidden">
         <HelmLockup height={26} subtitle={null} />
         <button
           type="button"
@@ -112,7 +112,7 @@ export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items =
       <aside
         id="helm-nav"
         className={cn(
-          'z-40 w-full shrink-0 flex-col overflow-y-auto [scrollbar-gutter:stable] border-r border-ink-200 bg-ink-100 text-ink-700 md:sticky md:top-0 md:flex md:h-screen md:w-sidebar md:self-start',
+          'z-40 w-full shrink-0 flex-col overflow-y-auto [scrollbar-gutter:stable] print:!hidden border-r border-ink-200 bg-ink-100 text-ink-700 md:sticky md:top-0 md:flex md:h-screen md:w-sidebar md:self-start',
           menuOpen ? 'flex' : 'hidden',
         )}
       >
@@ -184,7 +184,7 @@ export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items =
         </div>
       </aside>
       <main className="min-w-0 flex-1">
-        <div className="sticky top-0 z-30 flex min-h-12 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-ink-200 bg-paper/[0.92] px-4 py-2 text-[13px] leading-5 backdrop-blur-[6px] md:px-page-x">
+        <div className="sticky top-0 z-30 print:hidden flex min-h-12 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-ink-200 bg-paper/[0.92] px-4 py-2 text-[13px] leading-5 backdrop-blur-[6px] md:px-page-x">
           <span className="min-w-0 truncate">
             <span className="text-ink-500">{orgName}</span>
             <span className="mx-2 text-ink-300">/</span>

@@ -12,6 +12,7 @@ import { EmptyState } from '../components/ui/EmptyState.tsx';
 import { memoireDealUrl, usePipeline } from '../services/pipelineView.ts';
 import { displayValue } from '../services/scenarioRuntime.ts';
 import { cn } from '../lib/cn.ts';
+import { Button } from '../components/ui/Button.tsx';
 import { quarterLabel } from '../components/cockpit/QuarterPanel.tsx';
 
 type SortKey = 'deal' | 'customer' | 'brand' | 'stage' | 'close' | 'value' | 'probability' | 'weighted' | 'touch';
@@ -58,6 +59,24 @@ function sortValue(r: PipelinePosition, k: SortKey): string | number | null {
     case 'weighted': return weighted(r);
     case 'touch': return r.lastTouchAt ? Date.parse(r.lastTouchAt) : null;
   }
+}
+
+/** The deals shown, as a CSV the reader saves: exact values, not the rounded ones on screen. */
+function downloadCsv(rows: readonly PipelinePosition[], name: string) {
+  const cell = (v: string | number | null) => {
+    const s = v === null ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const head = ['Deal', 'Customer', 'Brand', 'Stage', 'State', 'Close period', 'Value', 'Currency', 'Probability', 'Weighted', 'Last touch', 'Memoire id'];
+  const lines = rows.map((r) => [r.opportunity, r.customer, r.brand, r.stage, r.state, r.expectedClosePeriod, r.value, r.currency, r.probability, weighted(r), r.lastTouchAt?.slice(0, 10) ?? null, r.sourceId].map(cell).join(','));
+  // A byte-order mark so Excel reads Vietnamese names as UTF-8.
+  const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 const money = (v: number | string | null, currency: string | null) => (v === null ? '—' : displayValue(String(v), 'currency', currency));
@@ -195,6 +214,9 @@ export function PipelinePage() {
           <span className="helm-label">Search</span>
           <input className={select} value={text} onChange={(e) => set('q', e.target.value)} placeholder="Deal, customer or brand" />
         </label>
+        <Button variant="secondary" size="sm" className="mb-[2px]" onClick={() => downloadCsv(view.sorted, `helm-pipeline-${data.composedAt.slice(0, 10)}.csv`)} disabled={view.sorted.length === 0}>
+          Download CSV
+        </Button>
         {(state !== 'open' || when !== 'all' || fix || brand || text || sort) && (
           <button type="button" className="pb-[7px] text-dense font-medium text-accent-700 hover:underline" onClick={() => setParams(new URLSearchParams(), { replace: true })}>
             Clear

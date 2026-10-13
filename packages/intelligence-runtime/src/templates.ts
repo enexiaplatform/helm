@@ -85,8 +85,14 @@ export const TEMPLATES = {
     id: 'draft-management-brief',
     version: TEMPLATE_VERSION,
     instructions: `Draft a management brief for a review: what changed, what matters, what is off-track, what is uncertain, what decisions are required, what assumptions are challenged, what outcomes arrived. Every factual statement is grounded. ${COMMON}`,
-    needs: ['reviewId'],
-    plan: (p) => [{ tool: 'getReviewPack', args: { reviewId: p['reviewId'] ?? '' } }],
+    // The pack when a review is open, AND the quarter's pipeline and the attention conditions (audit 2026-10-13: a brief
+    // read only the pack, so an empty pack gave six sections of 0 while the pipeline held 34 deals without a close date).
+    needs: [],
+    plan: (p) => [
+      ...(p['reviewId'] ? [{ tool: 'getReviewPack', args: { reviewId: p['reviewId'] } }] : []),
+      { tool: 'getPipelinePositions', args: { state: 'OPEN', ...(p['quarter'] ? { closePeriod: p['quarter'] } : {}), sortBy: 'value', limit: 10 } },
+      { tool: 'getManagementAttention', args: {} },
+    ],
   },
   /** Anywhere: a general question. The provider proposes the read-only tools; the runtime holds it to the catalogue. */
   ASK_HELM: {

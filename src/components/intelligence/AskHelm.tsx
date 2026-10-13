@@ -14,13 +14,20 @@ import { markAsked } from '../cockpit/gettingStarted.ts';
  * instruments — and not a chatbot: it cannot query a table, write anything, or say what the
  * kernel does not.
  */
+/** The question being typed outlives a re-render of the page around it (audit 2026-10-13: the first words typed were lost). */
+let draft = '';
+
 export function AskHelm({ viewer, suggestions = [] }: { viewer: TwinViewer | null; suggestions?: readonly string[] }) {
   const mode = useHelmStore((s) => s.mode);
   const activeOrgId = useHelmStore((s) => s.activeOrgId);
   const userId = useHelmStore((s) => s.userId);
   const myRole = useHelmStore((s) => s.myRole);
   const scope = useMemo(() => (mode === 'demo' ? demoScope() : activeOrgId ? cloudScope(activeOrgId, userId ?? '', myRole()) : null), [mode, activeOrgId, userId, myRole]);
-  const [question, setQuestion] = useState('');
+  const [question, setQuestionState] = useState(() => draft);
+  const setQuestion = (q: string) => {
+    draft = q;
+    setQuestionState(q);
+  };
   const [state, setState] = useState<{ asked: string; answer: IntelligenceAnswer | null; error: string | null; busy: boolean } | null>(null);
 
   const ask = async (asked: string = question) => {

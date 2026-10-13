@@ -426,7 +426,7 @@ export function ReviewsPage() {
 
               {chosen.status === 'OPEN' && <OpenReviewActions ctx={ctx} v={chosen} onChanged={() => setTick((t) => t + 1)} />}
 
-              <IntelligencePanel task="DRAFT_MANAGEMENT_BRIEF" params={{ reviewId: chosen.review.id }} viewer={viewer} label="Draft the management brief" detail="What changed, what matters, what is off-track, what is uncertain, which decisions are required, which assumptions are challenged and which outcomes arrived — each statement grounded in this review's pack." />
+              <IntelligencePanel task="DRAFT_MANAGEMENT_BRIEF" params={{ reviewId: chosen.review.id, ...(/^\d{4}-Q[1-4]$/.test(chosen.review.periodLabel) ? { quarter: chosen.review.periodLabel } : {}) }} viewer={viewer} label="Draft the management brief" detail="What changed, what matters, what is off-track, what is uncertain, which decisions are required, which assumptions are challenged and which outcomes arrived — each statement grounded in this review's pack." />
             </div>
           )}
         </aside>

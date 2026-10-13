@@ -119,11 +119,14 @@ export function CouncilPanel({ question, request, viewer }: { question: string; 
             </div>
           )}
           {r.sharedEvidence.length > 0 && <p className="mt-4 font-mono text-meta text-ink-500">{r.sharedEvidence.length} fact(s) more than one perspective rests on — reported once, as shared.</p>}
+          {/* One quiet line, reasons one click away (audit 2026-10-13: seven red blocks said only what HELM does not have). */}
           {r.notInstantiated.length > 0 && (
-            <div className="mt-4">
-              <p className="helm-label">No perspective, because HELM holds no data</p>
-              <ul className="mt-1 grid gap-1">{r.notInstantiated.map((n) => <li key={n.perspective} className="text-dense text-red-700"><span className="font-medium">{n.name}</span> — {n.reason}</li>)}</ul>
-            </div>
+            <details className="mt-4 text-dense text-ink-600">
+              <summary className="cursor-pointer">
+                No data connected yet for {r.notInstantiated.map((n) => n.name).join(', ')}.
+              </summary>
+              <ul className="mt-1 grid gap-1">{r.notInstantiated.map((n) => <li key={n.perspective}><span className="font-medium">{n.name}</span> — {n.reason}</li>)}</ul>
+            </details>
           )}
           {r.silent.length > 0 && <p className="mt-3 text-dense text-ink-600">Nothing to say on this question: {r.silent.map((s) => s.name).join(', ')}.</p>}
           {r.questions.length > 0 && (

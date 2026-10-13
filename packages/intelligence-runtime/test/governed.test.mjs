@@ -193,20 +193,20 @@ describe('no tool can be summoned outside the catalogue', () => {
     const calls = await createReferenceProvider().plan({ question: 'Which opportunities are most at risk of not closing this quarter?', tools, now: '2026-10-12T12:00:00.000Z' });
     const pipe = calls.find((c) => c.tool === 'getPipelinePositions');
     assert.ok(pipe, 'the pipeline is read');
-    assert.deepEqual(pipe.args, { closePeriod: '2026-Q4', probabilityAtMost: 0.25 });
+    assert.deepEqual(pipe.args, { closePeriod: '2026-Q4', probabilityAtMost: 0.25, state: 'OPEN' });
     const explicit = await createReferenceProvider().plan({ question: 'Show the pipeline for Q1 2027 with no probability', tools });
-    assert.deepEqual(explicit.find((c) => c.tool === 'getPipelinePositions').args, { closePeriod: '2027-Q1', condition: 'NO_PROBABILITY' });
+    assert.deepEqual(explicit.find((c) => c.tool === 'getPipelinePositions').args, { closePeriod: '2027-Q1', condition: 'NO_PROBABILITY', state: 'OPEN' });
   });
 
   it('every suggested question the Cockpit offers is read into a governed tool — and the Vietnamese ones too', async () => {
     const tools = ['getManagementAttention', 'getPipelinePositions', 'getEnterpriseState'].map((name) => ({ name, description: '', args: [] }));
     const plan = (question) => createReferenceProvider().plan({ question, tools, now: '2026-10-12T12:00:00.000Z' });
     const pipe = async (q) => (await plan(q)).find((c) => c.tool === 'getPipelinePositions')?.args;
-    assert.deepEqual(await pipe('Cơ hội nào rủi ro không chốt được quý này?'), { closePeriod: '2026-Q4', probabilityAtMost: 0.25 });
+    assert.deepEqual(await pipe('Cơ hội nào rủi ro không chốt được quý này?'), { closePeriod: '2026-Q4', probabilityAtMost: 0.25, state: 'OPEN' });
     assert.deepEqual(await pipe('Cơ hội nào có giá trị 0?'), { condition: 'ZERO_VALUE' });
     assert.deepEqual(await pipe('Cơ hội nào chưa có xác suất?'), { condition: 'NO_PROBABILITY' });
     assert.deepEqual((await plan('Điều gì cần tôi chú ý?')).map((c) => c.tool), ['getManagementAttention']);
-    assert.deepEqual(await pipe('Which deals are at risk this quarter?'), { closePeriod: '2026-Q4', probabilityAtMost: 0.25 });
+    assert.deepEqual(await pipe('Which deals are at risk this quarter?'), { closePeriod: '2026-Q4', probabilityAtMost: 0.25, state: 'OPEN' });
     assert.deepEqual(await pipe('Which opportunities have a value of 0?'), { condition: 'ZERO_VALUE' });
     assert.deepEqual(await pipe('Which opportunities have no probability?'), { condition: 'NO_PROBABILITY' });
     assert.deepEqual((await plan('What needs my attention?')).map((c) => c.tool), ['getManagementAttention']);
@@ -219,7 +219,7 @@ describe('no tool can be summoned outside the catalogue', () => {
       { tool: 'getPipelinePositions', args: { mentioning: 'How is Rohto doing?', onlyIfMentioned: 'yes' } },
       { tool: 'getManagementAttention', args: { mentioning: 'How is Rohto doing?' } },
     ]);
-    assert.deepEqual((await plan('Which deals with Rohto close in 2026-Q4?')).find((c) => c.tool === 'getPipelinePositions').args, { closePeriod: '2026-Q4', mentioning: 'Which deals with Rohto close in 2026-Q4?' });
+    assert.deepEqual((await plan('Which deals with Rohto close in 2026-Q4?')).find((c) => c.tool === 'getPipelinePositions').args, { closePeriod: '2026-Q4', mentioning: 'Which deals with Rohto close in 2026-Q4?', state: 'OPEN' });
     assert.deepEqual((await plan('Which deals are at risk this quarter?')).map((c) => c.tool), ['getPipelinePositions'], 'a deal at risk is a pipeline condition, not nine attention conditions');
     assert.deepEqual((await plan('Which opportunities have no close period?')).find((c) => c.tool === 'getPipelinePositions').args, { condition: 'NO_CLOSE_PERIOD' });
   });

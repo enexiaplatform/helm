@@ -13,7 +13,7 @@
  *     arguments the tool validates, or nothing.
  */
 
-import { canSeeSnapshot, closesIn, isCleared, opportunityLabel, pipelineFacts, readPipeline, sensitivityOfMetric, type PipelinePosition, type TwinItem, type TwinRuntime, type TwinViewer } from '@helm/twin-runtime';
+import { canSeeSnapshot, closesIn, isCleared, opportunityLabel, pipelineFacts, quarterOf, readPipeline, readQuarter, sensitivityOfMetric, type DealState, type Money, type PipelinePosition, type TwinItem, type TwinRuntime, type TwinViewer } from '@helm/twin-runtime';
 import type { CausalGraph } from '@helm/causal-runtime';
 import type { CounterfactualRuntime } from '@helm/counterfactual-runtime';
 import type { DecisionRuntime } from '@helm/decision-runtime';
@@ -226,8 +226,15 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
   tool({
     name: 'getPipelinePositions',
     description:
-      'The commercial pipeline in the current state, one opportunity per row with its customer, stage, expected close period, value, probability and expected revenue — in kernel order, never ranked. Optional named conditions filter it; they never judge which deal matters most.',
+      'The commercial pipeline in the current state, one opportunity per row with its customer, brand, stage, expected close period, value and probability. Rows are in kernel order unless the question itself asks for an order (sortBy) — HELM never ranks on its own. Named conditions filter it; they never judge which deal matters most.',
     args: [
+      A.str('state', 'Only deals in these states, comma-separated: OPEN, WON, LOST, ON_HOLD. Default: every state.', false),
+      A.str('stage', 'Only deals whose stated stage contains this text (several separated by "|").', false),
+      A.str('brand', 'Only deals whose stated brand contains this text.', false),
+      A.str('sortBy', 'An order the question asks for: value, probability, weighted or close.', false),
+      A.str('order', '"desc" (default) or "asc".', false),
+      A.num('limit', 'At most this many rows, after the order the question asked for.', false),
+      A.str('notUnderstood', 'Conditions the question names that HELM cannot apply, said back in the answer.', false),
       A.str('closePeriod', 'Only opportunities Memoire expects to close in this period, e.g. "2026-Q4".', false),
       A.num('probabilityAtMost', 'Only opportunities whose stated probability is at most this ratio (0–1).', false),
       A.str('condition', 'One named condition: ZERO_VALUE (a stated value of 0), NO_VALUE, NO_PROBABILITY, NO_CLOSE_PERIOD.', false),
@@ -248,8 +255,19 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
       const condition = str(args['condition'])?.toUpperCase() ?? null;
       const customer = str(args['customer'])?.toLowerCase() ?? null;
       if (condition && !['ZERO_VALUE', 'NO_VALUE', 'NO_PROBABILITY', 'NO_CLOSE_PERIOD'].includes(condition)) return fail(IntelligenceErrors.INVALID, `Unknown pipeline condition "${condition}".`);
+      const STATES: readonly DealState[] = ['OPEN', 'WON', 'LOST', 'ON_HOLD'];
+      const states = (str(args['state']) ?? '').toUpperCase().split(/[,\s]+/).filter(Boolean);
+      const badState = states.find((x) => !STATES.includes(x as DealState));
+      if (badState) return fail(IntelligenceErrors.INVALID, `Unknown deal state "${badState}".`);
+      const stages = (str(args['stage']) ?? '').toLowerCase().split('|').map((x) => x.trim()).filter(Boolean);
+      const brand = str(args['brand'])?.toLowerCase() ?? null;
+      const sortBy = str(args['sortBy'])?.toLowerCase() ?? null;
+      if (sortBy && !['value', 'probability', 'weighted', 'close'].includes(sortBy)) return fail(IntelligenceErrors.INVALID, `Unknown order "${sortBy}".`);
+      const asc = str(args['order'])?.toLowerCase() === 'asc';
+      const limit = typeof args['limit'] === 'number' && Number.isFinite(args['limit']) && args['limit'] > 0 ? Math.floor(args['limit'] as number) : null;
+      const notUnderstood = str(args['notUnderstood']);
       const mentioning = str(args['mentioning']);
-      const mentioned = mentioning ? all.filter((p) => names(mentioning, p.customer) || names(mentioning, p.opportunity)) : [];
+      const mentioned = mentioning ? all.filter((p) => names(mentioning, p.customer) || names(mentioning, p.opportunity) || names(mentioning, p.brand)) : [];
       if (mentioning && mentioned.length === 0 && str(args['onlyIfMentioned']) === 'yes') {
         return done([], ['The question names no customer or opportunity HELM can read in this state.']);
       }
@@ -257,6 +275,9 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
       const readable = { value: isCleared(ctx.viewer, sensitivityOfMetric('OpportunityValue'), ctx.now), probability: isCleared(ctx.viewer, sensitivityOfMetric('OpportunityProbability'), ctx.now) };
       // Each filter is a stated condition, said back in the answer: the reader sees exactly what was asked of the data.
       const named: string[] = [];
+      if (states.length > 0) named.push(states.length === 1 && states[0] === 'OPEN' ? 'open deals only (not won, lost or on hold)' : `deals that are ${states.map((x) => x.toLowerCase().replace('_', ' ')).join(' or ')}`);
+      if (stages.length > 0) named.push(`stage ${stages.join(' or ')}`);
+      if (brand) named.push(`brand like "${brand}"`);
       if (period) named.push(`expected to close in ${period} (a quarter Memoire states without a year is kept and marked)`);
       if (atMost !== null) named.push(`a stated probability of at most ${Math.round(atMost * 100)}%`);
       if (condition === 'ZERO_VALUE') named.push('a stated value of 0');
@@ -274,8 +295,33 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
           (condition !== 'NO_PROBABILITY' || p.probability === null) &&
           (condition !== 'NO_CLOSE_PERIOD' || p.expectedClosePeriod === null) &&
           (mentioned.length === 0 || mentioned.includes(p)) &&
-          (!customer || (p.customer ?? '').toLowerCase().includes(customer)),
+          (!customer || (p.customer ?? '').toLowerCase().includes(customer)) &&
+          (states.length === 0 || states.includes(p.state)) &&
+          (stages.length === 0 || stages.some((x) => (p.stage ?? '').toLowerCase().includes(x))) &&
+          (!brand || (p.brand ?? '').toLowerCase().includes(brand)),
       );
+      // An order only when the question asked for one, said back; rows without the figure go last.
+      const weightedOf = (p: PipelinePosition): number | null => (p.state !== 'OPEN' || p.value === null || p.probability === null ? null : Number(p.value) * Number(p.probability));
+      const keyOf = (p: PipelinePosition): number | null => {
+        if (sortBy === 'value') return p.value === null ? null : Number(p.value);
+        if (sortBy === 'probability') return p.probability === null ? null : Number(p.probability);
+        if (sortBy === 'weighted') return weightedOf(p);
+        const q = quarterOf(p.expectedClosePeriod);
+        return q && q.year ? Number(q.year) * 4 + q.quarter : null;
+      };
+      const ordered = sortBy
+        ? [...rows].sort((a, b) => {
+            const ka = keyOf(a);
+            const kb = keyOf(b);
+            if (ka === null && kb === null) return 0;
+            if (ka === null) return 1;
+            if (kb === null) return -1;
+            return asc ? ka - kb : kb - ka;
+          })
+        : rows;
+      const listed = limit ? ordered.slice(0, limit) : ordered;
+      const moneyOf = (m: Money) => (m.value === null ? (m.mixed.length > 1 ? `mixed currencies (${m.mixed.join(', ')}), not summed` : 'none') : `${m.value}${m.currency ? ` ${m.currency}` : ''}`);
+      const quarterLine = period && /^\d{4}-Q[1-4]$/.test(period) ? readQuarter(rows, period) : null;
       const facts = pipelineFacts(all, readable);
       const ref = { kind: 'TWIN_SNAPSHOT', id: s.value.snapshot.id };
       const summary = ev(
@@ -288,6 +334,9 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
           readable.value ? `${facts.withValue} with a value (${facts.zeroValue} of them 0), ${facts.noValue} without one` : 'their values are above your clearance and withheld',
           readable.probability ? `${facts.noProbability} without a probability; ${facts.modelled} carry both and are modelled` : 'their probabilities are above your clearance and withheld',
           named.length > 0 ? `${rows.length} match: ${named.join(', ')}` : '',
+          quarterLine ? `of these, ${quarterLine.inQuarter.count} open deals are due in ${period}: ${moneyOf(quarterLine.inQuarter.value)} in value, ${moneyOf(quarterLine.inQuarter.weighted)} weighted by probability; won and lost deals are never forecast` : '',
+          sortBy ? `ordered as the question asks: by ${sortBy}, ${asc ? 'lowest' : 'highest'} first${limit ? `, the first ${limit}` : ''} — HELM does not rank on its own` : '',
+          notUnderstood ? `not understood, so not applied: ${notUnderstood} — these rows are NOT filtered by it` : '',
         ],
         { status: 'SUMMARY', section: 'pipeline', lens },
       );
@@ -300,19 +349,21 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
             p.value === null ? 'no value stated' : `value ${p.value}${p.currency ? ` ${p.currency}` : ''}`,
             p.probability === null ? 'no probability stated' : `probability ${Math.round(Number(p.probability) * 100)}%`,
             p.stage ? `stage ${p.stage}` : '',
+            p.state !== 'OPEN' ? p.state.toLowerCase().replace('_', ' ') : '',
+            p.brand ? `brand ${p.brand}` : '',
             p.expectedClosePeriod ? `expected to close ${p.expectedClosePeriod}` : 'no close period stated',
-            ...p.expectedRevenue.filter((r) => r.value !== null).map((r) => `expected revenue ${r.value}${r.currency ? ` ${r.currency}` : ''}${r.period ? ` in ${r.period}` : ''} (model result)`),
+            weightedOf(p) !== null ? `weighted ${Math.round(weightedOf(p)! * 100) / 100}${p.currency ? ` ${p.currency}` : ''}` : '',
           ],
-          { status: period && closesIn(p.expectedClosePeriod, period) === 'AMBIGUOUS' ? 'CLOSE PERIOD STATES NO YEAR' : named.length > 0 ? 'MATCHES' : null, section: 'pipeline', lens },
+          { status: period && closesIn(p.expectedClosePeriod, period) === 'AMBIGUOUS' ? 'year not stated' : null, section: 'pipeline', lens },
         );
       const withheld = proj.value.withheld.reduce((n, w) => n + w.count, 0);
       const notes = [
-        'Rows are in kernel order — not ranked by size, risk or importance. HELM states which opportunities meet a named condition; which of them matter is a management judgement.',
-        ...(rows.length > MAX.rows ? [`${rows.length - MAX.rows} more rows match and are not listed; narrow the question (a period, a customer, a condition).`] : []),
+        ...(sortBy ? [] : ['Rows are in the order HELM read them. Ask for an order (“largest first”) or sort them on the Pipeline page.']),
+        ...(listed.length > MAX.rows ? [`${listed.length - MAX.rows} more rows match and are not listed here; the Pipeline page shows them all.`] : []),
         ...(rows.length === 0 ? [`No opportunity in this state meets: ${named.join(', ') || 'the request'}.`] : []),
         ...withheldNote(withheld, 'item(s)'),
       ];
-      return done([summary, ...rows.slice(0, MAX.rows).map(asEvidence)], notes, withheld);
+      return done([summary, ...listed.slice(0, MAX.rows).map(asEvidence)], notes, withheld);
     },
   });
 

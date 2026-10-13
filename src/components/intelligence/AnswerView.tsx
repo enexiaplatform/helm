@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { EvidenceItem, GroundedStatement, IntelligenceAnswer } from '@helm/intelligence-runtime';
 import { Pill } from '../ui/Pill.tsx';
+import { PipelineAnswerTable } from './PipelineAnswerTable.tsx';
 import { classLabel, classTone } from '../../services/intelligenceRuntime.ts';
 import { cn } from '../../lib/cn.ts';
 import { plurals, readable, readInstant } from '../../lib/format.ts';
@@ -82,15 +83,22 @@ export function AnswerView({ answer, question }: { answer: IntelligenceAnswer; q
   const evidence = new Map(answer.evidence.map((e) => [e.id, e]));
   const sections = [...new Set(answer.statements.map((s) => s.section))];
   const g = answer.grounding;
+  // Deals the answer lists are shown as a table of the evidence itself; the statements that only repeat one row are not drawn twice.
+  const dealRows = answer.evidence.filter((e) => e.tool === 'getPipelinePositions' && e.ref.kind === 'ENTITY');
+  const asTable = dealRows.length >= 2;
+  const rowIds = new Set(dealRows.map((e) => e.id));
+  const onlyRows = (s: GroundedStatement) => s.evidenceIds.length > 0 && s.evidenceIds.every((id) => rowIds.has(id));
   return (
     <div className="mt-3">
       {/* The question this answers, so an answer is never read against another one (audit 2026-10-13). */}
       {question && <p className="mb-2 font-serif text-panel italic text-ink-800">“{question}”</p>}
       {/* What the reading comes to, before the statements it rests on. */}
       {answer.notes.length > 0 && <p className="mb-2 text-dense text-ink-900">{readable(answer.notes.join(' '))}</p>}
-      {sections.map((sec) => (
-        <Section key={sec ?? '_'} sec={sec} statements={answer.statements.filter((s) => s.section === sec)} evidence={evidence} />
-      ))}
+      {sections.map((sec) => {
+        const statements = answer.statements.filter((s) => s.section === sec && !(asTable && onlyRows(s)));
+        return statements.length > 0 ? <Section key={sec ?? '_'} sec={sec} statements={statements} evidence={evidence} /> : null;
+      })}
+      {asTable && <PipelineAnswerTable rows={dealRows} />}
       {answer.statements.length === 0 && <p className="text-dense text-ink-600">Nothing the kernel returned supports a statement.</p>}
       {answer.unknowns.length > 0 && (
         <div className="mt-3">

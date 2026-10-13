@@ -47,6 +47,46 @@ const clip = (s: string, n = 220) => (s.length > n ? `${s.slice(0, n - 1)}…` :
 /** A capitalised word of three letters or more with no digit: a name, not "Q1" or "2027". */
 const NAMES_SOMETHING = /(?:^|[\s"“(])\p{Lu}\p{L}{2,}/u;
 
+const STAGE_WORDS = ['lead', 'discovery', 'qualification', 'technical discussion', 'proposal', 'negotiation', 'procurement'];
+
+/**
+ * The words of a pipeline question that name a filter or an order (audit 2026-10-13: "Which opportunities are in stage
+ * Lost or Won?" came back with Discovery deals; "Top 5 largest deals" was refused). An order is only ever the one the
+ * question asks for. A dimension HELM does not hold — a rep, a region, a segment, a margin — is said back as not
+ * understood, never silently dropped.
+ */
+export function pipelineWords(q: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const states: string[] = [];
+  if (/\blost\b|\bthua\b|đã mất|mất deal/.test(q)) states.push('LOST');
+  if (/\bwon\b|\bthắng\b|đã thắng/.test(q)) states.push('WON');
+  if (/on[\s-]?hold|tạm dừng/.test(q)) states.push('ON_HOLD');
+  if (/\bopen\b|\bactive\b|đang mở|đang chạy/.test(q)) states.push('OPEN');
+  if (states.length > 0) out['state'] = states.join(',');
+  const stages = STAGE_WORDS.filter((w) => q.includes(w));
+  if (stages.length > 0) out['stage'] = stages.join('|');
+  const brand = q.match(/(?:brand|hãng)\s+([\p{L}\d&.-]{2,})/u);
+  if (brand && !['is', 'are', 'of', 'the', 'nào'].includes(brand[1]!)) out['brand'] = brand[1];
+  const top = q.match(/\btop\s*(\d{1,3})\b/) ?? q.match(/\b(\d{1,3})\s+(?:largest|biggest|highest|smallest|lowest)\b/) ?? q.match(/(\d{1,3})\s+(?:deal|cơ hội)[^?]*(?:lớn nhất|cao nhất)/);
+  const wantsOrder = top || /largest|biggest|highest|smallest|lowest|lớn nhất|cao nhất|nhỏ nhất|thấp nhất|sorted by|sort by|order by|sắp xếp/.test(q);
+  if (wantsOrder) {
+    out['sortBy'] = /weighted|có trọng số/.test(q) ? 'weighted' : /probab|xác suất/.test(q) ? 'probability' : /close date|closing (?:soon|first)|sớm nhất/.test(q) ? 'close' : 'value';
+    if (/smallest|lowest|nhỏ nhất|thấp nhất|soonest|sớm nhất/.test(q)) out['order'] = 'asc';
+    out['limit'] = top ? Number(top[1]) : /largest|biggest|highest|lớn nhất|cao nhất|smallest|lowest|nhỏ nhất|thấp nhất/.test(q) ? 5 : undefined;
+    if (out['limit'] === undefined) delete out['limit'];
+  }
+  const unknown = [
+    /\b(rep|reps|owner|salesperson|account manager)\b|người phụ trách|nhân viên/.test(q) && 'a sales rep (HELM reads only your own deals)',
+    /\bregion\b|\bvùng\b|miền/.test(q) && 'a region',
+    /\bsegment\b|phân khúc|\bindustry\b|ngành/.test(q) && 'a segment',
+    /\bmargin\b|biên lợi nhuận|lợi nhuận gộp/.test(q) && 'a margin (no cost is connected)',
+    /\btarget\b|\bquota\b|chỉ tiêu/.test(q) && 'a target (none is recorded)',
+    /last week|tuần trước|since monday/.test(q) && 'a change since last week',
+  ].filter((x): x is string => typeof x === 'string');
+  if (unknown.length > 0) out['notUnderstood'] = unknown.join('; ');
+  return out;
+}
+
 /**
  * The reference provider: no model, no network, no randomness. It states what the
  * evidence says, one statement per item, in the class the evidence carries, and
@@ -80,8 +120,8 @@ export function createReferenceProvider(): AiProvider {
       // A question about deals reads the pipeline itself (audit 2026-10-12: "which opportunities are at risk of not closing
       // this quarter?" read only attention, which held nothing). Words become NAMED conditions the answer states back —
       // a stated probability at most 25%, a close period — never a ranking of which deal is "most" at risk.
-      if (has('getPipelinePositions') && /pipeline|opportunit|deal|clos|quarter|customer|account|probab|forecast|revenue|sales|khách|cơ hội|doanh|chốt|quý|xác suất/.test(q)) {
-        const args: Record<string, unknown> = {};
+      if (has('getPipelinePositions') && /pipeline|opportunit|deal|clos|quarter|customer|account|probab|forecast|revenue|sales|stage|brand|won|lost|largest|biggest|top|khách|cơ hội|doanh|chốt|quý|xác suất|hãng|lớn nhất/.test(q)) {
+        const args: Record<string, unknown> = { ...pipelineWords(q) };
         const explicit = q.match(/\b(20\d\d)[-\s]?q([1-4])\b/) ?? q.match(/\bq([1-4])[-\s/]?(20\d\d)\b/);
         if (explicit) args['closePeriod'] = explicit[1]!.length === 4 ? `${explicit[1]}-Q${explicit[2]}` : `${explicit[2]}-Q${explicit[1]}`;
         else if (/this quarter|current quarter|quý này/.test(q) && input.now) {
@@ -89,6 +129,8 @@ export function createReferenceProvider(): AiProvider {
           args['closePeriod'] = `${d.getUTCFullYear()}-Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
         }
         if (/risk|not clos|unlikely|low probab|weak|slip|rủi ro|khó chốt/.test(q)) args['probabilityAtMost'] = 0.25;
+        // A question about what will close, or what is at risk, is about open deals: a lost deal neither closes nor is at risk.
+        if (!args['state'] && (args['closePeriod'] || args['probabilityAtMost'] !== undefined || /forecast|will close|going to close|dự báo|sẽ chốt/.test(q))) args['state'] = 'OPEN';
         if (/zero|value of 0|\b0 (sgd|vnd|usd)|giá trị 0|giá trị bằng 0/.test(q)) args['condition'] = 'ZERO_VALUE';
         else if (/no value|without a value|chưa có giá trị/.test(q)) args['condition'] = 'NO_VALUE';
         else if (/no probab|without a probab|chưa có xác suất/.test(q)) args['condition'] = 'NO_PROBABILITY';

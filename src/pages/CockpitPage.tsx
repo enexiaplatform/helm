@@ -49,7 +49,7 @@ import { MetricList } from '../components/ui/MetricList.tsx';
 import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.tsx';
 import { AskHelm } from '../components/intelligence/AskHelm.tsx';
 import { CouncilPanel } from '../components/intelligence/CouncilPanel.tsx';
-import { QuarterPanel, quarterHeadline } from '../components/cockpit/QuarterPanel.tsx';
+import { QuarterPanel, quarterHeadline, quarterLabel } from '../components/cockpit/QuarterPanel.tsx';
 import { pipelineReadable } from '../components/cockpit/pipelineReadable.ts';
 import { StartHere } from '../components/cockpit/StartHere.tsx';
 import { DISMISSED_KEY, read as readGuide, showGettingStarted } from '../components/cockpit/gettingStarted.ts';
@@ -353,6 +353,12 @@ export function CockpitPage() {
 
       {d && <QuarterPanel rows={pipelineRows} quarter={quarter} now={now} readable={pipelineReadable(viewer, now)} source={source} />}
 
+      {/* Full width: an answer that lists deals is a table (audit 2026-10-13: it was a narrow column of paragraphs). */}
+      <section className="mt-8 max-w-[960px]">
+        <SectionHead title="Ask HELM" size="section-sm" caveat="answers only from what HELM holds, as you" />
+        <div className="mt-3"><AskHelm viewer={viewer} suggestions={suggestedQuestions(items, now)} /></div>
+      </section>
+
       {ic.reviews.viewers.length > 1 && (
         <div className="mt-6 flex flex-wrap items-end gap-4">
           <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
@@ -631,11 +637,14 @@ export function CockpitPage() {
           </p>
 
           <div className="mt-8">
-            <SectionHead title="Ask, or open the council" size="section-sm" />
-            <div className="mt-3"><AskHelm viewer={viewer} suggestions={suggestedQuestions(items, now)} /></div>
-            {latestReview && (
-              <IntelligencePanel task="DRAFT_MANAGEMENT_BRIEF" params={{ reviewId: latestReview.review.id }} viewer={viewer} label="Draft the management brief" detail={`A grounded brief for the ${latestReview.review.periodLabel} review: what changed, what matters, what is off track, what is uncertain, which decisions are needed.`} />
-            )}
+            <SectionHead title="Management brief" size="section-sm" />
+            <IntelligencePanel
+              task="DRAFT_MANAGEMENT_BRIEF"
+              params={{ ...(latestReview && latestReview.status === 'OPEN' ? { reviewId: latestReview.review.id } : {}), quarter }}
+              viewer={viewer}
+              label="Draft the management brief"
+              detail={`The ${quarterLabel(quarter)} pipeline, what needs attention${latestReview?.status === 'OPEN' ? ` and the ${latestReview.review.periodLabel} review` : ''} — each statement grounded in what HELM holds.`}
+            />
           </div>
 
           <div className="mt-8">

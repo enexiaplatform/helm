@@ -87,7 +87,8 @@ describe('decision visibility: what rests on a decision the caller cannot see is
 describe('a review the caller may not read is not read for them', () => {
   it('an uncleared viewer is told the review is not visible; nothing about it reaches the provider', async () => {
     const { a, handed } = await runWith(caller(viewer(USERS.pharmaAnalyst)), 'DRAFT_MANAGEMENT_BRIEF', { reviewId: s.reviewStory.second.review.id });
-    assert.equal(handed.length, 0);
+    // The brief also reads the pipeline and attention as this reader; nothing from the review itself reaches the provider.
+    assert.equal(handed.filter((e) => e.tool === 'getReviewPack').length, 0);
     assert.ok(a.unknowns.some((u) => /not visible to you/.test(u)));
   });
 });

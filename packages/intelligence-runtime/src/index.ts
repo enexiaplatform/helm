@@ -16,7 +16,7 @@ export * from './types.ts';
 export * from './port.ts';
 export type { KernelRefLike } from './refs.ts';
 export { groundDraft, groundQuestions, numbersIn, RECOMMENDATION, promptHash } from './grounding.ts';
-export { createReferenceProvider } from './provider.ts';
+export { createReferenceProvider, pipelineWords } from './provider.ts';
 export type { AiProvider, PlanInput, SynthesisInput, ToolArgSpec, ToolCatalogueEntry } from './provider.ts';
 export { createGovernedTools, validateArgs } from './tools.ts';
 export type { GovernedTool, IntelligenceSources, RawEvidence, ToolContext, ToolRegistry, ToolResult } from './tools.ts';

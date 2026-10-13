@@ -12,6 +12,9 @@ import { AppShell } from './AppShell.tsx';
 /** Kernel instruments run full width; everything else is the 1240px management register. */
 const INSTRUMENTS = new Set(['scenarios', 'value-graph', 'ontology', 'calculations', 'governance', 'twin', 'causal', 'counterfactuals', 'genome', 'sources']);
 
+/** The Pipeline is a working table: full width, without the instruments' clocks. */
+const WIDE = new Set([...INSTRUMENTS, 'pipeline']);
+
 const keyOf = (pathname: string): string => pathname.split('/')[1] || 'cockpit';
 const hrefOf = (key: string): string => (key === 'cockpit' ? '/' : `/${key}`);
 
@@ -131,7 +134,7 @@ export function ConsoleLayout() {
           void signOut().then(() => navigate('/auth'));
         }
       }}
-      wide={INSTRUMENTS.has(active)}
+      wide={WIDE.has(active)}
     >
       {mode !== 'demo' || demoReady === 'ready' ? (
         // A finished Refresh reads the page again from scratch.

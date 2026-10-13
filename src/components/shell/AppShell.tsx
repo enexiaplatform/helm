@@ -1,37 +1,38 @@
 import { useState, type ReactNode, type MouseEvent } from 'react';
 import {
   Bell, BookOpenCheck, Calculator, ChevronsUpDown, ClipboardCheck, Database, Dna, GitBranch, GitCompareArrows, Layers,
-  LogOut, Network, Scale, Settings, ShieldCheck, Waypoints, Workflow, type LucideIcon,
+  LogOut, Network, Scale, Settings, ShieldCheck, Table2, Waypoints, Workflow, type LucideIcon,
 } from 'lucide-react';
 import { HelmLockup } from '../brand/HelmLogo.tsx';
 import { cn } from '../../lib/cn.ts';
 import { Button } from '../ui/Button.tsx';
 
-export type NavGroup = 'Management' | 'Model' | 'Learning' | 'Setup';
+export type NavGroup = 'Management' | 'Advanced' | 'Setup';
 /** hint = the stage of the operating loop the page serves (Sense → Diagnose → Simulate → Decide → Control → Learn). */
 export interface NavItem { key: string; label: string; icon: LucideIcon; group?: NavGroup; hint?: string }
 /**
- * Grouped by what a manager comes for (audit 2026-10-12: fourteen flat entries, five of them pages that only explain
- * why they are empty). Setup folds away until opened or until one of its pages is the current one; Learning stays open,
- * because the Cockpit links into it (audit 2026-10-13).
+ * What a manager comes for first; the kernel instruments behind one fold (audit 2026-10-13, both readers: fourteen
+ * entries, five empty on day one, three that list the same hundred opportunities). Advanced and Setup fold away until
+ * opened or until one of their pages is the current one.
  */
 export const HELM_NAV: NavItem[] = [
-  { key: 'cockpit', label: 'Cockpit', icon: Bell, group: 'Management', hint: 'sense' },
-  { key: 'reviews', label: 'Reviews', icon: ClipboardCheck, hint: 'control' },
-  { key: 'decisions', label: 'Decisions', icon: Scale, hint: 'decide' },
-  { key: 'memory', label: 'Decision memory', icon: BookOpenCheck, hint: 'learn' },
-  { key: 'scenarios', label: 'Scenarios', icon: GitBranch, group: 'Model', hint: 'simulate' },
+  { key: 'cockpit', label: 'Cockpit', icon: Bell, group: 'Management' },
+  { key: 'pipeline', label: 'Pipeline', icon: Table2 },
+  { key: 'reviews', label: 'Reviews', icon: ClipboardCheck },
+  { key: 'decisions', label: 'Decisions', icon: Scale },
+  { key: 'scenarios', label: 'Scenarios', icon: GitBranch },
+  { key: 'memory', label: 'Decision memory', icon: BookOpenCheck, group: 'Advanced' },
   { key: 'twin', label: 'Twin', icon: Layers },
   { key: 'value-graph', label: 'Value Graph', icon: Workflow },
   { key: 'calculations', label: 'Calculations', icon: Calculator },
-  { key: 'causal', label: 'Causal', icon: Waypoints, group: 'Learning', hint: 'diagnose' },
+  { key: 'causal', label: 'Causal', icon: Waypoints },
   { key: 'counterfactuals', label: 'Counterfactuals', icon: GitCompareArrows },
   { key: 'genome', label: 'Genome', icon: Dna },
+  { key: 'ontology', label: 'Ontology', icon: Network },
   { key: 'sources', label: 'Sources', icon: Database, group: 'Setup' },
   { key: 'governance', label: 'Governance', icon: ShieldCheck },
-  { key: 'ontology', label: 'Ontology', icon: Network },
 ];
-const FOLDED: readonly NavGroup[] = ['Setup'];
+const FOLDED: readonly NavGroup[] = ['Advanced', 'Setup'];
 
 /** The group an item belongs to: its own, or the last one declared above it. */
 function groupOf(items: readonly NavItem[], idx: number): NavGroup | null {
@@ -111,7 +112,7 @@ export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items =
       <aside
         id="helm-nav"
         className={cn(
-          'z-40 w-full shrink-0 flex-col overflow-y-auto border-r border-ink-200 bg-ink-100 text-ink-700 md:sticky md:top-0 md:flex md:h-screen md:w-sidebar md:self-start',
+          'z-40 w-full shrink-0 flex-col overflow-y-auto [scrollbar-gutter:stable] border-r border-ink-200 bg-ink-100 text-ink-700 md:sticky md:top-0 md:flex md:h-screen md:w-sidebar md:self-start',
           menuOpen ? 'flex' : 'hidden',
         )}
       >

@@ -20,7 +20,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { canSeeSnapshot, type ComposedSnapshot, type ProjectedSnapshot, type Trajectory, type TrajectoryLine, type TwinItem, type TwinItemExplanation, type TwinSnapshot } from '@helm/twin-runtime';
+import { canSeeSnapshot, quarterKeyOf, readPipeline, type ComposedSnapshot, type ProjectedSnapshot, type Trajectory, type TrajectoryLine, type TwinItem, type TwinItemExplanation, type TwinSnapshot } from '@helm/twin-runtime';
 import type { QuantityUnit } from '@helm/shared';
 import type { ClaimView } from '@helm/causal-runtime';
 import type { ProjectedReviews } from '@helm/review-runtime';
@@ -49,7 +49,7 @@ import { MetricList } from '../components/ui/MetricList.tsx';
 import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.tsx';
 import { AskHelm } from '../components/intelligence/AskHelm.tsx';
 import { CouncilPanel } from '../components/intelligence/CouncilPanel.tsx';
-import { PipelineFacts } from '../components/cockpit/PipelineFacts.tsx';
+import { QuarterPanel, quarterHeadline } from '../components/cockpit/QuarterPanel.tsx';
 import { pipelineReadable } from '../components/cockpit/pipelineReadable.ts';
 import { StartHere } from '../components/cockpit/StartHere.tsx';
 import { DISMISSED_KEY, read as readGuide, showGettingStarted } from '../components/cockpit/gettingStarted.ts';
@@ -280,9 +280,22 @@ export function CockpitPage() {
   const partial = d ? d.current.snapshot.completeness !== 'COMPLETE' : false;
   const urgent = tiers.cannotWait.length;
   const look = tiers.look.length + (tiers.noAuthorityVerdict.length > 0 ? 1 : 0);
+  // The quarter first, with its numbers (audit 2026-10-13: "the first sentence has no number in it"); the attention
+  // conditions follow it when any hold.
+  // The quarter of the state on screen: the demo's clock is its own, and a reading is about the moment it was composed.
+  const quarter = quarterKeyOf(now);
+  const pipelineRows = d ? readPipeline(items) : [];
+  const attentionLine = urgent > 0 || look > 0
+    ? [
+        urgent > 0 ? `${word(urgent)} ${urgent === 1 ? 'condition cannot' : 'conditions cannot'} wait.` : '',
+        look > 0 ? `${word(look)} ${look === 1 ? 'condition needs' : 'conditions need'} a look this week.` : '',
+      ].filter(Boolean).join(' ')
+    : '';
   const headline = !d
-    ? 'Reading what needs your attention…'
-    : urgent === 0 && look === 0
+    ? 'Reading your quarter…'
+    : pipelineRows.length > 0
+      ? `${quarterHeadline(pipelineRows, quarter)}${attentionLine ? ` ${attentionLine}` : ''}`
+      : urgent === 0 && look === 0
       ? partial
         ? `No attention condition holds, and the state it is read from is ${d.current.snapshot.completeness.toLowerCase()}: ${word(gaps.length).toLowerCase()} ${gaps.length === 1 ? 'record it cannot fully read' : 'records it cannot fully read'}.`
         : 'Nothing needs your attention this week. What management committed to is where it said it would be.'
@@ -315,7 +328,7 @@ export function CockpitPage() {
       <PageHeader
         kicker={`Management · ${twinCtx.story ? twinCtx.story.scopes.vietnam.label : 'Enterprise'} · ${d ? `state as known on ${readInstant(d.current.snapshot.spec.lens.recordedThrough)}` : '…'}`}
         title={headline}
-        lede="What needs your attention, why, and what has already been decided — read as you, never ranked or scored."
+        lede="Your quarter, what is at risk, what needs fixing, and what has already been decided."
       />
 
       {ic.mode === 'demo' && (
@@ -338,13 +351,17 @@ export function CockpitPage() {
 
       {d && <StartHere key={guideKey} items={items} readable={pipelineReadable(viewer, now)} reviews={d.reviews.reviews} now={now} onDismiss={() => setGuideKey((k) => k + 1)} />}
 
-      <div className="mt-6 flex flex-wrap items-end gap-4">
-        <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
-          <span className="helm-label">Read as</span>
-          <ReaderSelect className={select} viewers={ic.reviews.viewers} value={viewerKey} onChange={setViewerKey} />
-        </label>
-        {ic.reviews.viewers.length > 1 && <p className="max-w-reading pb-2 text-meta text-ink-500">Switch reader to see how clearance and decision visibility change what is shown — and what is withheld, said out loud.</p>}
-      </div>
+      {d && <QuarterPanel rows={pipelineRows} quarter={quarter} now={now} readable={pipelineReadable(viewer, now)} source={source} />}
+
+      {ic.reviews.viewers.length > 1 && (
+        <div className="mt-6 flex flex-wrap items-end gap-4">
+          <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
+            <span className="helm-label">Read as</span>
+            <ReaderSelect className={select} viewers={ic.reviews.viewers} value={viewerKey} onChange={setViewerKey} />
+          </label>
+          <p className="max-w-reading pb-2 text-meta text-ink-500">Switch reader to see how clearance and decision visibility change what is shown — and what is withheld, said out loud.</p>
+        </div>
+      )}
       {d && (d.projection?.withheld.length ?? 0) > 0 && (
         <p className="mt-3 max-w-reading text-dense text-ink-700">
           Withheld from this reader: {d.projection!.withheld.map((w) => `${w.count} ${w.sensitivity.replaceAll('_', ' ').toLowerCase()} ${w.count === 1 ? 'item' : 'items'}`).join(', ')} — above their clearance, not absent.
@@ -352,7 +369,7 @@ export function CockpitPage() {
       )}
 
       {partial && gapGroups.length > 0 && (
-        <Notice tone="warning" label={`The state is ${d!.current.snapshot.completeness.toLowerCase()}`} className="mt-6">
+        <Notice tone="warning" label="Some records could not be fully read" className="mt-6">
           {/* One line of counts; the examples one click away (audit 2026-10-13: on a phone the examples filled the first screen). */}
           <details>
             <summary className="cursor-pointer">
@@ -473,11 +490,9 @@ export function CockpitPage() {
             </ul>
           </section>
 
-          {d && <PipelineFacts items={items} readable={pipelineReadable(viewer, now)} source={source} />}
-
+          {d?.trajectory && (
           <section className="mt-10">
             <SectionHead title="Now, against the committed future" meta={d?.trajectory ? (d.trajectory.relation === 'EXPECTED_VS_ACTUAL' ? 'period ended' : 'period running') : '…'} caveat="the distance is a fact, not a verdict" />
-            {d && !d.trajectory && <p className="mt-3 text-ui text-ink-500">No commitment you may see has a committed future to measure against yet.</p>}
             {d?.trajectory && (
               <>
                 <p className="mt-3 max-w-reading font-serif text-read italic text-ink-600">
@@ -530,6 +545,7 @@ export function CockpitPage() {
               </div>
             )}
           </section>
+          )}
 
           <section className="mt-10">
             <SectionHead title="Decisions and governance" meta={d ? String(decisions.length) : '…'} caveat="visibility is not authority" />
@@ -554,6 +570,7 @@ export function CockpitPage() {
             <p className="mt-3 text-meta text-ink-600">Frame, weigh and commit in <Link to="/decisions" className="text-accent-700 underline">Decisions</Link>; see who must approve in <Link to="/governance" className="text-accent-700 underline">Governance</Link>.</p>
           </section>
 
+          {((d?.claims.length ?? 0) > 0 || (d?.genome.patterns.length ?? 0) > 0 || (d?.counterfactuals.cases.length ?? 0) > 0) && (
           <section className="mt-10">
             <SectionHead title="What we believe, and what we have learned" caveat="a belief keeps its own evidence status" />
             <div className="mt-3 grid gap-6 md:grid-cols-2">
@@ -589,6 +606,7 @@ export function CockpitPage() {
               </div>
             </div>
           </section>
+          )}
         </div>
 
         <aside className="w-full max-w-[360px] flex-[0_1_360px]">

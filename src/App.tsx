@@ -18,6 +18,7 @@ import { TwinPage } from './pages/TwinPage.tsx';
 import { CausalPage } from './pages/CausalPage.tsx';
 import { GenomePage } from './pages/GenomePage.tsx';
 import { CounterfactualsPage } from './pages/CounterfactualsPage.tsx';
+import { PipelinePage } from './pages/PipelinePage.tsx';
 import { ReviewsPage } from './pages/ReviewsPage.tsx';
 import { SourcesPage } from './pages/SourcesPage.tsx';
 
@@ -54,6 +55,7 @@ export default function App() {
         <Route element={<ConsoleLayout />}>
           <Route index element={<CockpitPage />} />
           <Route path="attention" element={<Navigate to="/" replace />} />
+          <Route path="pipeline" element={<PipelinePage />} />
           <Route path="reviews" element={<ReviewsPage />} />
           <Route path="decisions" element={<DecisionsPage />} />
           <Route path="decisions/:id" element={<DecisionDetailPage />} />

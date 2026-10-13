@@ -33,12 +33,14 @@ export function StartHere({ items, readable, reviews, now, onDismiss }: { items:
     return () => globalThis.removeEventListener(GUIDE_EVENT, on);
   }, []);
 
-  const f = pipelineFacts(readPipeline(items), readable);
-  const gaps = [
-    f.zeroValue > 0 && `${f.zeroValue} at a value of 0`,
-    f.noProbability > 0 && `${f.noProbability} without a probability`,
-    f.noClosePeriod > 0 && `${f.noClosePeriod} without a close period`,
-  ].filter((x): x is string => typeof x === 'string');
+  // Open deals only: a lost deal with no close period is nothing to fix (audit 2026-10-13).
+  const f = pipelineFacts(readPipeline(items).filter((r) => r.state === 'OPEN'), readable);
+  const gapList = [
+    f.zeroValue > 0 && { text: `${f.zeroValue} at a value of 0`, fix: 'zero' },
+    f.noProbability > 0 && { text: `${f.noProbability} without a probability`, fix: 'noprob' },
+    f.noClosePeriod > 0 && { text: `${f.noClosePeriod} without a close period`, fix: 'noclose' },
+  ].filter((x): x is { text: string; fix: string } => typeof x === 'object' && x !== null);
+  const gaps = gapList.map((g) => g.text);
   const decisions = items.filter((i) => i.kind === 'DECISION' && COMMITTED_OR_OPEN.includes(String((i.state as { state?: string }).state ?? '')));
   const quarter = quarterOf(now);
   const review = reviews.find((r) => r.review.periodLabel === quarter) ?? null;
@@ -47,15 +49,15 @@ export function StartHere({ items, readable, reviews, now, onDismiss }: { items:
   const list: Item[] = [
     {
       key: 'pipeline',
-      title: 'Check the pipeline',
-      detail: f.opportunities === 0 ? 'No opportunities read from Memoire yet' : gaps.length > 0 ? `${f.opportunities} opportunities · ${gaps.join(' · ')}` : `${f.opportunities} opportunities, complete`,
+      title: 'Complete the pipeline data',
+      detail: f.opportunities === 0 ? 'No open deals read from Memoire yet' : gaps.length > 0 ? `${f.opportunities} open deals · ${gaps.join(' · ')}` : `${f.opportunities} open deals, complete`,
       done: f.opportunities > 0 && gaps.length === 0,
-      cta: { label: 'Review', onClick: scrollTo('pipeline') },
+      cta: { label: 'Open the list', to: gapList[0] ? `/pipeline?fix=${gapList[0].fix}` : '/pipeline' },
     },
     {
       key: 'ask',
       title: 'Ask HELM a question',
-      detail: 'Answers name the deals that meet a condition — never a ranking',
+      detail: 'For example: which deals close this quarter?',
       done: asked,
       cta: { label: 'Try one', onClick: scrollTo('ask-helm') },
     },
@@ -70,7 +72,8 @@ export function StartHere({ items, readable, reviews, now, onDismiss }: { items:
       key: 'review',
       title: `Open the ${quarter} review`,
       detail: review ? `${review.status === 'OPEN' ? 'Open' : 'Closed'} · carries forward what is left open` : 'Captures where the quarter stands',
-      done: !!review,
+      // A review with nothing in it has not been held (audit 2026-10-13: an empty test review checked this off).
+      done: !!review && review.items.length > 0,
       // The form that opens a review is at the foot of a long page: the link lands on it, period already set.
       cta: { label: review?.status === 'OPEN' ? 'Continue' : 'Open', to: review ? '/reviews' : `/reviews?open=${quarter}#open-review` },
     },
@@ -83,6 +86,7 @@ export function StartHere({ items, readable, reviews, now, onDismiss }: { items:
     <section className="mt-6 rounded-xl border border-ink-200 bg-white" aria-labelledby="getting-started">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-ink-200 px-5 py-3">
         <h2 id="getting-started" className="font-serif text-panel text-ink-950">Getting started</h2>
+        <p className="basis-full text-dense text-ink-600 sm:order-last">HELM reads your deals from Memoire and shows the quarter, what is at risk and what to fix. Decisions you commit here are remembered and later checked against what happened.</p>
         <span className="font-mono text-meta text-ink-500">{done} of {list.length}</span>
         <span className="h-[3px] w-24 overflow-hidden rounded-full bg-ink-100" aria-hidden>
           <span className="block h-full rounded-full bg-accent-800 transition-colors ease-helm" style={{ width: `${(done / list.length) * 100}%` }} />

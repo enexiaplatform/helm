@@ -26,7 +26,7 @@ import { supabaseClient } from '../lib/supabaseClient.ts';
  */
 
 // The account's key-account flag is read through the opportunity's own foreign key, under the same RLS.
-const READ_COLUMNS = 'id, account_id, account_name, opportunity_name, title, stage, estimated_value, currency, pipeline_probability, status, expected_close_period, updated_at, account:accounts(ka_flag)';
+const READ_COLUMNS = 'id, account_id, account_name, opportunity_name, title, stage, estimated_value, currency, pipeline_probability, status, expected_close_period, updated_at, brand, channel, last_touch_at, next_action_date, closed_on, account:accounts(ka_flag)';
 
 /** The Memoire read port of the integration fabric, over the signed-in user's own `opportunities` (RLS scopes it). */
 export function createMemoireOpportunityReader(): MemoireReader {

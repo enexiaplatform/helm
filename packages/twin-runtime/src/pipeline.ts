@@ -20,7 +20,19 @@ export type PipelinePosition = {
   readonly customerClass: string | null;
   readonly stage: string | null;
   readonly status: string | null;
+  /** Read from stage and status: whether the deal is still open, won, lost or on hold. */
+  readonly state: DealState;
   readonly expectedClosePeriod: string | null;
+  /** The principal (brand) the source states for the deal, or null. */
+  readonly brand: string | null;
+  readonly channel: string | null;
+  /** When the source last recorded a touch on the deal (ISO), or null. */
+  readonly lastTouchAt: string | null;
+  readonly nextActionDate: string | null;
+  /** When the source records the deal as closed, or null. */
+  readonly closedOn: string | null;
+  /** The deal's id in its source system, for a link back to it; null when the state does not carry it. */
+  readonly sourceId: string | null;
   /** Source fact: the opportunity's value, as a decimal string, or null when the source states none. */
   readonly value: string | null;
   readonly currency: string | null;
@@ -54,6 +66,12 @@ const OPPORTUNITY_TYPES: ReadonlySet<string> = new Set(['Opportunity', 'Tender']
 
 const s = (v: unknown): string | null => (v === null || v === undefined || v === '' ? null : String(v));
 
+/** "memoire:opportunity:<id>" → "<id>": the source id a canonical key carries. */
+const sourceIdOf = (canonicalKey: string): string | null => {
+  const m = canonicalKey.match(/^[a-z]+:opportunity:(.+)$/);
+  return m ? m[1]! : null;
+};
+
 /** Every opportunity of the state, with what the state says about it, in the state's own order. */
 export function readPipeline(items: readonly TwinItem[]): PipelinePosition[] {
   const entities = new Map<string, TwinItem>();
@@ -85,7 +103,14 @@ export function readPipeline(items: readonly TwinItem[]): PipelinePosition[] {
       customerClass: cust ? s(cust.state['classification']) : null,
       stage: s(attrs['stage']),
       status: s(attrs['status']),
+      state: dealStateOf(s(attrs['stage']), s(attrs['status'])),
       expectedClosePeriod: s(attrs['expectedClosePeriod']),
+      brand: s(attrs['brand']),
+      channel: s(attrs['channel']),
+      lastTouchAt: s(attrs['lastTouchAt']),
+      nextActionDate: s(attrs['nextActionDate']),
+      closedOn: s(attrs['closedOn']),
+      sourceId: s(attrs['sourceId']) ?? sourceIdOf(String(e.state['canonicalKey'] ?? '')),
       value: val ? s(val.state['value']) : null,
       currency: val ? s(val.state['currency']) : null,
       probability: prob ? s(prob.state['value']) : null,
@@ -121,25 +146,157 @@ export function pipelineFacts(rows: readonly PipelinePosition[], readable: Pipel
 }
 
 /**
- * Whether a close period as Memoire states it falls in a quarter ("2026-Q4"). Memoire's field is free text and its rows
- * say "2026-11", "Q4 2026", "2026-Q4" and a bare "Q4": a month or a quarter with a year is read; a quarter without a
- * year is AMBIGUOUS — kept, and said, never silently placed in a year. Anything else does not match.
+ * Where a deal stands, read from what Memoire states (audit 2026-10-13: lost deals were counted in the pipeline and in
+ * the quarter's expected revenue). Either field naming a close wins: a row whose stage says Lost is lost even when its
+ * status still says Active. Anything else is open; "On hold" is said apart.
+ */
+export type DealState = 'OPEN' | 'WON' | 'LOST' | 'ON_HOLD';
+
+export function dealStateOf(stage: string | null, status: string | null): DealState {
+  const said = `${stage ?? ''} ${status ?? ''}`.toLowerCase();
+  if (/\blost\b|closed[\s-]?lost|cancel/.test(said)) return 'LOST';
+  if (/\bwon\b|closed[\s-]?won/.test(said)) return 'WON';
+  if (/on[\s-]?hold|paused/.test(said)) return 'ON_HOLD';
+  return 'OPEN';
+}
+
+const MONTHS: Record<string, number> = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6, JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12 };
+
+/**
+ * The quarter a close period as Memoire states it names. Memoire's field is free text: "2026-11", "2026-10-30",
+ * "Jul 2026", "Q4 2026", "Q4/2026", "2026-Q4" and a bare "Q4". A month, a date or a quarter with a year is read; a
+ * quarter without a year keeps its quarter and says the year is missing — it is never silently placed in a year.
+ */
+export function quarterOf(stated: string | null): { readonly year: string | null; readonly quarter: number } | null {
+  if (!stated) return null;
+  const t = stated.trim().toUpperCase();
+  const q = (m: number) => Math.floor((m - 1) / 3) + 1;
+  const date = t.match(/^(\d{4})-(\d{1,2})(?:-\d{1,2})?$/);
+  if (date && Number(date[2]) >= 1 && Number(date[2]) <= 12) return { year: date[1]!, quarter: q(Number(date[2])) };
+  const named = t.match(/^([A-Z]{3})[A-Z]*\.?[\s/-]+(\d{4})$/);
+  if (named && MONTHS[named[1]!]) return { year: named[2]!, quarter: q(MONTHS[named[1]!]!) };
+  const yq = t.match(/^(\d{4})[-\s/]?Q([1-4])$/);
+  if (yq) return { year: yq[1]!, quarter: Number(yq[2]) };
+  const qy = t.match(/^Q([1-4])[-\s/]?(\d{4})$/);
+  if (qy) return { year: qy[2]!, quarter: Number(qy[1]) };
+  const bare = t.match(/^Q([1-4])$/);
+  if (bare) return { year: null, quarter: Number(bare[1]) };
+  return null;
+}
+
+/** "2026-Q4" for an instant. */
+export function quarterKeyOf(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getUTCFullYear()}-Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
+}
+
+/**
+ * Whether a close period as Memoire states it falls in a quarter ("2026-Q4"). A quarter stated without a year is
+ * AMBIGUOUS — kept, and said, never silently placed in a year. Anything unreadable does not match.
  */
 export function closesIn(stated: string | null, quarter: string): 'YES' | 'NO' | 'AMBIGUOUS' {
   const want = quarter.trim().toUpperCase().match(/^(\d{4})-Q([1-4])$/);
-  if (!want || !stated) return 'NO';
-  const [, y, q] = want;
-  const t = stated.trim().toUpperCase();
-  const month = t.match(/^(\d{4})-(\d{1,2})$/);
-  if (month) return month[1] === y && Math.floor((Number(month[2]) - 1) / 3) + 1 === Number(q) ? 'YES' : 'NO';
-  const withYear = t.match(/^(\d{4})[-\s]?Q([1-4])$/) ?? t.match(/^Q([1-4])[-\s/]?(\d{4})$/);
-  if (withYear) {
-    const [yy, qq] = withYear[1]!.length === 4 ? [withYear[1], withYear[2]] : [withYear[2], withYear[1]];
-    return yy === y && qq === q ? 'YES' : 'NO';
-  }
-  const bare = t.match(/^Q([1-4])$/);
-  if (bare) return bare[1] === q ? 'AMBIGUOUS' : 'NO';
-  return 'NO';
+  const at = quarterOf(stated);
+  if (!want || !at) return 'NO';
+  if (at.quarter !== Number(want[2])) return 'NO';
+  if (at.year === null) return 'AMBIGUOUS';
+  return at.year === want[1] ? 'YES' : 'NO';
+}
+
+/** A sum in one currency, or the currencies that stopped it: HELM never converts. */
+export type Money = { readonly value: string | null; readonly currency: string | null; readonly mixed: readonly string[] };
+
+const money = (rows: readonly PipelinePosition[], amount: (r: PipelinePosition) => number | null): Money => {
+  const counted = rows.map((r) => ({ r, a: amount(r) })).filter((x): x is { r: PipelinePosition; a: number } => x.a !== null && Number.isFinite(x.a));
+  const currencies = [...new Set(counted.map((x) => x.r.currency ?? '—'))];
+  if (currencies.length > 1) return { value: null, currency: null, mixed: currencies };
+  // Cents, so a sum of decimal strings does not drift.
+  const cents = counted.reduce((t, x) => t + Math.round(x.a * 100), 0);
+  return { value: counted.length === 0 ? null : (cents / 100).toFixed(2).replace(/\.00$/, ''), currency: currencies[0] ?? null, mixed: [] };
+};
+
+const num = (v: string | null): number | null => (v === null ? null : Number(v));
+
+/**
+ * The quarter as a sales manager reads it — every figure arithmetic on source facts, by deal state (audit 2026-10-13):
+ *
+ *   open pipeline   the value of every OPEN deal, whenever it closes
+ *   in the quarter  OPEN deals whose close period falls in the quarter: their value, and value × probability
+ *   won             WON deals that closed in the quarter: what Memoire records as won, not a forecast
+ *   lost            LOST deals: counted, never forecast
+ *
+ * Nothing is ranked. A deal with no probability adds its value to "in the quarter" but nothing to the weighted figure,
+ * and is counted so the reader sees the gap. A quarter stated without a year is counted in the quarter and said.
+ */
+export type QuarterReading = {
+  readonly quarter: string;
+  readonly open: { readonly count: number; readonly value: Money };
+  readonly inQuarter: { readonly count: number; readonly value: Money; readonly weighted: Money; readonly noProbability: number; readonly yearNotStated: number };
+  readonly won: { readonly count: number; readonly value: Money; readonly inQuarter: number; readonly inQuarterValue: Money };
+  readonly lost: { readonly count: number; readonly value: Money };
+  readonly onHold: { readonly count: number; readonly value: Money };
+  /** OPEN deals whose close period lies in a quarter before this one: still open, but past when they were due. */
+  readonly overdue: { readonly count: number; readonly value: Money };
+  /** OPEN deals with no close period at all. */
+  readonly noClosePeriod: number;
+};
+
+const quarterIndex = (year: string, quarter: number): number => Number(year) * 4 + quarter;
+
+export function readQuarter(rows: readonly PipelinePosition[], quarter: string): QuarterReading {
+  const [y, q] = quarter.split('-Q') as [string, string];
+  const now = quarterIndex(y, Number(q));
+  const open = rows.filter((r) => r.state === 'OPEN');
+  const placed = open.map((r) => ({ r, c: closesIn(r.expectedClosePeriod, quarter), at: quarterOf(r.expectedClosePeriod) }));
+  const inQ = placed.filter((x) => x.c !== 'NO').map((x) => x.r);
+  const won = rows.filter((r) => r.state === 'WON');
+  // Won in the quarter: by the date Memoire records it closed, else by its stated close period.
+  const wonInQ = won.filter((r) => closesIn(r.closedOn ?? r.expectedClosePeriod, quarter) === 'YES');
+  const lost = rows.filter((r) => r.state === 'LOST');
+  const onHold = rows.filter((r) => r.state === 'ON_HOLD');
+  const overdue = placed.filter((x) => x.at !== null && x.at.year !== null && quarterIndex(x.at.year, x.at.quarter) < now).map((x) => x.r);
+  return {
+    quarter,
+    open: { count: open.length, value: money(open, (r) => num(r.value)) },
+    inQuarter: {
+      count: inQ.length,
+      value: money(inQ, (r) => num(r.value)),
+      weighted: money(inQ, (r) => (r.value === null || r.probability === null ? null : Number(r.value) * Number(r.probability))),
+      noProbability: inQ.filter((r) => r.probability === null).length,
+      yearNotStated: placed.filter((x) => x.c === 'AMBIGUOUS').length,
+    },
+    won: { count: won.length, value: money(won, (r) => num(r.value)), inQuarter: wonInQ.length, inQuarterValue: money(wonInQ, (r) => num(r.value)) },
+    lost: { count: lost.length, value: money(lost, (r) => num(r.value)) },
+    onHold: { count: onHold.length, value: money(onHold, (r) => num(r.value)) },
+    overdue: { count: overdue.length, value: money(overdue, (r) => num(r.value)) },
+    noClosePeriod: open.filter((r) => r.expectedClosePeriod === null).length,
+  };
+}
+
+
+/**
+ * OPEN deals nobody has touched for `days` (by the source's last touch, else never touched): a fact about time, not a
+ * verdict on the deal. Deals the source records no touch for are counted apart — HELM cannot say how long they sat.
+ */
+export function staleDeals(rows: readonly PipelinePosition[], nowIso: string, days = 30): { readonly stale: readonly PipelinePosition[]; readonly neverTouched: readonly PipelinePosition[] } {
+  const cutoff = Date.parse(nowIso) - days * 86_400_000;
+  const open = rows.filter((r) => r.state === 'OPEN');
+  return {
+    stale: open.filter((r) => r.lastTouchAt !== null && Date.parse(r.lastTouchAt) < cutoff),
+    neverTouched: open.filter((r) => r.lastTouchAt === null),
+  };
+}
+
+/** One line per brand the deals state (and one for none): counts and sums, in the order brands first appear. Never ranked. */
+export type BrandLine = { readonly brand: string | null; readonly open: number; readonly openValue: Money; readonly inQuarter: number; readonly inQuarterValue: Money; readonly weighted: Money; readonly won: number; readonly lost: number };
+
+export function byBrand(rows: readonly PipelinePosition[], quarter: string): BrandLine[] {
+  const groups = new Map<string | null, PipelinePosition[]>();
+  for (const r of rows) groups.set(r.brand, [...(groups.get(r.brand) ?? []), r]);
+  return [...groups.entries()].map(([brand, rs]) => {
+    const q = readQuarter(rs, quarter);
+    return { brand, open: q.open.count, openValue: q.open.value, inQuarter: q.inQuarter.count, inQuarterValue: q.inQuarter.value, weighted: q.inQuarter.weighted, won: q.won.count, lost: q.lost.count };
+  });
 }
 
 /** "Canister / Tailin / Cons · CÔNG TY …": an opportunity read with the customer that holds it. */

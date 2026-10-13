@@ -30,6 +30,14 @@ export type MemoireOpportunityRow = {
   readonly status: string | null;
   readonly expected_close_period: string | null;
   readonly updated_at: string;
+  /** The principal (brand) the deal sells, as Memoire states it — a distributor's main axis. */
+  readonly brand?: string | null;
+  readonly channel?: string | null;
+  /** When the rep last touched the deal, as Memoire records it. */
+  readonly last_touch_at?: string | null;
+  readonly next_action_date?: string | null;
+  /** The date Memoire records the deal as closed (won or lost). */
+  readonly closed_on?: string | null;
   /**
    * Memoire's own key-account flag on the opportunity's account (`accounts.ka_flag`), read alongside the opportunity.
    * true = a key account, false = a standard customer, null/absent = Memoire does not say — and HELM does not guess.
@@ -44,9 +52,10 @@ export interface MemoireReader {
   listOpportunities(scope: Scope, after: MemoireCursor | null, limit: number): Promise<Result<readonly MemoireOpportunityRow[]>>;
 }
 
-// 0.3.0 reads the account's key-account flag. A new connector build resumes from no checkpoint, so every opportunity is
-// read once more through the new translation; what did not change is recognised as unchanged and written nowhere.
-export const MEMOIRE_CONNECTOR = 'memoire-connector@0.3.0';
+// 0.3.0 reads the account's key-account flag; 0.4.0 the deal's brand, channel, last touch, next action date and close
+// date (audit 2026-10-13: no view by brand, no stale deals). A new connector build resumes from no checkpoint, so every
+// opportunity is read once more through the new translation; what did not change is recognised as unchanged.
+export const MEMOIRE_CONNECTOR = 'memoire-connector@0.4.0';
 
 const OPPORTUNITY_FIELDS: readonly FieldSpec[] = [
   { name: 'id', type: 'string', required: true },
@@ -62,9 +71,16 @@ const OPPORTUNITY_FIELDS: readonly FieldSpec[] = [
   { name: 'expected_close_period', type: 'string', required: false },
   { name: 'updated_at', type: 'date', required: true },
   { name: 'account_ka_flag', type: 'boolean', required: false },
+  { name: 'brand', type: 'string', required: false },
+  { name: 'channel', type: 'string', required: false },
+  { name: 'last_touch_at', type: 'date', required: false },
+  { name: 'next_action_date', type: 'date', required: false },
+  { name: 'closed_on', type: 'date', required: false },
 ];
 
-export const MEMOIRE_OPPORTUNITY_CONTRACT: SchemaContract = { system: 'memoire', objectType: 'opportunity', version: 'opportunity@2', fields: OPPORTUNITY_FIELDS };
+export const MEMOIRE_OPPORTUNITY_CONTRACT: SchemaContract = { system: 'memoire', objectType: 'opportunity', version: 'opportunity@3', fields: OPPORTUNITY_FIELDS };
+
+const text = (v: string | null | undefined): string | null => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);
 
 /** The account classification Memoire's key-account flag states. Memoire has no notion of a strategic account, so HELM never derives one. */
 const CLASS_OF_KA_FLAG = { true: { code: 'KEY_ACCOUNT', name: 'Key accounts (Memoire key-account flag)' }, false: { code: 'STANDARD_CUSTOMER', name: 'Standard customers (Memoire key-account flag)' } } as const;
@@ -105,7 +121,18 @@ export function createMemoireAdapter(reader: MemoireReader, options: { pageSize?
       const oppRef = { entityTypeKey: 'Opportunity', canonicalKey: `memoire:opportunity:${f.id}` };
       const name = f.opportunity_name?.trim() || f.title?.trim() || `Memoire opportunity ${f.id.slice(0, 8)}`;
       const entities: Translation['entities'][number][] = [
-        { ...oppRef, name, sourceEntityType: 'opportunity', sourceEntityId: f.id, observedAt: f.updated_at, attributes: { stage: f.stage, status: f.status ?? null, expectedClosePeriod: f.expected_close_period ?? null } },
+        { ...oppRef, name, sourceEntityType: 'opportunity', sourceEntityId: f.id, observedAt: f.updated_at, attributes: {
+            stage: f.stage,
+            status: f.status ?? null,
+            expectedClosePeriod: f.expected_close_period ?? null,
+            brand: text(f.brand),
+            channel: text(f.channel),
+            lastTouchAt: f.last_touch_at ?? null,
+            nextActionDate: f.next_action_date ?? null,
+            closedOn: f.closed_on ?? null,
+            sourceId: f.id,
+          },
+        },
       ];
       const aliases: Translation['aliases'][number][] = [{ entity: oppRef, aliasKind: 'source_id', aliasValue: f.id }];
       const relationships: Translation['relationships'][number][] = [];

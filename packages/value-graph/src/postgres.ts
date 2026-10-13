@@ -75,6 +75,13 @@ export type PostgresValueGraphOptions = {
   ontology: OntologyRegistry;
   graphStore: GraphStore;
   clock: Clock;
+  /**
+   * The caller's read generation: it changes whenever anything was written or the reader asked for fresh data. When
+   * given, the organization's observations are read ONCE per generation and every per-node read is answered from
+   * them (audit 2026-10-13: a scenario state read one node's observations per request, in sequence — 25 s on a page
+   * of a hundred opportunities). Without it, every read goes to the database.
+   */
+  readEpoch?: () => number;
 };
 
 type NodeRow = {
@@ -191,6 +198,31 @@ export function createPostgresValueGraph(opts: PostgresValueGraphOptions): Value
   const metricCache = new Map<string, { at: number; value: ValueMetricDefinition | null }>();
   const METRIC_TTL_MS = 5 * 60_000;
   const nodeKey = (orgId: string, id: string) => `${orgId}|${id}`;
+  // The organization's observations, by node, for one read generation (see `readEpoch`).
+  const obsByOrg = new Map<string, { epoch: number; byNode: Promise<Map<string, ValueObservation[]> | null> }>();
+  const PAGE = 1000;
+  const allObservations = (orgId: string): Promise<Map<string, ValueObservation[]> | null> => {
+    const epoch = opts.readEpoch!();
+    const held = obsByOrg.get(orgId);
+    if (held && held.epoch === epoch) return held.byNode;
+    const byNode = (async () => {
+      const out = new Map<string, ValueObservation[]>();
+      // PostgREST caps a read at 1000 rows: page until a short page, so nothing is silently cut.
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await client.from('helm_value_observations').select(OBS_COLS).eq('org_id', orgId).order('id').range(from, from + PAGE - 1);
+        if (error) return null;
+        for (const o of ((data ?? []) as ObsRow[]).map(toObs)) out.set(o.nodeId, [...(out.get(o.nodeId) ?? []), o]);
+        if ((data ?? []).length < PAGE) break;
+      }
+      return out;
+    })();
+    obsByOrg.set(orgId, { epoch, byNode });
+    // A failed read is not kept: the next one tries the database again.
+    void byNode.then((m) => {
+      if (m === null && obsByOrg.get(orgId)?.byNode === byNode) obsByOrg.delete(orgId);
+    });
+    return byNode;
+  };
 
   const toNode = (r: NodeRow): ValueNode => ({
     id: r.id,
@@ -737,6 +769,23 @@ export function createPostgresValueGraph(opts: PostgresValueGraphOptions): Value
     },
 
     async getObservations(scope, query: ObservationQuery) {
+      const held = opts.readEpoch ? await allObservations(String(scope.orgId)) : null;
+      if (held) {
+        let rows = held.get(query.nodeId) ?? [];
+        if (query.types?.length) rows = rows.filter((o) => query.types!.includes(o.observationType));
+        if (query.scenarioEntityId === null) rows = rows.filter((o) => o.scenarioEntityId === null);
+        else if (query.scenarioEntityId !== undefined) rows = rows.filter((o) => o.scenarioEntityId === query.scenarioEntityId);
+        const anchorOf = (o: ValueObservation) => o.effectiveAt ?? o.periodStart ?? o.recordedAt;
+        if (query.from) {
+          const t = new Date(query.from).getTime();
+          rows = rows.filter((o) => new Date(anchorOf(o)).getTime() >= t);
+        }
+        if (query.to) {
+          const t = new Date(query.to).getTime();
+          rows = rows.filter((o) => new Date(anchorOf(o)).getTime() <= t);
+        }
+        return ok([...rows].sort(byRecency).slice(0, query.limit ?? 200));
+      }
       let q = client
         .from('helm_value_observations')
         .select(OBS_COLS)

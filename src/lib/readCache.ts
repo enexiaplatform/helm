@@ -18,6 +18,9 @@ const held = new Map<string, Promise<Held | null>>();
 /** Bumped by every write and every clear: a read that started before it is not kept. */
 let generation = 0;
 
+/** The current read generation: anything held for an older one is stale. */
+export const readGeneration = (): number => generation;
+
 /** Drop everything held. Called by Refresh, sign-out and every write. */
 export function clearReadCache(): void {
   generation += 1;

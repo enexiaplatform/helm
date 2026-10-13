@@ -32,6 +32,7 @@ import {
 import { createPostgresCalculationStore } from '@helm/propagation-engine/postgres';
 import { asOrgId, asUserId, systemClock, type Scope } from '@helm/shared';
 import { supabaseClient } from '../lib/supabaseClient.ts';
+import { readGeneration } from '../lib/readCache.ts';
 
 export const registry: OntologyRegistry = buildSeedRegistry();
 export const valueMetrics: ValueMetricRegistry = buildSeedValueRegistry();
@@ -159,6 +160,8 @@ function buildCloudGraphs(): HelmGraphs | null {
     ontology: registry,
     graphStore,
     clock: systemClock,
+    // Observations are read once per read generation: any write, a Refresh or a sign-out starts a new one.
+    readEpoch: readGeneration,
   });
   const store = createPostgresCalculationStore({
     client: supabaseClient,

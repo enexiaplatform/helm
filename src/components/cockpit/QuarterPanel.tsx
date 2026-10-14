@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom';
 import { byBrand, readQuarter, staleDeals, pipelineFacts, type Money, type PipelinePosition, type PipelineReadable } from '@helm/twin-runtime';
 import { displayValue } from '../../services/scenarioRuntime.ts';
 import { SectionHead } from '../ui/SectionHead.tsx';
+import { TargetLine } from './TargetLine.tsx';
+import type { QuarterTarget } from '../../services/quarterTargets.ts';
 
 /**
  * The quarter on the Cockpit, as a manager reads it (audit 2026-10-13, Manager and GM: "how much will we close this
@@ -48,7 +50,7 @@ const changeOf = (now: Money, before: Money | undefined, since: string): string 
   return `${d > 0 ? '+' : '−'}${displayValue(String(Math.abs(d)), 'currency', now.currency)} since ${since}`;
 };
 
-export function QuarterPanel({ rows, previous, quarter, now, readable, source }: { rows: readonly PipelinePosition[]; previous?: { at: string; rows: readonly PipelinePosition[] } | null; quarter: string; now: string; readable: PipelineReadable; source: string }) {
+export function QuarterPanel({ rows, previous, quarter, now, readable, source, target = null, onSetTarget = null }: { rows: readonly PipelinePosition[]; previous?: { at: string; rows: readonly PipelinePosition[] } | null; quarter: string; now: string; readable: PipelineReadable; source: string; target?: QuarterTarget | null; onSetTarget?: ((amount: number, currency: string) => Promise<void>) | null }) {
   if (rows.length === 0) return null;
   const q = readQuarter(rows, quarter);
   const p = previous ? readQuarter(previous.rows, quarter) : null;
@@ -86,6 +88,8 @@ export function QuarterPanel({ rows, previous, quarter, now, readable, source }:
         <Figure label="Open pipeline" value={readable.value ? moneyText(q.open.value) : 'withheld'} sub={`${q.open.count} open deals, any quarter`} to="/pipeline" change={readable.value ? changeOf(q.open.value, p?.open.value, since) : null} />
         <Figure label="Lost" value={String(q.lost.count)} sub={readable.value ? `${moneyText(q.lost.value)} · never forecast` : 'never forecast'} to="/pipeline?state=lost" />
       </dl>
+
+      {readable.value && readable.probability && <TargetLine q={q} label={label} target={target} onSet={onSetTarget} />}
 
       {(risks.length > 0 || gaps.length > 0) && (
         <div className="mt-6 grid gap-6 md:grid-cols-2">

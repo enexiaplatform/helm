@@ -50,6 +50,7 @@ import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.
 import { AskHelm } from '../components/intelligence/AskHelm.tsx';
 import { CouncilPanel } from '../components/intelligence/CouncilPanel.tsx';
 import { QuarterPanel, quarterHeadline, quarterLabel } from '../components/cockpit/QuarterPanel.tsx';
+import { readQuarterTarget, setQuarterTarget, type QuarterTarget } from '../services/quarterTargets.ts';
 import { pipelineReadable } from '../components/cockpit/pipelineReadable.ts';
 import { StartHere } from '../components/cockpit/StartHere.tsx';
 import { DISMISSED_KEY, read as readGuide, showGettingStarted } from '../components/cockpit/gettingStarted.ts';
@@ -71,6 +72,7 @@ type Loaded = {
   readonly reviews: ProjectedReviews;
   /** The pipeline as a state composed a week or more before this one held it, for "since last week". */
   readonly previous: { readonly at: string; readonly rows: readonly PipelinePosition[] } | null;
+  readonly target: QuarterTarget | null;
 };
 
 type Lineage = { title: string; statement: string; lines: { depth: number; label: string; detail: string }[] };
@@ -107,6 +109,8 @@ export function CockpitPage() {
   const [openAttention, setOpenAttention] = useState<string | null>(null);
   // Bumped when the Getting started guide is dismissed or brought back, so both places re-read it.
   const [guideKey, setGuideKey] = useState(0);
+  // Bumped when a target is recorded, so the quarter reads it back.
+  const [targetTick, setTargetTick] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -159,7 +163,9 @@ export function CockpitPage() {
         const prevHeader = [...all].filter((s) => s.spec.kind === 'CURRENT' && visible(s) && Date.parse(s.createdAt) <= weekAgo).at(-1);
         const prevView = prevHeader ? await loadSnapshotView(twin, prevHeader.id, viewer).catch(() => null) : null;
         const previous = prevHeader && prevView?.projection ? { at: prevHeader.spec.lens.effectiveAsOf, rows: readPipeline(prevView.projection.items) } : null;
-        if (live) setLoaded({ key, version: memoireVersion, value: { ic, integration, current: view.composed, projection: view.projection, trajectory, claims: claims.claims, genome, counterfactuals, reviews, previous }, note: view.refusal });
+        const vg = twin.kernel.valueGraph;
+        const target = vg ? await readQuarterTarget(vg, scope, quarterKeyOf(currentHeader.spec.lens.effectiveAsOf)).catch(() => null) : null;
+        if (live) setLoaded({ key, version: memoireVersion, value: { ic, integration, current: view.composed, projection: view.projection, trajectory, claims: claims.claims, genome, counterfactuals, reviews, previous, target }, note: view.refusal });
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : String(e));
       }
@@ -167,7 +173,7 @@ export function CockpitPage() {
     return () => {
       live = false;
     };
-  }, [ic, viewer, scope, key, memoireVersion]);
+  }, [ic, viewer, scope, key, memoireVersion, targetTick]);
 
   if (error) return <EmptyState title="The cockpit could not be opened" detail={error} />;
   if (!ic || !viewer) return <p className="text-ui text-ink-500">Reading the enterprise…</p>;
@@ -368,7 +374,20 @@ export function CockpitPage() {
 
       {d && <StartHere key={guideKey} items={items} readable={pipelineReadable(viewer, now)} reviews={d.reviews.reviews} now={now} onDismiss={() => setGuideKey((k) => k + 1)} />}
 
-      {d && <QuarterPanel rows={pipelineRows} previous={d.previous} quarter={quarter} now={now} readable={pipelineReadable(viewer, now)} source={source} />}
+      {d && <QuarterPanel
+          rows={pipelineRows}
+          previous={d.previous}
+          target={d.target}
+          onSetTarget={
+            twinCtx.kernel.valueGraph && (ic.mode === 'demo' || myRole() === 'admin' || myRole() === 'manager')
+              ? async (amount, currency) => {
+                  await setQuarterTarget(twinCtx.kernel.valueGraph!, scope!, quarter, amount, currency);
+                  setTargetTick((t) => t + 1);
+                }
+              : null
+          }
+          quarter={quarter}
+          now={now} readable={pipelineReadable(viewer, now)} source={source} />}
 
       {/* Full width: an answer that lists deals is a table (audit 2026-10-13: it was a narrow column of paragraphs). */}
       <section className="mt-8 max-w-[960px]">

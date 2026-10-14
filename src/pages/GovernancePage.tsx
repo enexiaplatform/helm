@@ -22,7 +22,8 @@ import {
 } from '@helm/authority-runtime';
 import { useHelmStore } from '../services/helmStore.ts';
 import { cloudScope, demoScope } from '../services/ontologyGraph.ts';
-import { resolveGovernanceContext } from '../services/authorityRuntime.ts';
+import { resolveGovernanceContext, type GovernanceContext } from '../services/authorityRuntime.ts';
+import { DoaSetup } from '../components/governance/DoaSetup.tsx';
 import { PageHeader } from '../components/ui/PageHeader.tsx';
 import { SectionHead } from '../components/ui/SectionHead.tsx';
 import { EmptyState } from '../components/ui/EmptyState.tsx';
@@ -77,6 +78,9 @@ export function GovernancePage() {
   const myRole = useHelmStore((s) => s.myRole);
   const [data, setData] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ctx, setCtx] = useState<GovernanceContext | null>(null);
+  // Bumped when the delegation of authority is recorded, so the tables below read it back.
+  const [tick, setTick] = useState(0);
 
   const scope = useMemo(
     () => (mode === 'demo' ? demoScope() : activeOrgId ? cloudScope(activeOrgId, userId ?? '', myRole()) : null),
@@ -90,6 +94,7 @@ export function GovernancePage() {
       try {
         const ctx = await resolveGovernanceContext(mode ?? 'demo', scope);
         if (!ctx) throw new Error('The authority runtime is unavailable in this mode.');
+        if (live) setCtx(ctx);
         const r = ctx.runtime;
         const [policies, rules, occupancies, delegations, evaluations, acts, types] = await Promise.all([
           r.listPolicies(scope),
@@ -121,7 +126,7 @@ export function GovernancePage() {
     return () => {
       live = false;
     };
-  }, [mode, scope]);
+  }, [mode, scope, tick]);
 
   if (error) return <EmptyState title="Governance could not be opened" detail={error} />;
   if (!data) return <p className="text-ui text-ink-500">Reading the authority structure…</p>;
@@ -144,6 +149,10 @@ export function GovernancePage() {
           commitment made in <Link to="/decisions" className="underline">Decisions</Link> carries authority NOT EVALUATED.
           Until one is set up, HELM cannot say whether a commitment was within anyone&rsquo;s authority.
         </Notice>
+      )}
+
+      {mode === 'cloud' && ctx && myRole() === 'admin' && (
+        <DoaSetup ctx={ctx} policies={data.policies} rules={data.rules} occupancies={data.occupancies} types={data.types} onSaved={() => setTick((t) => t + 1)} />
       )}
 
       <section className="mt-9">

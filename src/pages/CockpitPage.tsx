@@ -51,6 +51,7 @@ import { AskHelm } from '../components/intelligence/AskHelm.tsx';
 import { CouncilPanel } from '../components/intelligence/CouncilPanel.tsx';
 import { QuarterPanel, quarterHeadline, quarterLabel } from '../components/cockpit/QuarterPanel.tsx';
 import { readQuarterTarget, setQuarterTarget, type QuarterTarget } from '../services/quarterTargets.ts';
+import { readBrandMargins, setBrandMargins, type BrandMargin } from '../services/brandMargins.ts';
 import { pipelineReadable } from '../components/cockpit/pipelineReadable.ts';
 import { StartHere } from '../components/cockpit/StartHere.tsx';
 import { DISMISSED_KEY, read as readGuide, showGettingStarted } from '../components/cockpit/gettingStarted.ts';
@@ -73,6 +74,7 @@ type Loaded = {
   /** The pipeline as a state composed a week or more before this one held it, for "since last week". */
   readonly previous: { readonly at: string; readonly rows: readonly PipelinePosition[] } | null;
   readonly target: QuarterTarget | null;
+  readonly margins: ReadonlyMap<string, BrandMargin> | null;
 };
 
 type Lineage = { title: string; statement: string; lines: { depth: number; label: string; detail: string }[] };
@@ -165,7 +167,8 @@ export function CockpitPage() {
         const previous = prevHeader && prevView?.projection ? { at: prevHeader.spec.lens.effectiveAsOf, rows: readPipeline(prevView.projection.items) } : null;
         const vg = twin.kernel.valueGraph;
         const target = vg ? await readQuarterTarget(vg, scope, quarterKeyOf(currentHeader.spec.lens.effectiveAsOf)).catch(() => null) : null;
-        if (live) setLoaded({ key, version: memoireVersion, value: { ic, integration, current: view.composed, projection: view.projection, trajectory, claims: claims.claims, genome, counterfactuals, reviews, previous, target }, note: view.refusal });
+        const margins = vg ? await readBrandMargins(vg, scope).catch(() => null) : null;
+        if (live) setLoaded({ key, version: memoireVersion, value: { ic, integration, current: view.composed, projection: view.projection, trajectory, claims: claims.claims, genome, counterfactuals, reviews, previous, target, margins }, note: view.refusal });
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : String(e));
       }
@@ -382,6 +385,15 @@ export function CockpitPage() {
             twinCtx.kernel.valueGraph && (ic.mode === 'demo' || myRole() === 'admin' || myRole() === 'manager')
               ? async (amount, currency) => {
                   await setQuarterTarget(twinCtx.kernel.valueGraph!, scope!, quarter, amount, currency);
+                  setTargetTick((t) => t + 1);
+                }
+              : null
+          }
+          margins={d.margins}
+          onSetMargins={
+            twinCtx.kernel.valueGraph && (ic.mode === 'demo' || myRole() === 'admin' || myRole() === 'manager')
+              ? async (rows) => {
+                  await setBrandMargins(twinCtx.kernel.valueGraph!, scope!, rows);
                   setTargetTick((t) => t + 1);
                 }
               : null

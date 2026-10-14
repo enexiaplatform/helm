@@ -3,6 +3,10 @@ import { byBrand, readQuarter, staleDeals, pipelineFacts, type Money, type Pipel
 import { displayValue } from '../../services/scenarioRuntime.ts';
 import { SectionHead } from '../ui/SectionHead.tsx';
 import { TargetLine } from './TargetLine.tsx';
+import { RateControl } from '../ui/RateControl.tsx';
+import { MarginEditor } from './MarginEditor.tsx';
+import type { BrandMargin } from '../../services/brandMargins.ts';
+import { converted, useReadingRate, type ReadingRate } from '../../lib/readingRate.ts';
 import type { QuarterTarget } from '../../services/quarterTargets.ts';
 
 /**
@@ -33,10 +37,17 @@ export function quarterHeadline(rows: readonly PipelinePosition[], quarter: stri
   return `${label}: ${closing}.${late}`;
 }
 
-const Figure = ({ label, value, sub, to, change }: { label: string; value: string; sub: string; to?: string; change?: string | null }) => (
+/** "≈ 21.5B VND": a figure read at the reader's own rate, or nothing. */
+const inReading = (m: Money, r: ReadingRate | null): string | null => {
+  const v = converted(m.value, m.currency, r);
+  return v === null || !r ? null : `≈ ${displayValue(String(Math.round(v)), 'currency', r.to)}`;
+};
+
+const Figure = ({ label, value, sub, to, change, alt }: { label: string; value: string; sub: string; to?: string; change?: string | null; alt?: string | null }) => (
   <div className="min-w-0">
     <dt className="text-meta text-ink-500">{label}</dt>
     <dd className="font-serif text-figure-sm text-ink-950">{to ? <Link to={to} className="hover:text-accent-700">{value}</Link> : value}</dd>
+    {alt && <dd className="font-mono text-meta text-ink-600">{alt}</dd>}
     <dd className="font-mono text-meta text-ink-500">{sub}</dd>
     {change && <dd className="font-mono text-meta text-ink-600">{change}</dd>}
   </div>
@@ -50,7 +61,8 @@ const changeOf = (now: Money, before: Money | undefined, since: string): string 
   return `${d > 0 ? '+' : '−'}${displayValue(String(Math.abs(d)), 'currency', now.currency)} since ${since}`;
 };
 
-export function QuarterPanel({ rows, previous, quarter, now, readable, source, target = null, onSetTarget = null }: { rows: readonly PipelinePosition[]; previous?: { at: string; rows: readonly PipelinePosition[] } | null; quarter: string; now: string; readable: PipelineReadable; source: string; target?: QuarterTarget | null; onSetTarget?: ((amount: number, currency: string) => Promise<void>) | null }) {
+export function QuarterPanel({ rows, previous, quarter, now, readable, source, target = null, onSetTarget = null, margins = null, onSetMargins = null }: { rows: readonly PipelinePosition[]; previous?: { at: string; rows: readonly PipelinePosition[] } | null; quarter: string; now: string; readable: PipelineReadable; source: string; target?: QuarterTarget | null; onSetTarget?: ((amount: number, currency: string) => Promise<void>) | null; margins?: ReadonlyMap<string, BrandMargin> | null; onSetMargins?: ((rows: { brand: string; pct: number }[]) => Promise<void>) | null }) {
+  const rate = useReadingRate();
   if (rows.length === 0) return null;
   const q = readQuarter(rows, quarter);
   const p = previous ? readQuarter(previous.rows, quarter) : null;
@@ -81,11 +93,12 @@ export function QuarterPanel({ rows, previous, quarter, now, readable, source, t
   return (
     <section id="pipeline" className="mt-8 scroll-mt-6">
       <SectionHead title={`This quarter · ${label}`} meta={`${q.open.count} open`} caveat={`from ${source}, by deal state`} />
-      <dl className="mt-4 flex flex-wrap gap-x-10 gap-y-4">
-        <Figure label={`Weighted, due in ${label}`} value={readable.value && readable.probability ? moneyText(q.inQuarter.weighted) : 'withheld'} sub={`value × probability · ${q.inQuarter.count} deals`} to="/pipeline?when=quarter&sort=weighted" change={readable.value && readable.probability ? changeOf(q.inQuarter.weighted, p?.inQuarter.weighted, since) : null} />
-        <Figure label={`Due to close in ${label}`} value={readable.value ? moneyText(q.inQuarter.value) : 'withheld'} sub="full value, open deals" to="/pipeline?when=quarter&sort=value" change={readable.value ? changeOf(q.inQuarter.value, p?.inQuarter.value, since) : null} />
+      <p className="mt-2"><RateControl from={q.open.value.currency} /></p>
+      <dl className="mt-3 flex flex-wrap gap-x-10 gap-y-4">
+        <Figure label={`Weighted, due in ${label}`} value={readable.value && readable.probability ? moneyText(q.inQuarter.weighted) : 'withheld'} sub={`value × probability · ${q.inQuarter.count} deals`} to="/pipeline?when=quarter&sort=weighted" alt={inReading(q.inQuarter.weighted, rate)} change={readable.value && readable.probability ? changeOf(q.inQuarter.weighted, p?.inQuarter.weighted, since) : null} />
+        <Figure label={`Due to close in ${label}`} value={readable.value ? moneyText(q.inQuarter.value) : 'withheld'} sub="full value, open deals" to="/pipeline?when=quarter&sort=value" alt={inReading(q.inQuarter.value, rate)} change={readable.value ? changeOf(q.inQuarter.value, p?.inQuarter.value, since) : null} />
         <Figure label={`Won in ${label}`} value={readable.value ? moneyText(q.won.inQuarterValue) : 'withheld'} sub={`${q.won.inQuarter} won · as ${source} records it`} to="/pipeline?state=won" />
-        <Figure label="Open pipeline" value={readable.value ? moneyText(q.open.value) : 'withheld'} sub={`${q.open.count} open deals, any quarter`} to="/pipeline" change={readable.value ? changeOf(q.open.value, p?.open.value, since) : null} />
+        <Figure label="Open pipeline" value={readable.value ? moneyText(q.open.value) : 'withheld'} sub={`${q.open.count} open deals, any quarter`} to="/pipeline" alt={inReading(q.open.value, rate)} change={readable.value ? changeOf(q.open.value, p?.open.value, since) : null} />
         <Figure label="Lost" value={String(q.lost.count)} sub={readable.value ? `${moneyText(q.lost.value)} · never forecast` : 'never forecast'} to="/pipeline?state=lost" />
       </dl>
 
@@ -131,6 +144,8 @@ export function QuarterPanel({ rows, previous, quarter, now, readable, source, t
                 <th className="ledger-th text-right">Due {label}</th>
                 <th className="ledger-th text-right">Weighted</th>
                 <th className="ledger-th text-right">Won · lost</th>
+                {margins && margins.size > 0 && <th className="ledger-th text-right">Margin % (assumed)</th>}
+                {margins && margins.size > 0 && <th className="ledger-th text-right">Est. margin on weighted</th>}
               </tr>
             </thead>
             <tbody>
@@ -144,11 +159,23 @@ export function QuarterPanel({ rows, previous, quarter, now, readable, source, t
                   <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-dense">{moneyText(b.inQuarterValue)}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-dense">{readable.probability ? moneyText(b.weighted) : 'withheld'}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-dense text-ink-600">{b.won} · {b.lost}</td>
+                  {margins && margins.size > 0 && (() => {
+                    const m = b.brand ? margins.get(b.brand) : undefined;
+                    const est = m && b.weighted.value !== null ? (Number(b.weighted.value) * m.pct) / 100 : null;
+                    return (
+                      <>
+                        <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-dense text-ink-600" title={m ? `stated ${m.recordedAt.slice(0, 10)}` : undefined}>{m ? `${m.pct}%` : '—'}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-dense text-ink-600">{est === null ? '—' : displayValue(String(Math.round(est)), 'currency', b.weighted.currency)}</td>
+                      </>
+                    );
+                  })()}
                 </tr>
               ))}
             </tbody>
           </table>
           <p className="mt-1 font-mono text-meta text-ink-500">In the order brands first appear in {source}. Sort them on the <Link to="/pipeline" className="text-accent-700 hover:underline">Pipeline</Link>.</p>
+          {margins && margins.size > 0 && <p className="mt-1 text-meta text-ink-500">Margins are assumptions stated in HELM, not measured: no cost of goods is connected. The estimate is weighted value × assumed margin %.</p>}
+          {onSetMargins && margins && <MarginEditor brands={brands.map((b) => b.brand).filter((x): x is string => x !== null)} margins={margins} onSave={onSetMargins} />}
         </div>
       )}
     </section>

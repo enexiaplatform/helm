@@ -13,6 +13,8 @@ import { memoireDealUrl, usePipeline } from '../services/pipelineView.ts';
 import { displayValue } from '../services/scenarioRuntime.ts';
 import { cn } from '../lib/cn.ts';
 import { Button } from '../components/ui/Button.tsx';
+import { RateControl } from '../components/ui/RateControl.tsx';
+import { converted, readRate, useReadingRate } from '../lib/readingRate.ts';
 import { quarterLabel } from '../components/cockpit/QuarterPanel.tsx';
 
 type SortKey = 'deal' | 'customer' | 'brand' | 'stage' | 'close' | 'value' | 'probability' | 'weighted' | 'touch';
@@ -67,8 +69,10 @@ function downloadCsv(rows: readonly PipelinePosition[], name: string) {
     const s = v === null ? '' : String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const head = ['Deal', 'Customer', 'Brand', 'Stage', 'State', 'Close period', 'Value', 'Currency', 'Probability', 'Weighted', 'Last touch', 'Memoire id'];
-  const lines = rows.map((r) => [r.opportunity, r.customer, r.brand, r.stage, r.state, r.expectedClosePeriod, r.value, r.currency, r.probability, weighted(r), r.lastTouchAt?.slice(0, 10) ?? null, r.sourceId].map(cell).join(','));
+  // A reader who reads in another currency gets that column too, headed with the rate it used.
+  const rate = readRate();
+  const head = ['Deal', 'Customer', 'Brand', 'Stage', 'State', 'Close period', 'Value', 'Currency', 'Probability', 'Weighted', 'Last touch', 'Memoire id', ...(rate ? [`Value in ${rate.to} at 1 ${rate.from} = ${rate.rate}`] : [])];
+  const lines = rows.map((r) => [r.opportunity, r.customer, r.brand, r.stage, r.state, r.expectedClosePeriod, r.value, r.currency, r.probability, weighted(r), r.lastTouchAt?.slice(0, 10) ?? null, r.sourceId, ...(rate ? [converted(r.value, r.currency, rate)] : [])].map(cell).join(','));
   // A byte-order mark so Excel reads Vietnamese names as UTF-8.
   const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -84,6 +88,8 @@ const day = (iso: string | null) => (iso ? iso.slice(0, 10) : '—');
 
 export function PipelinePage() {
   const { data, error, empty } = usePipeline();
+  // Read before any early return, as every hook must be.
+  const readingRate = useReadingRate();
   const [params, setParams] = useSearchParams();
   const state = params.get('state') ?? 'open';
   const when = params.get('when') ?? 'all';
@@ -144,6 +150,7 @@ export function PipelinePage() {
   if (!data || !view) return <p className="text-ui text-ink-500">Reading the pipeline…</p>;
 
   const live = data.mode === 'cloud';
+  const reading = readingRate;
   const currency = view.totals.open.value.currency ?? view.totals.won.value.currency;
   const allValue = view.sorted.reduce<number | null>((t, r) => (r.value === null ? t : (t ?? 0) + Number(r.value)), null);
   const allWeighted = view.sorted.reduce<number | null>((t, r) => (weighted(r) === null ? t : (t ?? 0) + weighted(r)!), null);
@@ -228,7 +235,9 @@ export function PipelinePage() {
         {sort ? `Sorted by you: ${SORT_LABEL[sort]}, ${dir === 'asc' ? 'low to high' : 'high to low'}.` : 'In the order HELM read them. Click a column to sort.'}
         {allWeighted !== null && currencies.size === 1 ? ` Weighted value of these deals: ${money(allWeighted, currency)}.` : ''}
         {currencies.size > 1 ? ` These deals carry ${[...currencies].join(', ')}; HELM does not convert currencies, so no total is shown.` : ''}
+        {allValue !== null && currencies.size === 1 && converted(allValue, currency, reading) !== null ? ` ≈ ${money(Math.round(converted(allValue, currency, reading)!), reading!.to)} at your rate.` : ''}
       </p>
+      <p className="mt-1"><RateControl from={currencies.size === 1 ? currency : null} /></p>
 
       {view.sorted.length === 0 ? (
         <p className="mt-6 text-ui text-ink-500">No deal matches these filters.</p>

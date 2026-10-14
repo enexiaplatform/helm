@@ -14,6 +14,8 @@
  * docs/archive/scenario-engine-assessment.md).
  */
 
+import { WhatIfWizard } from '../components/scenario/WhatIfWizard.tsx';
+import { usePipeline } from '../services/pipelineView.ts';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -121,6 +123,8 @@ export function ScenariosPage() {
   // ?new=1 opens the new-scenario form directly: the Cockpit's start-here guide links here.
   const [params, setParams] = useSearchParams();
   const [creating, setCreating] = useState(params.get('new') === '1');
+  const [whatIf, setWhatIf] = useState(false);
+  const pipeline = usePipeline();
   // The link opened the form once; a reload or a back step does not open it again.
   useEffect(() => {
     if (params.has('new')) setParams({}, { replace: true });
@@ -248,7 +252,12 @@ export function ScenariosPage() {
           >
             Simulate baseline
           </Button>
-          <Button variant="primary" onClick={() => setCreating(true)}>
+          {pipeline.data && pipeline.data.rows.some((r) => r.state === 'OPEN') && (
+            <Button variant="primary" onClick={() => setWhatIf(true)}>
+              What if…
+            </Button>
+          )}
+          <Button variant={pipeline.data && pipeline.data.rows.some((r) => r.state === 'OPEN') ? 'secondary' : 'primary'} onClick={() => setCreating(true)}>
             New scenario
           </Button>
         </div>
@@ -409,6 +418,21 @@ export function ScenariosPage() {
           </>
         )}
       </section>
+
+      {whatIf && pipeline.data && (
+        <WhatIfWizard
+          ws={ws}
+          rows={pipeline.data.rows}
+          quarter={pipeline.data.quarter}
+          onClose={() => setWhatIf(false)}
+          onDone={(id) => {
+            setWhatIf(false);
+            setSelectedId(id);
+            void reload();
+            if (ws.mode === 'cloud') recomposeCurrentState();
+          }}
+        />
+      )}
 
       {creating && (
         <NewScenarioModal

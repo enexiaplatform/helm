@@ -178,7 +178,8 @@
 
 @layer base {
   html { -webkit-text-size-adjust: 100%; }
-  body { @apply bg-paper font-sans text-base text-ink-950 antialiased; }
+  /* A long legal name in capitals breaks rather than pushing the layout wide (audit 2026-10-13). */
+  body { @apply bg-paper font-sans text-base text-ink-950 antialiased; overflow-wrap: break-word; }
   h1, h2, h3 { @apply font-serif font-semibold; text-wrap: balance; }
   p { text-wrap: pretty; }
   a { @apply text-accent-700 no-underline transition-colors ease-helm; }

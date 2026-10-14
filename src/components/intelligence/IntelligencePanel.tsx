@@ -14,6 +14,27 @@ import { AnswerView } from './AnswerView.tsx';
  * says what it rests on. It is a reading of the kernel, not a chatbot and not the
  * source of any figure.
  */
+/** The answer as plain text the reader can paste into an e-mail: every statement with its class, then what is not known. */
+function downloadAnswer(title: string, a: IntelligenceAnswer) {
+  const sections = [...new Set(a.statements.map((x) => x.section))];
+  const lines = [title, '', ...a.notes, ''];
+  for (const sec of sections) {
+    if (sec) lines.push(sec, '');
+    for (const st of a.statements.filter((x) => x.section === sec)) lines.push(`- ${st.text} [${st.class.toLowerCase().replaceAll('_', ' ')}]`);
+    lines.push('');
+  }
+  if (a.unknowns.length > 0) lines.push('Not known, or not shown:', ...a.unknowns.map((u) => `- ${u}`), '');
+  if (a.questions.length > 0) lines.push('Questions this raises:', ...a.questions.map((q) => `- ${q}`), '');
+  lines.push(a.notice, `HELM run ${a.runId}`);
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.txt`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export function IntelligencePanel({
   task,
   params,
@@ -63,6 +84,11 @@ export function IntelligencePanel({
       </div>
       {mine?.error && <p role="alert" className="mt-3 text-dense text-red-700">{mine.error}</p>}
       {mine?.answer && <AnswerView answer={mine.answer} />}
+      {mine?.answer && (
+        <button type="button" className="mt-2 text-meta font-medium text-accent-700 hover:underline print:hidden" onClick={() => downloadAnswer(label, mine.answer!)}>
+          Download as text, to send on
+        </button>
+      )}
     </div>
   );
 }

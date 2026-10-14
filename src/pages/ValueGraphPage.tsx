@@ -220,6 +220,7 @@ export function ValueGraphPage() {
         id: n.id,
         label: customers.forNode(n.label, n.id),
         dimension: (valueMetrics.metric(n.metricKey)?.dimension ?? 'FINANCIAL') as Dimension,
+        metric: valueMetrics.metric(n.metricKey)?.name ?? n.metricKey,
       })),
     [nodes, customers],
   );

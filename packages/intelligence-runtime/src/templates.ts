@@ -18,6 +18,8 @@ export type Template = {
   /** Null: the provider proposes the calls (open-ended ask). */
   readonly plan: ((p: TaskParams) => readonly ToolCall[]) | null;
   readonly needs: readonly string[];
+  /** True: the plan's first call is what the task is about; if it cannot be read, nothing else is read either. */
+  readonly gated?: (p: TaskParams) => boolean;
 };
 
 const COMMON =
@@ -88,6 +90,8 @@ export const TEMPLATES = {
     // The pack when a review is open, AND the quarter's pipeline and the attention conditions (audit 2026-10-13: a brief
     // read only the pack, so an empty pack gave six sections of 0 while the pipeline held 34 deals without a close date).
     needs: [],
+    // A brief OF a review the caller may not read is not drafted from the pipeline and attention instead.
+    gated: (p) => Boolean(p['reviewId']),
     plan: (p) => [
       ...(p['reviewId'] ? [{ tool: 'getReviewPack', args: { reviewId: p['reviewId'] } }] : []),
       { tool: 'getPipelinePositions', args: { state: 'OPEN', ...(p['quarter'] ? { closePeriod: p['quarter'] } : {}), sortBy: 'value', limit: 10 } },

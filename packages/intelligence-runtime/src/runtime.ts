@@ -77,7 +77,7 @@ export function createIntelligenceRuntime(opts: IntelligenceRuntimeOptions): Int
       }
 
       // ---- read, as the caller, through the catalogue and nothing else
-      const { calls, evidence, notes, unknowns } = await gatherEvidence(tools, ctx, plan);
+      const { calls, evidence, notes, unknowns } = await gatherEvidence(tools, ctx, plan, { gated: template.gated?.(params) ?? false });
 
       // ---- synthesize: JSON in, a draft out
       const input = JSON.parse(JSON.stringify({ task: request.task, templateId: template.id, templateVersion: template.version, instructions: template.instructions, question: params['question'] ?? null, evidence, outputClasses })) as Parameters<AiProvider['synthesize']>[0];

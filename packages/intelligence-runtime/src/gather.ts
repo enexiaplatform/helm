@@ -20,13 +20,18 @@ export type Gathered = {
   readonly unknowns: string[];
 };
 
-export async function gatherEvidence(tools: ToolRegistry, ctx: ToolContext, plan: readonly ToolCall[]): Promise<Gathered> {
+export async function gatherEvidence(tools: ToolRegistry, ctx: ToolContext, plan: readonly ToolCall[], opts: { gated?: boolean } = {}): Promise<Gathered> {
   const calls: ToolCallRecord[] = [];
   const evidence: EvidenceItem[] = [];
   const notes: string[] = [];
   const unknowns: string[] = [];
   const seen = new Set<string>();
   for (const call of plan.slice(0, MAX_TOOL_CALLS)) {
+    // Gated: the first call is what the task is about. If nothing of it could be read, it stops the read — the rest is not read in its place.
+    if (opts.gated && calls.length === 1 && calls[0]!.outcome !== 'OK') {
+      unknowns.push('Nothing else was read: this task is about what could not be read.');
+      break;
+    }
     const t = tools.get(call.tool);
     if (!t) {
       calls.push({ tool: String(call.tool), args: call.args, outcome: 'REFUSED', evidenceIds: [], note: 'Not a governed tool. The AI reads HELM through the catalogue only; it cannot query a table.' });

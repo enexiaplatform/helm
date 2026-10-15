@@ -183,7 +183,7 @@ export function CockpitPage() {
   const data = loaded && loaded.key === key ? loaded : null;
   const d = data?.value ?? null;
   const items: readonly TwinItem[] = d?.projection?.items ?? [];
-  const tiers = attentionTiers(items);
+  const tiers = attentionTiers(items, [...items, ...(d?.current.items ?? [])]);
   const decisions = items.filter((i) => i.kind === 'DECISION');
   // A cancelled decision stays on record in Decisions; the Cockpit lists what is in play (audit 2026-10-13: a cancelled test decision sat here).
   const isCancelled = (i: TwinItem) => /CANCELLED/.test(String(st<string>(i, 'decisionState') ?? st<string>(i, 'state') ?? ''));
@@ -500,8 +500,12 @@ export function CockpitPage() {
                 return (
                   <li key={a.key} className="border-b border-ink-200 py-3">
                     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                      <Pill tone="accepted">{conditionName(conditionOf(a))}</Pill>
-                      <Said text={String(st<string>(a, 'statement') ?? a.label)} className="min-w-0 flex-1 text-dense text-ink-900" />
+                      <Pill tone="accepted">{tiers.favourable.has(a.key) ? 'LANDED BETTER THAN COMMITTED' : conditionName(conditionOf(a))}</Pill>
+                      {tiers.favourable.has(a.key) ? (
+                        <span className="min-w-0 flex-1 text-dense text-ink-900">{present(a).title} {present(a).cause}</span>
+                      ) : (
+                        <Said text={String(st<string>(a, 'statement') ?? a.label)} className="min-w-0 flex-1 text-dense text-ink-900" />
+                      )}
                       <span className="flex gap-3 text-meta font-medium">
                         <Link to={act.to} className="text-accent-700 hover:underline">Open</Link>
                         <button type="button" onClick={() => setOpenAttention(isOpen ? null : a.key)} aria-expanded={isOpen} className="text-accent-700 hover:underline">{isOpen ? 'Hide' : 'Why?'}</button>

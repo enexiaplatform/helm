@@ -73,6 +73,15 @@ export function QuarterPanel({ rows, previous, quarter, now, readable, source, t
   const f = pipelineFacts(open, readable);
   const brands = byBrand(rows, quarter).filter((b) => b.open > 0 || b.won > 0);
   const anyBrand = brands.some((b) => b.brand !== null);
+  // One brand typed two ways is counted apart (live audit 2026-10-16: "MicronView" and "MicronVIew"). Only spellings that
+  // differ by case or spacing are said to be one brand; anything looser would be HELM guessing, so it is left alone.
+  const spellings = new Map<string, Set<string>>();
+  for (const r of rows) {
+    if (!r.brand) continue;
+    const key = r.brand.trim().replace(/\s+/g, ' ').toLowerCase();
+    spellings.set(key, (spellings.get(key) ?? new Set()).add(r.brand));
+  }
+  const twoWays = [...spellings.values()].filter((v) => v.size > 1).map((v) => [...v].map((b) => `“${b}”`).join(' and '));
 
   const risks = [
     q.overdue.count > 0 && { text: `${q.overdue.count} open ${q.overdue.count === 1 ? 'deal is' : 'deals are'} past ${q.overdue.count === 1 ? 'its' : 'their'} close date (${moneyText(q.overdue.value)}): close, lose or re-date ${q.overdue.count === 1 ? 'it' : 'them'} in ${source}.`, to: '/pipeline?when=overdue' },
@@ -88,6 +97,7 @@ export function QuarterPanel({ rows, previous, quarter, now, readable, source, t
     f.noClosePeriod > 0 && { text: `${f.noClosePeriod} have no close period`, to: '/pipeline?fix=noclose' },
     f.withoutCustomer > 0 && { text: `${f.withoutCustomer} have no customer`, to: '/pipeline?fix=nocustomer' },
     neverTouched.length > 0 && { text: `${neverTouched.length} have no recorded touch`, to: null },
+    ...twoWays.map((w) => ({ text: `${w} are one brand written two ways, so their deals are counted apart`, to: null })),
   ].filter((x): x is { text: string; to: string | null } => typeof x === 'object' && x !== null);
 
   return (

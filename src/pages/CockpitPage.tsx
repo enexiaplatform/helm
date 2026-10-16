@@ -47,7 +47,6 @@ import { Notice } from '../components/ui/Notice.tsx';
 import { Pill } from '../components/ui/Pill.tsx';
 import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.tsx';
 import { AskHelm } from '../components/intelligence/AskHelm.tsx';
-import { quarterLabel } from '../components/cockpit/QuarterPanel.tsx';
 import { suggestedQuestions } from '../components/intelligence/suggestedQuestions.ts';
 import { Button } from '../components/ui/Button.tsx';
 import { cn } from '../lib/cn.ts';
@@ -571,7 +570,7 @@ export function CockpitPage() {
             params={{ ...(latestReview && latestReview.status === 'OPEN' ? { reviewId: latestReview.review.id } : {}), quarter }}
             viewer={viewer}
             label="Draft the management brief"
-            detail={`The ${quarterLabel(quarter)} pipeline, what needs attention${latestReview?.status === 'OPEN' ? ` and the ${latestReview.review.periodLabel} review` : ''} — each statement grounded in what HELM holds.`}
+            detail={`What needs attention, the decisions in play${latestReview?.status === 'OPEN' ? `, the ${latestReview.review.periodLabel} review` : ''} and the commercial state HELM read — each statement grounded in what HELM holds.`}
           />
           <p className="mt-3 text-meta text-ink-600"><Link to="/reviews" className="text-accent-700 underline">Reviews →</Link> · <Link to="/decisions" className="text-accent-700 underline">Decisions →</Link></p>
         </aside>
@@ -580,7 +579,7 @@ export function CockpitPage() {
       {/* Full width: an answer that lists deals is a table (audit 2026-10-13: it was a narrow column of paragraphs). */}
       <section className="mt-12 max-w-[960px]">
         <SectionHead title="Ask HELM" size="section-sm" caveat="answers only from what HELM holds, as you" />
-        <div className="mt-3"><AskHelm viewer={viewer} suggestions={suggestedQuestions(items, now)} /></div>
+        <div className="mt-3"><AskHelm viewer={viewer} suggestions={suggestedQuestions(items)} /></div>
       </section>
 
       {ic.reviews.viewers.length > 1 && (

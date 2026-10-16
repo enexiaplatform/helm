@@ -1,7 +1,7 @@
 import { useState, type ReactNode, type MouseEvent } from 'react';
 import {
   Bell, BookOpenCheck, Calculator, ChevronsUpDown, ClipboardCheck, Database, Dna, GitBranch, GitCompareArrows, Layers,
-  LogOut, Network, Scale, Settings, ShieldCheck, Table2, Waypoints, Workflow, type LucideIcon,
+  LogOut, Network, Scale, Settings, ShieldCheck, Waypoints, Workflow, type LucideIcon,
 } from 'lucide-react';
 import { HelmLockup } from '../brand/HelmLogo.tsx';
 import { cn } from '../../lib/cn.ts';
@@ -12,13 +12,13 @@ export type NavGroup = 'Management' | 'Labs' | 'Setup';
 export interface NavItem { key: string; label: string; icon: LucideIcon; group?: NavGroup; hint?: string }
 /**
  * What a manager comes for first; the kernel instruments behind one fold (audit 2026-10-13, both readers: fourteen
- * entries, five empty on day one, three that list the same hundred opportunities). Setup folds away until opened or
+ * entries, five empty on day one, three that list the same hundred opportunities). The pipeline table left the rail on
+ * 2026-10-16: a pipeline board is Memoire's (docs/architecture/helm-vs-memoire.md §2.1, rule 2). Setup folds away until opened or
  * until one of its pages is the current one. The kernel instruments are Labs (Phase 1, 2026-10-16): off the rail until
  * a reader turns Labs on in Settings, or while one of them is the page on screen.
  */
 export const HELM_NAV: NavItem[] = [
   { key: 'cockpit', label: 'Cockpit', icon: Bell, group: 'Management' },
-  { key: 'pipeline', label: 'Pipeline', icon: Table2 },
   { key: 'reviews', label: 'Reviews', icon: ClipboardCheck },
   { key: 'decisions', label: 'Decisions', icon: Scale },
   { key: 'scenarios', label: 'Scenarios', icon: GitBranch },

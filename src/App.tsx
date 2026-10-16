@@ -18,7 +18,6 @@ import { TwinPage } from './pages/TwinPage.tsx';
 import { CausalPage } from './pages/CausalPage.tsx';
 import { GenomePage } from './pages/GenomePage.tsx';
 import { CounterfactualsPage } from './pages/CounterfactualsPage.tsx';
-import { PipelinePage } from './pages/PipelinePage.tsx';
 import { ReviewsPage } from './pages/ReviewsPage.tsx';
 import { SourcesPage } from './pages/SourcesPage.tsx';
 
@@ -55,7 +54,8 @@ export default function App() {
         <Route element={<ConsoleLayout />}>
           <Route index element={<CockpitPage />} />
           <Route path="attention" element={<Navigate to="/" replace />} />
-          <Route path="pipeline" element={<PipelinePage />} />
+          {/* The pipeline table is retired (2026-10-16): a pipeline board is Memoire's; Sources says what HELM read from it. */}
+          <Route path="pipeline" element={<Navigate to="/sources" replace />} />
           <Route path="reviews" element={<ReviewsPage />} />
           <Route path="decisions" element={<DecisionsPage />} />
           <Route path="decisions/:id" element={<DecisionDetailPage />} />

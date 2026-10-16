@@ -14,7 +14,7 @@ import { AppShell } from './AppShell.tsx';
 const INSTRUMENTS = new Set(['scenarios', 'value-graph', 'ontology', 'calculations', 'governance', 'twin', 'causal', 'counterfactuals', 'genome', 'sources']);
 
 /** The Pipeline is a working table: full width, without the instruments' clocks. */
-const WIDE = new Set([...INSTRUMENTS, 'pipeline']);
+const WIDE = new Set([...INSTRUMENTS]);
 
 const keyOf = (pathname: string): string => pathname.split('/')[1] || 'cockpit';
 const hrefOf = (key: string): string => (key === 'cockpit' ? '/' : `/${key}`);

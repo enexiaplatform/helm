@@ -108,7 +108,7 @@ export function DecisionsPage() {
   const [recording, setRecording] = useState(params.get('record') === '1');
   // The link opened the form once; a reload or a back step does not open it again.
   useEffect(() => {
-    if (params.has('frame')) setParams({}, { replace: true });
+    if (params.has('frame') || params.has('record')) setParams({}, { replace: true });
   }, [params, setParams]);
   const [governed, setGoverned] = useState<Governed>({});
   const [error, setError] = useState<string | null>(null);

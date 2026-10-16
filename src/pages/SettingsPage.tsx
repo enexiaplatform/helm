@@ -6,7 +6,7 @@ import { FactRow } from '../components/ui/FactRow.tsx';
 import { Button } from '../components/ui/Button.tsx';
 import { Pill } from '../components/ui/Pill.tsx';
 import { controlClass } from '../components/ui/Field.tsx';
-import { orgRoles, type OrgRole } from '../domain/types.ts';
+import { orgRoles, orgUnitTypes, type OrgRole, type OrgUnitType } from '../domain/types.ts';
 import { useLabs, writeLabs } from '../lib/labs.ts';
 
 export function SettingsPage() {
@@ -16,6 +16,16 @@ export function SettingsPage() {
   const members = useHelmStore((s) => s.members);
   const units = useHelmStore((s) => s.units);
   const addMemberByEmail = useHelmStore((s) => s.addMemberByEmail);
+  const addUnit = useHelmStore((s) => s.addUnit);
+  const assignToUnit = useHelmStore((s) => s.assignToUnit);
+  const placed = useHelmStore((s) => s.unitMemberships);
+  const [unitName, setUnitName] = useState('');
+  const [unitType, setUnitType] = useState<OrgUnitType>('team');
+  const [unitParent, setUnitParent] = useState('');
+  const [placeWho, setPlaceWho] = useState('');
+  const [placeWhere, setPlaceWhere] = useState('');
+  const [placeLeads, setPlaceLeads] = useState(false);
+  const [unitMessage, setUnitMessage] = useState<string | null>(null);
 
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<OrgRole>('member');
@@ -95,6 +105,62 @@ export function SettingsPage() {
             units
               .filter((u) => u.parentId === null)
               .map((root) => <UnitNode key={root.id} unitId={root.id} depth={0} />)
+          )}
+          {/* Units decide who reads which decisions and whose deals a unit's state holds; an admin sets them here (RLS: admins only). */}
+          {isAdmin && mode !== 'demo' && (
+            <div className="mt-4 grid gap-4">
+              <form
+                className="grid gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void addUnit(unitName, unitType, unitParent || null).then((err) => {
+                    setUnitMessage(err ?? `Added ${unitName.trim()}.`);
+                    if (!err) setUnitName('');
+                  });
+                }}
+              >
+                <span className="helm-label">Add a unit</span>
+                <input className={controlClass} required maxLength={200} placeholder="Vietnam Commercial" value={unitName} onChange={(e) => setUnitName(e.target.value)} />
+                <div className="flex flex-wrap gap-2">
+                  <select className={controlClass + ' w-40'} value={unitType} onChange={(e) => setUnitType(e.target.value as OrgUnitType)}>
+                    {orgUnitTypes.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
+                  </select>
+                  <select className={controlClass + ' min-w-0 flex-1'} value={unitParent} onChange={(e) => setUnitParent(e.target.value)}>
+                    <option value="">at the top</option>
+                    {units.map((u) => <option key={u.id} value={u.id}>under {u.name}</option>)}
+                  </select>
+                  <Button type="submit">Add unit</Button>
+                </div>
+              </form>
+              {units.length > 0 && (
+                <form
+                  className="grid gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const who = members.find((m) => m.userId === placeWho);
+                    const where = units.find((u) => u.id === placeWhere);
+                    void assignToUnit(placeWho, placeWhere, placeLeads).then((err) => setUnitMessage(err ?? `${who?.displayName ?? 'The member'} is in ${where?.name ?? 'the unit'}.`));
+                  }}
+                >
+                  <span className="helm-label">Place a member in a unit</span>
+                  <div className="flex flex-wrap gap-2">
+                    <select className={controlClass + ' min-w-0 flex-1'} required value={placeWho} onChange={(e) => setPlaceWho(e.target.value)}>
+                      <option value="">Member…</option>
+                      {members.map((m) => <option key={m.userId} value={m.userId}>{m.displayName}</option>)}
+                    </select>
+                    <select className={controlClass + ' min-w-0 flex-1'} required value={placeWhere} onChange={(e) => setPlaceWhere(e.target.value)}>
+                      <option value="">Unit…</option>
+                      {units.filter((u) => !placed.some((p) => p.userId === placeWho && p.unitId === u.id)).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  </div>
+                  <label className="inline-flex items-center gap-2 text-dense text-ink-700">
+                    <input type="checkbox" checked={placeLeads} onChange={(e) => setPlaceLeads(e.target.checked)} /> Leads the unit
+                  </label>
+                  <div><Button type="submit">Place</Button></div>
+                </form>
+              )}
+              {unitMessage && <p className="text-dense text-ink-600">{unitMessage}</p>}
+            </div>
           )}
         </section>
       </div>

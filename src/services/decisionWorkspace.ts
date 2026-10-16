@@ -50,6 +50,8 @@ export type DecisionSummary = DecisionListItem & {
   committedByLabel: string | null;
   /** The latest outcome review, if the decision has been looked at again. */
   reviewedAt: string | null;
+  /** The day the commitment named to look again (its DATE review trigger), else the decision's own review date. */
+  lookAgainOn: string | null;
   openChallenges: number;
   unownedAssumptions: number;
 };
@@ -69,6 +71,7 @@ export async function loadDecisionSummaries(ctx: DecisionWorkspaceContext): Prom
       committedAt: commitment?.committedAt ?? null,
       committedByLabel: commitment?.committedByLabel ?? null,
       reviewedAt: review?.reviewedAt ?? null,
+      lookAgainOn: commitment?.reviewTriggers.find((t) => t.kind === 'DATE' && t.byDate)?.byDate?.slice(0, 10) ?? item.decision.horizon.reviewDate?.slice(0, 10) ?? null,
       openChallenges: workspace.challenges.filter((c) => c.status === 'OPEN').length,
       unownedAssumptions: workspace.assumptions.filter((a) => a.owner === null).length,
     });

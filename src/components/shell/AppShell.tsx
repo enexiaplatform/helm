@@ -1,7 +1,7 @@
 import { useState, type ReactNode, type MouseEvent } from 'react';
 import {
   Bell, BookOpenCheck, Calculator, ChevronsUpDown, ClipboardCheck, Database, Dna, GitBranch, GitCompareArrows, Layers,
-  LogOut, Network, Scale, Settings, ShieldCheck, Waypoints, Workflow, type LucideIcon,
+  LogOut, Network, Scale, Settings, ShieldCheck, Users, Waypoints, Workflow, type LucideIcon,
 } from 'lucide-react';
 import { HelmLockup } from '../brand/HelmLogo.tsx';
 import { cn } from '../../lib/cn.ts';
@@ -21,6 +21,7 @@ export const HELM_NAV: NavItem[] = [
   { key: 'cockpit', label: 'Cockpit', icon: Bell, group: 'Management' },
   { key: 'reviews', label: 'Reviews', icon: ClipboardCheck },
   { key: 'decisions', label: 'Decisions', icon: Scale },
+  { key: 'organization', label: 'Organization', icon: Users },
   { key: 'scenarios', label: 'Scenarios', icon: GitBranch },
   { key: 'memory', label: 'Decision memory', icon: BookOpenCheck, group: 'Labs' },
   { key: 'twin', label: 'Twin', icon: Layers },

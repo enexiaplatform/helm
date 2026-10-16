@@ -10,6 +10,7 @@ import { DecisionDetailPage } from './pages/DecisionDetailPage.tsx';
 import { ScenariosPage } from './pages/ScenariosPage.tsx';
 import { MemoryPage } from './pages/MemoryPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
+import { OrganizationPage } from './pages/OrganizationPage.tsx';
 import { OntologyPage } from './pages/OntologyPage.tsx';
 import { ValueGraphPage } from './pages/ValueGraphPage.tsx';
 import { CalculationsPage } from './pages/CalculationsPage.tsx';
@@ -59,6 +60,7 @@ export default function App() {
           <Route path="reviews" element={<ReviewsPage />} />
           <Route path="decisions" element={<DecisionsPage />} />
           <Route path="decisions/:id" element={<DecisionDetailPage />} />
+          <Route path="organization" element={<OrganizationPage />} />
           <Route path="scenarios" element={<ScenariosPage />} />
           {/* The pre-kernel CVP what-if detail page is retired (Phase 4). */}
           <Route path="scenarios/:id" element={<Navigate to="/scenarios" replace />} />

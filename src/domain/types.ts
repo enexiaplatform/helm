@@ -46,6 +46,13 @@ export type OrgUnit = {
   unitType: OrgUnitType;
 };
 
+/** A person's place in a unit (org_unit_memberships). */
+export type OrgUnitMembership = {
+  userId: string;
+  unitId: string;
+  isManager: boolean;
+};
+
 export type OrgMember = {
   userId: string;
   email: string;

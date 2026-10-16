@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { supabaseClient } from '../lib/supabaseClient.ts';
 import { readMemoireProfiles } from './memoireBridge.ts';
-import type { OrgMember, OrgRole, OrgUnit, Organization } from '../domain/types.ts';
-import { demoMembers, demoOrganization, demoUnits, DEMO_USER_ID } from '../data/demoOrg.ts';
+import type { OrgMember, OrgRole, OrgUnit, OrgUnitMembership, OrgUnitType, Organization } from '../domain/types.ts';
+import { demoMembers, demoOrganization, demoUnitMemberships, demoUnits, DEMO_USER_ID } from '../data/demoOrg.ts';
 import * as map from './mappers.ts';
 
 /**
@@ -26,6 +26,7 @@ type HelmState = {
 
   units: OrgUnit[];
   members: OrgMember[];
+  unitMemberships: OrgUnitMembership[];
 
   // ---- auth & context ----
   initAuth: () => Promise<void>;
@@ -38,6 +39,10 @@ type HelmState = {
   createOrganization: (name: string, currency: string, fyStart: number) => Promise<string | null>;
   setActiveOrg: (orgId: string) => Promise<void>;
   addMemberByEmail: (email: string, role: OrgRole) => Promise<string | null>;
+  /** Admin, cloud: a unit of the organization, under a parent or at the top. */
+  addUnit: (name: string, unitType: OrgUnitType, parentId: string | null) => Promise<string | null>;
+  /** Admin, cloud: a member's place in a unit. */
+  assignToUnit: (userId: string, unitId: string, isManager: boolean) => Promise<string | null>;
 
   // ---- derived ----
   activeOrg: () => Organization | null;
@@ -49,6 +54,7 @@ type HelmState = {
 const emptyData = {
   units: [] as OrgUnit[],
   members: [] as OrgMember[],
+  unitMemberships: [] as OrgUnitMembership[],
 };
 
 export const useHelmStore = create<HelmState>((set, get) => {
@@ -133,6 +139,7 @@ export const useHelmStore = create<HelmState>((set, get) => {
         activeOrgId: demoOrganization.id,
         units: demoUnits,
         members: demoMembers,
+        unitMemberships: demoUnitMemberships,
         error: null,
       });
     },
@@ -198,10 +205,12 @@ export const useHelmStore = create<HelmState>((set, get) => {
         // Memberships are read without embedding user_profiles: there is no foreign key between the two tables, so the
         // embed failed, the error was never checked, and every organization showed "Members 0" (audit 2026-10-09).
         // user_profiles is Memoire's table and shows each reader only their own row, so others are named by id.
-        const [units, memberRows] = await Promise.all([
+        const [units, memberRows, placed] = await Promise.all([
           sb.from('org_units').select('*').eq('org_id', orgId),
           sb.from('organization_memberships').select('user_id, role').eq('org_id', orgId),
+          sb.from('org_unit_memberships').select('unit_id, user_id, is_manager').eq('org_id', orgId),
         ]);
+        if (placed.error) throw new Error(`Unit memberships could not be read: ${placed.error.message}`);
         if (units.error) throw new Error(units.error.message);
         if (memberRows.error) throw new Error(`Members could not be read: ${memberRows.error.message}`);
         const byId = await readMemoireProfiles((memberRows.data ?? []).map((m) => m.user_id as string));
@@ -223,6 +232,7 @@ export const useHelmStore = create<HelmState>((set, get) => {
         set({
           units: (units.data ?? []).map(map.mapOrgUnit),
           members,
+          unitMemberships: ((placed.data ?? []) as { unit_id: string; user_id: string; is_manager: boolean }[]).map((r) => ({ unitId: r.unit_id, userId: r.user_id, isManager: r.is_manager })),
           loadingData: false,
         });
       } catch (e) {
@@ -239,6 +249,26 @@ export const useHelmStore = create<HelmState>((set, get) => {
         p_email: email,
         p_role: role,
       });
+      if (error) return error.message;
+      await get().setActiveOrg(activeOrgId);
+      return null;
+    },
+
+    addUnit: async (name, unitType, parentId) => {
+      const { activeOrgId } = get();
+      if (isDemo()) return 'Demo mode: units are read-only';
+      if (!supabaseClient || !activeOrgId) return 'Cloud is not configured';
+      const { error } = await supabaseClient.from('org_units').insert({ org_id: activeOrgId, name: name.trim(), unit_type: unitType, parent_id: parentId });
+      if (error) return error.message;
+      await get().setActiveOrg(activeOrgId);
+      return null;
+    },
+
+    assignToUnit: async (userId, unitId, isManager) => {
+      const { activeOrgId } = get();
+      if (isDemo()) return 'Demo mode: units are read-only';
+      if (!supabaseClient || !activeOrgId) return 'Cloud is not configured';
+      const { error } = await supabaseClient.from('org_unit_memberships').insert({ org_id: activeOrgId, unit_id: unitId, user_id: userId, is_manager: isManager });
       if (error) return error.message;
       await get().setActiveOrg(activeOrgId);
       return null;

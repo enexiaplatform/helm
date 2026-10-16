@@ -19,8 +19,8 @@
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
-import { canSeeSnapshot, pipelineMoves, quarterKeyOf, readPipeline, thisWeek, type ComposedSnapshot, type PipelinePosition, type ProjectedSnapshot, type Trajectory, type TrajectoryLine, type TwinItem, type TwinItemExplanation, type TwinSnapshot } from '@helm/twin-runtime';
+import { Link, useNavigate } from 'react-router-dom';
+import { canSeeSnapshot, quarterKeyOf, readPipeline, type ComposedSnapshot, type ProjectedSnapshot, type Trajectory, type TrajectoryLine, type TwinItem, type TwinItemExplanation, type TwinSnapshot } from '@helm/twin-runtime';
 import type { QuantityUnit } from '@helm/shared';
 import type { ClaimView } from '@helm/causal-runtime';
 import type { ProjectedReviews } from '@helm/review-runtime';
@@ -47,14 +47,9 @@ import { Notice } from '../components/ui/Notice.tsx';
 import { Pill } from '../components/ui/Pill.tsx';
 import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.tsx';
 import { AskHelm } from '../components/intelligence/AskHelm.tsx';
-import { QuarterPanel, quarterHeadline, quarterLabel } from '../components/cockpit/QuarterPanel.tsx';
-import { ThisWeek } from '../components/cockpit/ThisWeek.tsx';
-import { FixInSource } from '../components/cockpit/FixInSource.tsx';
-import { SinceLastWeek } from '../components/cockpit/SinceLastWeek.tsx';
-import { readQuarterTarget, setQuarterTarget, type QuarterTarget } from '../services/quarterTargets.ts';
-import { readBrandMargins, setBrandMargins, type BrandMargin } from '../services/brandMargins.ts';
-import { pipelineReadable } from '../components/cockpit/pipelineReadable.ts';
+import { quarterLabel } from '../components/cockpit/QuarterPanel.tsx';
 import { suggestedQuestions } from '../components/intelligence/suggestedQuestions.ts';
+import { Button } from '../components/ui/Button.tsx';
 import { cn } from '../lib/cn.ts';
 
 const NUM = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve'];
@@ -70,10 +65,6 @@ type Loaded = {
   readonly genome: ProjectedGenome;
   readonly counterfactuals: ProjectedCounterfactuals;
   readonly reviews: ProjectedReviews;
-  /** The pipeline as a state composed a week or more before this one held it, for "since last week". */
-  readonly previous: { readonly at: string; readonly rows: readonly PipelinePosition[] } | null;
-  readonly target: QuarterTarget | null;
-  readonly margins: ReadonlyMap<string, BrandMargin> | null;
 };
 
 type Lineage = { title: string; statement: string; lines: { depth: number; label: string; detail: string }[] };
@@ -96,6 +87,7 @@ export function CockpitPage() {
   const activeOrgId = useHelmStore((s) => s.activeOrgId);
   const userId = useHelmStore((s) => s.userId);
   const myRole = useHelmStore((s) => s.myRole);
+  const navigate = useNavigate();
   // A new current state composed from Memoire is a reason to read the cockpit again (ADR-0034).
   const memoireVersion = useMemoireLive((s) => s.version);
   const livePhase = useMemoireLive((s) => s.phase);
@@ -108,8 +100,6 @@ export function CockpitPage() {
   const [loaded, setLoaded] = useState<{ key: string; version: number; value: Loaded | null; note: string | null } | null>(null);
   const [why, setWhy] = useState<Lineage | null>(null);
   const [openAttention, setOpenAttention] = useState<string | null>(null);
-  // Bumped when a target is recorded, so the quarter reads it back.
-  const [targetTick, setTargetTick] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -157,15 +147,7 @@ export function CockpitPage() {
           reviewsForViewer(ic.reviews, viewer, null),
         ]);
         const integration = await resolveIntegrationContext(ic.mode, scope).catch(() => null);
-        // A week back: the latest current state composed at least six days before this one (audit 2026-10-13: "no change since last week").
-        const weekAgo = Date.parse(currentHeader.createdAt) - 6 * 86_400_000;
-        const prevHeader = [...all].filter((s) => s.spec.kind === 'CURRENT' && visible(s) && Date.parse(s.createdAt) <= weekAgo).at(-1);
-        const prevView = prevHeader ? await loadSnapshotView(twin, prevHeader.id, viewer).catch(() => null) : null;
-        const previous = prevHeader && prevView?.projection ? { at: prevHeader.spec.lens.effectiveAsOf, rows: readPipeline(prevView.projection.items) } : null;
-        const vg = twin.kernel.valueGraph;
-        const target = vg ? await readQuarterTarget(vg, scope, quarterKeyOf(currentHeader.spec.lens.effectiveAsOf)).catch(() => null) : null;
-        const margins = vg ? await readBrandMargins(vg, scope).catch(() => null) : null;
-        if (live) setLoaded({ key, version: memoireVersion, value: { ic, integration, current: view.composed, projection: view.projection, trajectory, claims: claims.claims, genome, counterfactuals, reviews, previous, target, margins }, note: view.refusal });
+        if (live) setLoaded({ key, version: memoireVersion, value: { ic, integration, current: view.composed, projection: view.projection, trajectory, claims: claims.claims, genome, counterfactuals, reviews }, note: view.refusal });
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : String(e));
       }
@@ -173,7 +155,7 @@ export function CockpitPage() {
     return () => {
       live = false;
     };
-  }, [ic, viewer, scope, key, memoireVersion, targetTick]);
+  }, [ic, viewer, scope, key, memoireVersion]);
 
   if (error) return <EmptyState title="The cockpit could not be opened" detail={error} />;
   if (!ic || !viewer) return <p className="text-ui text-ink-500">Reading the enterprise…</p>;
@@ -293,28 +275,25 @@ export function CockpitPage() {
 
   // A state that is not COMPLETE cannot vouch for "nothing needs attention": it may be silent because it cannot see.
   const gaps = d?.current.snapshot.completenessReasons ?? [];
-  const unclassified = gaps.filter((g) => g.code === 'UNCLASSIFIED_CUSTOMER').length;
   const urgent = tiers.cannotWait.length;
   const look = tiers.look.length + (tiers.noAuthorityVerdict.length > 0 ? 1 : 0);
   // The quarter of the state on screen: the demo's clock is its own, and a reading is about the moment it was composed.
   const quarter = quarterKeyOf(now);
-  const pipelineRows = d ? readPipeline(items) : [];
-  const week = thisWeek(pipelineRows, now);
-  // Phase 1 (2026-10-16): the headline answers the blocks below it — the quarter, then how many deals need a step.
-  // "Nothing is due" is only said when the source states dates to be due by; with none, the headline says nothing about the week.
-  const dated = pipelineRows.some((r) => r.state === 'OPEN' && r.nextActionDate !== null);
-  const weekLine = week.lines.length > 0 ? `${word(week.lines.length)} ${week.lines.length === 1 ? 'deal needs' : 'deals need'} a step from you this week.` : dated ? 'No deal is due for a step this week.' : '';
-  // Phase 2 (2026-10-16): a deal whose close moved out of the quarter changes the quarter's answer, so the headline says it.
-  const leftQuarter = d?.previous ? pipelineMoves(d.previous.rows, pipelineRows, quarter).changes.filter((c) => c.group === 'LEFT_QUARTER').length : 0;
-  const movedLine = leftQuarter > 0 ? `${word(leftQuarter)} ${leftQuarter === 1 ? 'deal' : 'deals'} moved out of ${quarterLabel(quarter)} since ${new Date(d!.previous!.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })}.` : '';
-  const attentionLine = urgent > 0 ? `${word(urgent)} ${urgent === 1 ? 'management condition cannot' : 'management conditions cannot'} wait.` : '';
+  // HELM consumes the commercial truth Memoire produces; the forecast, deal changes and next steps are Memoire's own
+  // (docs/architecture/helm-vs-memoire.md §5). The Cockpit says how much it read, and answers about management.
+  const opportunities = d ? readPipeline(items).length : 0;
+  const lookWord = (n: number) => `${n === 1 ? 'needs' : 'need'} a look`;
   const headline = !d
-    ? 'Reading your quarter…'
-    : pipelineRows.length > 0
-      ? [quarterHeadline(pipelineRows, quarter), movedLine, weekLine, attentionLine].filter(Boolean).join(' ')
-      : urgent > 0
-        ? attentionLine
-        : 'No deal is in the pipeline yet.';
+    ? 'Reading the enterprise…'
+    : urgent > 0
+      ? `${word(urgent)} ${urgent === 1 ? 'management condition cannot' : 'management conditions cannot'} wait.${look > 0 ? ` ${word(look)} ${lookWord(look)}.` : ''}`
+      : look > 0
+        ? `${word(look)} ${look === 1 ? 'management condition' : 'management conditions'} ${lookWord(look)}; none cannot wait.`
+        : liveDecisions.length === 0
+          ? 'No management decision is on record yet, so HELM has nothing to watch.'
+          : gaps.length > 0
+            ? 'Nothing needs management attention in what HELM can see; the state it reads is incomplete.'
+            : 'Nothing needs management attention.';
 
   const firstCompose = ic.mode === 'cloud' && !d && (livePhase === 'starting' || livePhase === 'reading' || livePhase === 'composing');
   // A newer state was composed while this one is on screen: say so until it is read, so the page never passes off the older one as current.
@@ -323,14 +302,13 @@ export function CockpitPage() {
   // Only until the first pass of this session catches up, or while a new state is composed: a routine probe every minute is not news.
   const catchingUp = ic.mode === 'cloud' && !!d && ((caughtUpAt === null && (livePhase === 'starting' || livePhase === 'reading')) || livePhase === 'composing');
   const trajectoryDecision = d?.trajectory ? decisionTitle(decisionIdOf(governance.get(d.trajectory.commitmentId))) : null;
-  const readable = pipelineReadable(viewer, now);
 
   return (
     <>
       <PageHeader
         kicker={`Management · ${twinCtx.story ? twinCtx.story.scopes.vietnam.label : 'Enterprise'} · ${d ? `state as known on ${readInstant(d.current.snapshot.spec.lens.recordedThrough)}` : '…'}`}
         title={headline}
-        lede={`Your quarter, the deals that need a step this week, what moved since last week, and what to fix in ${source}.`}
+        lede="What needs management attention, the decisions in play and their governance, and what HELM has learned."
       >
         {d && (
           <button type="button" onClick={() => window.print()} className="mt-2 text-meta font-medium text-accent-700 hover:underline print:hidden">
@@ -359,37 +337,28 @@ export function CockpitPage() {
 
       <div className="mt-2 flex flex-wrap gap-10">
         <div className="min-w-0 flex-[1_1_560px]">
-          {/* Phase 1 (2026-10-16): three blocks — the quarter, this week, what to fix. The rest follows only when it holds something. */}
           {d && (
-            <QuarterPanel
-              rows={pipelineRows}
-              previous={d.previous}
-              target={d.target}
-              onSetTarget={
-                twinCtx.kernel.valueGraph && (ic.mode === 'demo' || myRole() === 'admin' || myRole() === 'manager')
-                  ? async (amount, currency) => {
-                      await setQuarterTarget(twinCtx.kernel.valueGraph!, scope!, quarter, amount, currency);
-                      setTargetTick((t) => t + 1);
-                    }
-                  : null
-              }
-              margins={d.margins}
-              onSetMargins={
-                twinCtx.kernel.valueGraph && (ic.mode === 'demo' || myRole() === 'admin' || myRole() === 'manager')
-                  ? async (rows) => {
-                      await setBrandMargins(twinCtx.kernel.valueGraph!, scope!, rows);
-                      setTargetTick((t) => t + 1);
-                    }
-                  : null
-              }
-              quarter={quarter}
-              readable={readable}
-              source={source}
+            // One line on where the commercial truth comes from: HELM reads it and never rebuilds Memoire's views of it.
+            <p className="mt-8 max-w-reading text-dense text-ink-600">
+              <span className="helm-label mr-2">Commercial truth</span>
+              {opportunities} {opportunities === 1 ? 'opportunity' : 'opportunities'} read from {source}, as known on {readInstant(d.current.snapshot.spec.lens.recordedThrough)}.
+              {ic.mode === 'cloud' && (
+                <>
+                  {' '}The forecast, deal changes and next steps are kept in Memoire.{' '}
+                  <a href="https://www.memoire-official.com/app" target="_blank" rel="noreferrer" className="whitespace-nowrap font-medium text-accent-700 hover:underline">Open Memoire ↗</a>
+                </>
+              )}
+            </p>
+          )}
+
+          {d && liveDecisions.length === 0 && urgent === 0 && look === 0 && (
+            <EmptyState
+              className="mt-8"
+              title="No management decision is on record."
+              detail="A decision in HELM holds the question, the alternatives and what each one costs elsewhere in the enterprise, who may decide, and what was expected — so it can be looked at again against what happened."
+              action={<Button variant="primary" onClick={() => navigate('/decisions')}>Frame a decision</Button>}
             />
           )}
-          {d && pipelineRows.length > 0 && <ThisWeek rows={pipelineRows} now={now} source={source} live={ic.mode === 'cloud'} />}
-          {d && pipelineRows.length > 0 && <SinceLastWeek rows={pipelineRows} previous={d.previous} quarter={quarter} readable={readable} source={source} live={ic.mode === 'cloud'} />}
-          {d && pipelineRows.length > 0 && <FixInSource rows={pipelineRows} quarter={quarter} readable={readable} source={source} now={now} unclassifiedCustomers={unclassified} />}
 
           {urgent > 0 && (
           <section className="mt-10">

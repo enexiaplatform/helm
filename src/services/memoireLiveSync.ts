@@ -18,7 +18,7 @@ import { fail, ok, type Scope } from '@helm/shared';
 import { subscribeToMemoireOpportunities } from './memoireBridge.ts';
 import { supabaseClient } from '../lib/supabaseClient.ts';
 import { clearReadCache } from '../lib/readCache.ts';
-import { resolveIntegrationContext, sourceHasNews } from './integrationRuntime.ts';
+import { resolveIntegrationContext, sourceHasNews, syncNextPage } from './integrationRuntime.ts';
 import { buildCurrentSnapshot, listSnapshots } from './twinRuntime.ts';
 
 /** `readEpoch`: bumped when a Refresh finishes — the page is read again from scratch. `refreshing`: one is running. */
@@ -154,7 +154,7 @@ export function startMemoireLiveSync(scope: Scope): { live: LiveSync | null; sto
     runPage: async (limit) => {
       const ctx = await contexts;
       if (!ctx) return fail('integration.no_client', 'HELM cannot reach the cloud to read Memoire.');
-      return ctx.pipeline.run(ctx.scope, ctx.adapter, { limit });
+      return syncNextPage(ctx, limit);
     },
     hasNews: async () => {
       const ctx = await contexts;

@@ -1,5 +1,5 @@
 import { ok, fail } from '@helm/shared';
-import type { MemoireOpportunityRow, MemoireReader } from '@helm/integration-runtime';
+import type { MemoireOpportunityRow, MemoireOrderCostReader, MemoireOrderCostRow, MemoireReader } from '@helm/integration-runtime';
 import { supabaseClient } from '../lib/supabaseClient.ts';
 
 /**
@@ -46,6 +46,48 @@ export function createMemoireOpportunityReader(): MemoireReader {
       type Read = Omit<MemoireOpportunityRow, 'account_ka_flag'> & { account: { ka_flag: boolean | null } | null };
       return ok(
         ((data ?? []) as unknown as Read[]).map(({ account, ...r }) => ({ ...r, updated_at: new Date(r.updated_at).toISOString(), account_ka_flag: account?.ka_flag ?? null })),
+      );
+    },
+  };
+}
+
+/**
+ * The Memoire read port for order costs (step 3, 2026-10-17): the signed-in user's own `order_costs` (RLS scopes it),
+ * rows strictly after a cursor, oldest first. Memoire keeps each cost as a payload; only the fields the order-cost
+ * contract names are read out of it. Read-only.
+ */
+export function createMemoireOrderCostReader(): MemoireOrderCostReader {
+  return {
+    async listOrderCosts(_scope, after, limit) {
+      if (!supabaseClient) return fail('integration.no_client', 'Memoire cannot be read: no database client is configured.');
+      let q = supabaseClient.from('order_costs').select('id, payload, created_at, updated_at').order('updated_at', { ascending: true }).order('id', { ascending: true }).limit(limit);
+      // The same millisecond cursor as the opportunities' (see above).
+      if (after) {
+        const nextMs = new Date(Date.parse(after.updatedAt) + 1).toISOString();
+        q = q.or(`updated_at.gte.${nextMs},and(updated_at.gte.${after.updatedAt},updated_at.lt.${nextMs},id.gt.${after.id})`);
+      }
+      const { data, error } = await q;
+      if (error) return fail('integration.read_failed', `Reading Memoire order costs failed: ${error.message}`);
+      type Read = { id: string; payload: Record<string, unknown> | null; created_at: string; updated_at: string };
+      const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v : null);
+      const amt = (v: unknown): number | string | null => (typeof v === 'number' || typeof v === 'string' ? v : null);
+      return ok(
+        ((data ?? []) as Read[]).map((r): MemoireOrderCostRow => {
+          const p = r.payload ?? {};
+          return {
+            id: r.id,
+            opportunity_id: str(p['opportunityId']) ?? '',
+            amount: amt(p['amount']),
+            currency: str(p['currency']),
+            duty_amount: amt(p['dutyAmount']),
+            freight_amount: amt(p['freightAmount']),
+            other_amount: amt(p['otherAmount']),
+            extras_currency: str(p['extrasCurrency']),
+            is_sample: typeof p['isSample'] === 'boolean' ? (p['isSample'] as boolean) : null,
+            created_at: new Date(r.created_at).toISOString(),
+            updated_at: new Date(r.updated_at).toISOString(),
+          };
+        }),
       );
     },
   };

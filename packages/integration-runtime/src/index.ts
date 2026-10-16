@@ -22,6 +22,8 @@ export { createIngestionPipeline } from './pipeline.ts';
 export type { IngestionPipeline, IngestionPipelineDeps, RunOptions } from './pipeline.ts';
 export { createMemoireAdapter, createFixtureMemoireReader, MEMOIRE_CONNECTOR, MEMOIRE_OPPORTUNITY_CONTRACT } from './memoire.ts';
 export type { MemoireReader, MemoireOpportunityRow, MemoireCursor } from './memoire.ts';
+export { createMemoireOrderCostAdapter, createFixtureOrderCostReader, MEMOIRE_COST_CONNECTOR, MEMOIRE_ORDER_COST_CONTRACT } from './memoireCosts.ts';
+export type { MemoireOrderCostReader, MemoireOrderCostRow, MemoireCostCursor } from './memoireCosts.ts';
 export { sourceAndModel } from './truth.ts';
 export type { SourceAndModel, TruthReading } from './truth.ts';
 export { createWritebackGateway, createMemoireWritebackAdapter } from './writeback.ts';

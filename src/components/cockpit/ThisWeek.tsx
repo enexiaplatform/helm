@@ -102,7 +102,7 @@ export function ThisWeek({ rows, now, source, live }: { rows: readonly PipelineP
   );
 }
 
-function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
+export function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button
       type="button"

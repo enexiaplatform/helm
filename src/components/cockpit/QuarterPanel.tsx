@@ -49,7 +49,12 @@ const Figure = ({ label, value, sub, to, change, alt }: { label: string; value: 
     <dd className="font-serif text-figure-sm text-ink-950">{to ? <Link to={to} className="hover:text-accent-700">{value}</Link> : value}</dd>
     {alt && <dd className="font-mono text-meta text-ink-600">{alt}</dd>}
     <dd className="font-mono text-meta text-ink-500">{sub}</dd>
-    {change && <dd className="font-mono text-meta text-ink-600">{change}</dd>}
+    {change && (
+      <dd className="font-mono text-meta text-ink-600">
+        {/* Phase 2: the change is explained deal by deal in "What moved since …" below. */}
+        {change.startsWith('unchanged') ? change : <a href="#moved" className="hover:text-accent-700 hover:underline">{change}</a>}
+      </dd>
+    )}
   </div>
 );
 

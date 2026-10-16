@@ -20,7 +20,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { canSeeSnapshot, quarterKeyOf, readPipeline, thisWeek, type ComposedSnapshot, type PipelinePosition, type ProjectedSnapshot, type Trajectory, type TrajectoryLine, type TwinItem, type TwinItemExplanation, type TwinSnapshot } from '@helm/twin-runtime';
+import { canSeeSnapshot, pipelineMoves, quarterKeyOf, readPipeline, thisWeek, type ComposedSnapshot, type PipelinePosition, type ProjectedSnapshot, type Trajectory, type TrajectoryLine, type TwinItem, type TwinItemExplanation, type TwinSnapshot } from '@helm/twin-runtime';
 import type { QuantityUnit } from '@helm/shared';
 import type { ClaimView } from '@helm/causal-runtime';
 import type { ProjectedReviews } from '@helm/review-runtime';
@@ -50,6 +50,7 @@ import { AskHelm } from '../components/intelligence/AskHelm.tsx';
 import { QuarterPanel, quarterHeadline, quarterLabel } from '../components/cockpit/QuarterPanel.tsx';
 import { ThisWeek } from '../components/cockpit/ThisWeek.tsx';
 import { FixInSource } from '../components/cockpit/FixInSource.tsx';
+import { SinceLastWeek } from '../components/cockpit/SinceLastWeek.tsx';
 import { readQuarterTarget, setQuarterTarget, type QuarterTarget } from '../services/quarterTargets.ts';
 import { readBrandMargins, setBrandMargins, type BrandMargin } from '../services/brandMargins.ts';
 import { pipelineReadable } from '../components/cockpit/pipelineReadable.ts';
@@ -303,11 +304,14 @@ export function CockpitPage() {
   // "Nothing is due" is only said when the source states dates to be due by; with none, the headline says nothing about the week.
   const dated = pipelineRows.some((r) => r.state === 'OPEN' && r.nextActionDate !== null);
   const weekLine = week.lines.length > 0 ? `${word(week.lines.length)} ${week.lines.length === 1 ? 'deal needs' : 'deals need'} a step from you this week.` : dated ? 'No deal is due for a step this week.' : '';
+  // Phase 2 (2026-10-16): a deal whose close moved out of the quarter changes the quarter's answer, so the headline says it.
+  const leftQuarter = d?.previous ? pipelineMoves(d.previous.rows, pipelineRows, quarter).changes.filter((c) => c.group === 'LEFT_QUARTER').length : 0;
+  const movedLine = leftQuarter > 0 ? `${word(leftQuarter)} ${leftQuarter === 1 ? 'deal' : 'deals'} moved out of ${quarterLabel(quarter)} since ${new Date(d!.previous!.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })}.` : '';
   const attentionLine = urgent > 0 ? `${word(urgent)} ${urgent === 1 ? 'management condition cannot' : 'management conditions cannot'} wait.` : '';
   const headline = !d
     ? 'Reading your quarter…'
     : pipelineRows.length > 0
-      ? [quarterHeadline(pipelineRows, quarter), weekLine, attentionLine].filter(Boolean).join(' ')
+      ? [quarterHeadline(pipelineRows, quarter), movedLine, weekLine, attentionLine].filter(Boolean).join(' ')
       : urgent > 0
         ? attentionLine
         : 'No deal is in the pipeline yet.';
@@ -326,7 +330,7 @@ export function CockpitPage() {
       <PageHeader
         kicker={`Management · ${twinCtx.story ? twinCtx.story.scopes.vietnam.label : 'Enterprise'} · ${d ? `state as known on ${readInstant(d.current.snapshot.spec.lens.recordedThrough)}` : '…'}`}
         title={headline}
-        lede={`Your quarter, the deals that need a step this week, and what to fix in ${source}.`}
+        lede={`Your quarter, the deals that need a step this week, what moved since last week, and what to fix in ${source}.`}
       >
         {d && (
           <button type="button" onClick={() => window.print()} className="mt-2 text-meta font-medium text-accent-700 hover:underline print:hidden">
@@ -384,6 +388,7 @@ export function CockpitPage() {
             />
           )}
           {d && pipelineRows.length > 0 && <ThisWeek rows={pipelineRows} now={now} source={source} live={ic.mode === 'cloud'} />}
+          {d && pipelineRows.length > 0 && <SinceLastWeek rows={pipelineRows} previous={d.previous} quarter={quarter} readable={readable} source={source} live={ic.mode === 'cloud'} />}
           {d && pipelineRows.length > 0 && <FixInSource rows={pipelineRows} quarter={quarter} readable={readable} source={source} now={now} unclassifiedCustomers={unclassified} />}
 
           {urgent > 0 && (

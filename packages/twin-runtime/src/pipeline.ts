@@ -369,6 +369,132 @@ export function byBrand(rows: readonly PipelinePosition[], quarter: string): Bra
   });
 }
 
+/**
+ * What moved in a deal between two states: each a fact the source states, said back — never a verdict on the deal.
+ * A close period that moved is LATER or EARLIER when both ends can be placed on a calendar, else only CHANGED.
+ */
+export type DealMove =
+  | { readonly kind: 'NEW' }
+  | { readonly kind: 'GONE' }
+  | { readonly kind: 'STATE'; readonly from: DealState; readonly to: DealState }
+  | { readonly kind: 'CLOSE'; readonly from: string | null; readonly to: string | null; readonly direction: 'LATER' | 'EARLIER' | 'CHANGED' }
+  | { readonly kind: 'VALUE'; readonly from: string | null; readonly to: string | null }
+  | { readonly kind: 'PROBABILITY'; readonly from: string | null; readonly to: string | null }
+  | { readonly kind: 'STAGE'; readonly from: string | null; readonly to: string | null };
+
+/**
+ * Where a changed deal is counted in the walk from the earlier quarter figure to today's: once, under the first that
+ * applies, in this order. The order is a convention for reconciling a sum, never a ranking of the deals.
+ */
+export type MoveGroup = 'NEW' | 'GONE' | 'WON' | 'LOST' | 'ON_HOLD' | 'REOPENED' | 'LEFT_QUARTER' | 'ENTERED_QUARTER' | 'REVALUED' | 'OTHER';
+export const MOVE_GROUPS: readonly MoveGroup[] = ['NEW', 'GONE', 'WON', 'LOST', 'ON_HOLD', 'REOPENED', 'LEFT_QUARTER', 'ENTERED_QUARTER', 'REVALUED', 'OTHER'];
+
+export type DealChange = {
+  /** The deal as it stands now; for a deal no longer in the state, as it stood before. */
+  readonly deal: PipelinePosition;
+  readonly before: PipelinePosition | null;
+  readonly moves: readonly DealMove[];
+  readonly group: MoveGroup;
+  /** Its weighted value in the quarter (value × probability, open and due in the quarter), before and now; 0 when it is not counted. */
+  readonly weightedBefore: number;
+  readonly weightedNow: number;
+};
+
+export type MoveLine = { readonly group: MoveGroup; readonly count: number; readonly weighted: Money };
+
+/**
+ * Two states of the pipeline side by side (Phase 2, 2026-10-16: "what moved since last week" is the first question a
+ * manager asks on a Monday). Every deal that changed, with each change, and the walk of the quarter's weighted figure
+ * from the earlier state to this one: it reconciles to the cent with `readQuarter` on both states. Deals are in the
+ * state's own order; nothing is ranked, weighted beyond value × probability, or recommended. Mixed currencies stop the
+ * walk rather than being converted.
+ */
+export type PipelineMoves = {
+  readonly quarter: string;
+  readonly changes: readonly DealChange[];
+  readonly walk: { readonly before: Money; readonly lines: readonly MoveLine[]; readonly now: Money } | null;
+  /** Deals in both states with nothing changed in what HELM compares. */
+  readonly unchanged: number;
+};
+
+const sameNumber = (a: string | null, b: string | null): boolean => (a === null || b === null ? a === b : Number(a) === Number(b));
+
+const weightedIn = (r: PipelinePosition | null, quarter: string): number =>
+  r && r.state === 'OPEN' && r.value !== null && r.probability !== null && closesIn(r.expectedClosePeriod, quarter) !== 'NO' ? Number(r.value) * Number(r.probability) : 0;
+
+const inQuarter = (r: PipelinePosition | null, quarter: string): boolean => !!r && r.state === 'OPEN' && closesIn(r.expectedClosePeriod, quarter) !== 'NO';
+
+function movesOf(before: PipelinePosition | null, now: PipelinePosition | null): DealMove[] {
+  if (!before) return [{ kind: 'NEW' }];
+  if (!now) return [{ kind: 'GONE' }];
+  const out: DealMove[] = [];
+  if (before.state !== now.state) out.push({ kind: 'STATE', from: before.state, to: now.state });
+  if ((before.expectedClosePeriod ?? '').trim() !== (now.expectedClosePeriod ?? '').trim()) {
+    const a = closeEndOf(before.expectedClosePeriod);
+    const b = closeEndOf(now.expectedClosePeriod);
+    const direction = a === null || b === null || a === b ? 'CHANGED' : b > a ? 'LATER' : 'EARLIER';
+    out.push({ kind: 'CLOSE', from: before.expectedClosePeriod, to: now.expectedClosePeriod, direction });
+  }
+  if (!sameNumber(before.value, now.value)) out.push({ kind: 'VALUE', from: before.value, to: now.value });
+  if (!sameNumber(before.probability, now.probability)) out.push({ kind: 'PROBABILITY', from: before.probability, to: now.probability });
+  if ((before.stage ?? '') !== (now.stage ?? '')) out.push({ kind: 'STAGE', from: before.stage, to: now.stage });
+  return out;
+}
+
+function groupOf(before: PipelinePosition | null, now: PipelinePosition | null, quarter: string): MoveGroup {
+  if (!before) return 'NEW';
+  if (!now) return 'GONE';
+  if (before.state !== now.state) {
+    if (now.state === 'WON') return 'WON';
+    if (now.state === 'LOST') return 'LOST';
+    if (now.state === 'ON_HOLD') return 'ON_HOLD';
+    return 'REOPENED';
+  }
+  const was = inQuarter(before, quarter);
+  const is = inQuarter(now, quarter);
+  if (was && !is) return 'LEFT_QUARTER';
+  if (!was && is) return 'ENTERED_QUARTER';
+  if (!sameNumber(before.value, now.value) || !sameNumber(before.probability, now.probability)) return 'REVALUED';
+  return 'OTHER';
+}
+
+export function pipelineMoves(before: readonly PipelinePosition[], now: readonly PipelinePosition[], quarter: string): PipelineMoves {
+  const earlier = new Map(before.map((r) => [r.opportunityId, r]));
+  const present = new Set(now.map((r) => r.opportunityId));
+  const pairs: [PipelinePosition | null, PipelinePosition | null][] = [
+    ...now.map((r): [PipelinePosition | null, PipelinePosition | null] => [earlier.get(r.opportunityId) ?? null, r]),
+    ...before.filter((r) => !present.has(r.opportunityId)).map((r): [PipelinePosition | null, PipelinePosition | null] => [r, null]),
+  ];
+  const changes: DealChange[] = [];
+  let unchanged = 0;
+  for (const [b, n] of pairs) {
+    const moves = movesOf(b, n);
+    if (moves.length === 0) {
+      unchanged += 1;
+      continue;
+    }
+    changes.push({ deal: (n ?? b)!, before: b, moves, group: groupOf(b, n, quarter), weightedBefore: weightedIn(b, quarter), weightedNow: weightedIn(n, quarter) });
+  }
+  const was = readQuarter(before, quarter).inQuarter.weighted;
+  const is = readQuarter(now, quarter).inQuarter.weighted;
+  const currencies = new Set([...before, ...now].filter((r) => r.value !== null).map((r) => r.currency ?? '—'));
+  const walk =
+    currencies.size > 1 || was.mixed.length > 0 || is.mixed.length > 0
+      ? null
+      : {
+          before: was,
+          now: is,
+          lines: MOVE_GROUPS.map((group) => {
+            const of = changes.filter((c) => c.group === group);
+            // Cents, as readQuarter sums them, so the lines add up to the difference of the two figures.
+            const cents = of.reduce((t, c) => t + Math.round(c.weightedNow * 100) - Math.round(c.weightedBefore * 100), 0);
+            const currency = was.currency ?? is.currency;
+            return { group, count: of.length, weighted: { value: (cents / 100).toFixed(2).replace(/\.00$/, ''), currency, mixed: [] } };
+          }).filter((l) => l.count > 0),
+        };
+  return { quarter, changes, walk, unchanged };
+}
+
 /** "Canister / Tailin / Cons · CÔNG TY …": an opportunity read with the customer that holds it. */
 export function opportunityLabel(p: Pick<PipelinePosition, 'opportunity' | 'customer'>): string {
   return p.customer ? `${p.opportunity} · ${p.customer}` : p.opportunity;

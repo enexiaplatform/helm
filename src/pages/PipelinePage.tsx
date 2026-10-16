@@ -6,7 +6,7 @@
 
 import { useMemo, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { closesIn, quarterOf, readQuarter, staleDeals, type PipelinePosition } from '@helm/twin-runtime';
+import { closesIn, quarterOf, quietDeals, readQuarter, type PipelinePosition } from '@helm/twin-runtime';
 import { PageHeader } from '../components/ui/PageHeader.tsx';
 import { EmptyState } from '../components/ui/EmptyState.tsx';
 import { memoireDealUrl, usePipeline } from '../services/pipelineView.ts';
@@ -18,7 +18,7 @@ import { converted, readRate, useReadingRate } from '../lib/readingRate.ts';
 import { quarterLabel } from '../components/cockpit/QuarterPanel.tsx';
 
 type SortKey = 'deal' | 'customer' | 'brand' | 'stage' | 'close' | 'value' | 'probability' | 'weighted' | 'touch';
-const SORT_LABEL: Record<SortKey, string> = { deal: 'deal', customer: 'customer', brand: 'brand', stage: 'stage', close: 'close period', value: 'value', probability: 'probability', weighted: 'weighted value', touch: 'last touch' };
+const SORT_LABEL: Record<SortKey, string> = { deal: 'deal', customer: 'customer', brand: 'brand', stage: 'stage', close: 'close period', value: 'value', probability: 'probability', weighted: 'weighted value', touch: 'last update in Memoire' };
 
 const STATES = [
   ['open', 'Open'],
@@ -40,7 +40,7 @@ const FIX = [
   ['noprob', 'No probability'],
   ['noclose', 'No close period'],
   ['nocustomer', 'No customer'],
-  ['stale', 'Untouched 30+ days'],
+  ['quiet', 'Not changed in Memoire 30+ days'],
 ] as const;
 
 const weighted = (r: PipelinePosition): number | null => (r.value === null || r.probability === null ? null : Number(r.value) * Number(r.probability));
@@ -59,7 +59,8 @@ function sortValue(r: PipelinePosition, k: SortKey): string | number | null {
     case 'value': return r.value === null ? null : Number(r.value);
     case 'probability': return r.probability === null ? null : Number(r.probability);
     case 'weighted': return weighted(r);
-    case 'touch': return r.lastTouchAt ? Date.parse(r.lastTouchAt) : null;
+    // Memoire's own update time: its last-touch field is almost never filled (1 of 301 deals, 2026-10-16).
+    case 'touch': return r.sourceUpdatedAt ? Date.parse(r.sourceUpdatedAt) : null;
   }
 }
 
@@ -71,8 +72,8 @@ function downloadCsv(rows: readonly PipelinePosition[], name: string) {
   };
   // A reader who reads in another currency gets that column too, headed with the rate it used.
   const rate = readRate();
-  const head = ['Deal', 'Customer', 'Brand', 'Stage', 'State', 'Close period', 'Value', 'Currency', 'Probability', 'Weighted', 'Last touch', 'Memoire id', ...(rate ? [`Value in ${rate.to} at 1 ${rate.from} = ${rate.rate}`] : [])];
-  const lines = rows.map((r) => [r.opportunity, r.customer, r.brand, r.stage, r.state, r.expectedClosePeriod, r.value, r.currency, r.probability, weighted(r), r.lastTouchAt?.slice(0, 10) ?? null, r.sourceId, ...(rate ? [converted(r.value, r.currency, rate)] : [])].map(cell).join(','));
+  const head = ['Deal', 'Customer', 'Brand', 'Stage', 'State', 'Close period', 'Value', 'Currency', 'Probability', 'Weighted', 'Updated in Memoire', 'Memoire id', ...(rate ? [`Value in ${rate.to} at 1 ${rate.from} = ${rate.rate}`] : [])];
+  const lines = rows.map((r) => [r.opportunity, r.customer, r.brand, r.stage, r.state, r.expectedClosePeriod, r.value, r.currency, r.probability, weighted(r), r.sourceUpdatedAt?.slice(0, 10) ?? null, r.sourceId, ...(rate ? [converted(r.value, r.currency, rate)] : [])].map(cell).join(','));
   // A byte-order mark so Excel reads Vietnamese names as UTF-8.
   const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -108,7 +109,7 @@ export function PipelinePage() {
   const view = useMemo(() => {
     if (!data) return null;
     const { rows, quarter, now } = data;
-    const stale = new Set(staleDeals(rows, now).stale.map((r) => r.opportunityId));
+    const stale = new Set(quietDeals(rows, now).map((r) => r.opportunityId));
     const [y, q] = quarter.split('-Q');
     const nowIndex = Number(y) * 4 + Number(q);
     const matches = rows.filter((r) => {
@@ -124,7 +125,8 @@ export function PipelinePage() {
       if (fix === 'noprob' && r.probability !== null) return false;
       if (fix === 'noclose' && r.expectedClosePeriod !== null) return false;
       if (fix === 'nocustomer' && r.customer !== null) return false;
-      if (fix === 'stale' && !stale.has(r.opportunityId)) return false;
+      // "stale" is the older address of the same list.
+      if ((fix === 'quiet' || fix === 'stale') && !stale.has(r.opportunityId)) return false;
       if (brand === '—' ? r.brand !== null : brand && r.brand !== brand) return false;
       if (text && !`${r.opportunity} ${r.customer ?? ''} ${r.brand ?? ''}`.toLowerCase().includes(text.toLowerCase())) return false;
       return true;
@@ -254,7 +256,7 @@ export function PipelinePage() {
                 {th('value', 'Value', 'right')}
                 {th('probability', 'Prob.', 'right')}
                 {th('weighted', 'Weighted', 'right')}
-                {th('touch', 'Last touch')}
+                {th('touch', 'Updated')}
                 {live && <th scope="col" className="ledger-th"><span className="sr-only">Open in Memoire</span></th>}
               </tr>
             </thead>
@@ -281,7 +283,7 @@ export function PipelinePage() {
                     <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-dense tabular text-ink-950">{r.value === null ? <span className="text-red-700">none</span> : money(r.value, r.currency)}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-dense tabular text-ink-700">{r.probability === null ? <span className="text-red-700">none</span> : `${Math.round(Number(r.probability) * 100)}%`}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-dense tabular text-ink-700">{w === null || r.state !== 'OPEN' ? '—' : money(w, r.currency)}</td>
-                    <td className={cn('whitespace-nowrap px-3 py-2 font-mono text-dense', view.stale.has(r.opportunityId) ? 'text-amber-700' : 'text-ink-500')}>{day(r.lastTouchAt)}</td>
+                    <td className={cn('whitespace-nowrap px-3 py-2 font-mono text-dense', view.stale.has(r.opportunityId) ? 'text-amber-700' : 'text-ink-500')}>{day(r.sourceUpdatedAt)}</td>
                     {live && (
                       <td className="whitespace-nowrap px-3 py-2 text-right text-dense">
                         {r.sourceId ? (

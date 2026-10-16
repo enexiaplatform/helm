@@ -316,8 +316,7 @@ export function closeEndOf(stated: string | null): string | null {
 export type WeekReason =
   | { readonly kind: 'NEXT_STEP_OVERDUE'; readonly date: string }
   | { readonly kind: 'NEXT_STEP_DUE'; readonly date: string }
-  | { readonly kind: 'CLOSE_PASSED'; readonly date: string }
-  | { readonly kind: 'NOT_UPDATED'; readonly date: string };
+  | { readonly kind: 'CLOSE_PASSED'; readonly date: string };
 export type WeekLine = { readonly deal: PipelinePosition; readonly reasons: readonly WeekReason[]; readonly since: string };
 export type WeekReading = { readonly lines: readonly WeekLine[]; readonly counts: Readonly<Record<WeekReason['kind'], number>>; readonly today: string };
 
@@ -326,15 +325,15 @@ const plusDays = (day: string, n: number): string => new Date(Date.parse(`${day}
 
 /**
  * The OPEN deals that need a step from their owner this week, by named conditions on dates the source states: a next
- * step that is overdue or due within `days`, a close date that has passed, no change in the source for `quietDays`.
- * A deal is listed once with every reason it has. The list is in the order its earliest date came, oldest first — an
- * order by date, never a ranking of which deal matters most.
+ * step that is overdue or due within `days`, or a close date that has passed. A deal is listed once with every reason
+ * it has. The list is in the order its earliest date came, oldest first — an order by date, never a ranking of which
+ * deal matters most. A deal nobody changed for a month is data to fix, not a step this week: see `quietDeals`
+ * (live 2026-10-16: 35 such deals, most at a value of 0, pushed the 20 late next steps off the first screen).
  */
-export function thisWeek(rows: readonly PipelinePosition[], nowIso: string, options: { days?: number; quietDays?: number } = {}): WeekReading {
+export function thisWeek(rows: readonly PipelinePosition[], nowIso: string, options: { days?: number } = {}): WeekReading {
   const today = nowIso.slice(0, 10);
   const horizon = plusDays(today, options.days ?? 7);
-  const quiet = plusDays(today, -(options.quietDays ?? 30));
-  const counts = { NEXT_STEP_OVERDUE: 0, NEXT_STEP_DUE: 0, CLOSE_PASSED: 0, NOT_UPDATED: 0 };
+  const counts = { NEXT_STEP_OVERDUE: 0, NEXT_STEP_DUE: 0, CLOSE_PASSED: 0 };
   const lines: WeekLine[] = [];
   for (const deal of rows) {
     if (deal.state !== 'OPEN') continue;
@@ -344,14 +343,18 @@ export function thisWeek(rows: readonly PipelinePosition[], nowIso: string, opti
     else if (next !== null && next <= horizon) reasons.push({ kind: 'NEXT_STEP_DUE', date: next });
     const closeEnd = closeEndOf(deal.expectedClosePeriod);
     if (closeEnd !== null && closeEnd < today) reasons.push({ kind: 'CLOSE_PASSED', date: closeEnd });
-    const updated = dayOf(deal.sourceUpdatedAt);
-    if (updated !== null && updated < quiet) reasons.push({ kind: 'NOT_UPDATED', date: updated });
     if (reasons.length === 0) continue;
     for (const r of reasons) counts[r.kind] += 1;
     lines.push({ deal, reasons, since: reasons.map((r) => r.date).sort()[0]! });
   }
   lines.sort((a, b) => (a.since < b.since ? -1 : a.since > b.since ? 1 : a.deal.opportunity.localeCompare(b.deal.opportunity)));
   return { lines, counts, today };
+}
+
+/** OPEN deals the source has not changed for `days` (by its own update time): a fact about the record, not the deal. */
+export function quietDeals(rows: readonly PipelinePosition[], nowIso: string, days = 30): PipelinePosition[] {
+  const cutoff = plusDays(nowIso.slice(0, 10), -days);
+  return rows.filter((r) => r.state === 'OPEN' && dayOf(r.sourceUpdatedAt) !== null && dayOf(r.sourceUpdatedAt)! < cutoff);
 }
 
 /** One line per brand the deals state (and one for none): counts and sums, in the order brands first appear. Never ranked. */

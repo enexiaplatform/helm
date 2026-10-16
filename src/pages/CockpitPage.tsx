@@ -301,7 +301,7 @@ export function CockpitPage() {
   const week = thisWeek(pipelineRows, now);
   // Phase 1 (2026-10-16): the headline answers the blocks below it — the quarter, then how many deals need a step.
   // "Nothing is due" is only said when the source states dates to be due by; with none, the headline says nothing about the week.
-  const dated = pipelineRows.some((r) => r.state === 'OPEN' && (r.nextActionDate !== null || r.sourceUpdatedAt !== null));
+  const dated = pipelineRows.some((r) => r.state === 'OPEN' && r.nextActionDate !== null);
   const weekLine = week.lines.length > 0 ? `${word(week.lines.length)} ${week.lines.length === 1 ? 'deal needs' : 'deals need'} a step from you this week.` : dated ? 'No deal is due for a step this week.' : '';
   const attentionLine = urgent > 0 ? `${word(urgent)} ${urgent === 1 ? 'management condition cannot' : 'management conditions cannot'} wait.` : '';
   const headline = !d
@@ -384,7 +384,7 @@ export function CockpitPage() {
             />
           )}
           {d && pipelineRows.length > 0 && <ThisWeek rows={pipelineRows} now={now} source={source} live={ic.mode === 'cloud'} />}
-          {d && pipelineRows.length > 0 && <FixInSource rows={pipelineRows} quarter={quarter} readable={readable} source={source} unclassifiedCustomers={unclassified} />}
+          {d && pipelineRows.length > 0 && <FixInSource rows={pipelineRows} quarter={quarter} readable={readable} source={source} now={now} unclassifiedCustomers={unclassified} />}
 
           {urgent > 0 && (
           <section className="mt-10">

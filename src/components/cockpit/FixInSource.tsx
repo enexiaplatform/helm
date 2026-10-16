@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { pipelineFacts, readQuarter, type PipelinePosition, type PipelineReadable } from '@helm/twin-runtime';
+import { pipelineFacts, quietDeals, readQuarter, type PipelinePosition, type PipelineReadable } from '@helm/twin-runtime';
 import { SectionHead } from '../ui/SectionHead.tsx';
 import { quarterLabel } from './QuarterPanel.tsx';
 
@@ -11,7 +11,7 @@ import { quarterLabel } from './QuarterPanel.tsx';
 
 type Line = { readonly text: string; readonly to: string | null };
 
-export function fixLines(rows: readonly PipelinePosition[], quarter: string, readable: PipelineReadable, unclassifiedCustomers = 0): Line[] {
+export function fixLines(rows: readonly PipelinePosition[], quarter: string, readable: PipelineReadable, now: string, unclassifiedCustomers = 0): Line[] {
   const open = rows.filter((r) => r.state === 'OPEN');
   const f = pipelineFacts(open, readable);
   const q = readQuarter(rows, quarter);
@@ -26,6 +26,7 @@ export function fixLines(rows: readonly PipelinePosition[], quarter: string, rea
   }
   const twoWays = [...spellings.values()].filter((v) => v.size > 1).map((v) => [...v].map((b) => `“${b}”`).join(' and '));
   const noNextStep = open.filter((r) => r.nextActionDate === null).length;
+  const quiet = quietDeals(rows, now).length;
   const lines: (Line | false)[] = [
     f.zeroValue > 0 && { text: `${f.zeroValue} open ${f.zeroValue === 1 ? 'deal states' : 'deals state'} a value of 0`, to: '/pipeline?fix=zero' },
     f.noValue > 0 && { text: `${f.noValue} ${f.noValue === 1 ? 'has' : 'have'} no value`, to: '/pipeline?fix=novalue' },
@@ -33,6 +34,7 @@ export function fixLines(rows: readonly PipelinePosition[], quarter: string, rea
     f.noProbability > q.inQuarter.noProbability && { text: `${f.noProbability} open ${f.noProbability === 1 ? 'deal has' : 'deals have'} no probability in all`, to: '/pipeline?fix=noprob' },
     f.noClosePeriod > 0 && { text: `${f.noClosePeriod} ${f.noClosePeriod === 1 ? 'has' : 'have'} no close period`, to: '/pipeline?fix=noclose' },
     q.inQuarter.yearNotStated > 0 && { text: `${q.inQuarter.yearNotStated} ${q.inQuarter.yearNotStated === 1 ? 'states' : 'state'} “Q${quarter.slice(-1)}” without a year; HELM counts ${q.inQuarter.yearNotStated === 1 ? 'it' : 'them'} in ${label}`, to: '/pipeline?when=quarter' },
+    quiet > 0 && { text: `${quiet} open ${quiet === 1 ? 'deal has' : 'deals have'} not changed in Memoire for 30 days: update, re-date or close ${quiet === 1 ? 'it' : 'them'}`, to: '/pipeline?fix=quiet&sort=touch&dir=asc' },
     noNextStep > 0 && { text: `${noNextStep} of ${open.length} open deals state no next step, so “This week” cannot say when they are due`, to: null },
     f.withoutCustomer > 0 && { text: `${f.withoutCustomer} ${f.withoutCustomer === 1 ? 'has' : 'have'} no customer`, to: '/pipeline?fix=nocustomer' },
     unclassifiedCustomers > 0 && { text: `${unclassifiedCustomers} ${unclassifiedCustomers === 1 ? 'customer has' : 'customers have'} no key-account flag`, to: null },
@@ -41,8 +43,8 @@ export function fixLines(rows: readonly PipelinePosition[], quarter: string, rea
   return lines.filter((x): x is Line => x !== false);
 }
 
-export function FixInSource({ rows, quarter, readable, source, unclassifiedCustomers = 0 }: { rows: readonly PipelinePosition[]; quarter: string; readable: PipelineReadable; source: string; unclassifiedCustomers?: number }) {
-  const lines = fixLines(rows, quarter, readable, unclassifiedCustomers);
+export function FixInSource({ rows, quarter, readable, source, now, unclassifiedCustomers = 0 }: { rows: readonly PipelinePosition[]; quarter: string; readable: PipelineReadable; source: string; now: string; unclassifiedCustomers?: number }) {
+  const lines = fixLines(rows, quarter, readable, now, unclassifiedCustomers);
   return (
     <section className="mt-10">
       <SectionHead title={`Fix in ${source}`} meta={String(lines.length)} caveat="HELM reads the source and never writes to it" />

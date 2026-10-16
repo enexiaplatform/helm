@@ -7,13 +7,14 @@ import { HelmLockup } from '../brand/HelmLogo.tsx';
 import { cn } from '../../lib/cn.ts';
 import { Button } from '../ui/Button.tsx';
 
-export type NavGroup = 'Management' | 'Advanced' | 'Setup';
+export type NavGroup = 'Management' | 'Labs' | 'Setup';
 /** hint = the stage of the operating loop the page serves (Sense → Diagnose → Simulate → Decide → Control → Learn). */
 export interface NavItem { key: string; label: string; icon: LucideIcon; group?: NavGroup; hint?: string }
 /**
  * What a manager comes for first; the kernel instruments behind one fold (audit 2026-10-13, both readers: fourteen
- * entries, five empty on day one, three that list the same hundred opportunities). Advanced and Setup fold away until
- * opened or until one of their pages is the current one.
+ * entries, five empty on day one, three that list the same hundred opportunities). Setup folds away until opened or
+ * until one of its pages is the current one. The kernel instruments are Labs (Phase 1, 2026-10-16): off the rail until
+ * a reader turns Labs on in Settings, or while one of them is the page on screen.
  */
 export const HELM_NAV: NavItem[] = [
   { key: 'cockpit', label: 'Cockpit', icon: Bell, group: 'Management' },
@@ -21,7 +22,7 @@ export const HELM_NAV: NavItem[] = [
   { key: 'reviews', label: 'Reviews', icon: ClipboardCheck },
   { key: 'decisions', label: 'Decisions', icon: Scale },
   { key: 'scenarios', label: 'Scenarios', icon: GitBranch },
-  { key: 'memory', label: 'Decision memory', icon: BookOpenCheck, group: 'Advanced' },
+  { key: 'memory', label: 'Decision memory', icon: BookOpenCheck, group: 'Labs' },
   { key: 'twin', label: 'Twin', icon: Layers },
   { key: 'value-graph', label: 'Value Graph', icon: Workflow },
   { key: 'calculations', label: 'Calculations', icon: Calculator },
@@ -32,7 +33,7 @@ export const HELM_NAV: NavItem[] = [
   { key: 'sources', label: 'Sources', icon: Database, group: 'Setup' },
   { key: 'governance', label: 'Governance', icon: ShieldCheck },
 ];
-const FOLDED: readonly NavGroup[] = ['Advanced', 'Setup'];
+const FOLDED: readonly NavGroup[] = ['Setup'];
 
 /** The group an item belongs to: its own, or the last one declared above it. */
 function groupOf(items: readonly NavItem[], idx: number): NavGroup | null {
@@ -46,6 +47,8 @@ interface Props {
   /** Real addresses, so a nav item can be opened in a new tab. */
   hrefFor?: (key: string) => string;
   items?: NavItem[];
+  /** Labs on: the kernel instruments are on the rail. */
+  labs?: boolean;
   /** Attention conditions in the latest current state — the one count the rail shows. */
   openSignals?: number;
   orgName: string;
@@ -84,9 +87,11 @@ const CURRENT = 'border-ink-200 bg-white text-ink-950';
 /* The paper rail: 232px on ink-100 with a hairline edge. Lockup, the organization, nav grouped by what a manager comes
    for with the loop stage in mono, and the reader at the foot. The current page is a white fill with a hairline and a
    teal icon. To the right, a sticky 48px breadcrumb bar on paper (92%, 6px blur) carries the demo pill and the clocks. */
-export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items = HELM_NAV, openSignals = 0, orgName, orgs = [], activeOrgId, onOrgChange, userLabel, orgMeta, crumbDetail, demo, sourceLine, onRefresh, refreshing, effectiveAsOf, recordedThrough, error, onSignOut, onSettings, wide, children }: Props) {
+export function AppShell({ active, onNavigate, hrefFor = (k) => '#' + k, items: allItems = HELM_NAV, labs = false, openSignals = 0, orgName, orgs = [], activeOrgId, onOrgChange, userLabel, orgMeta, crumbDetail, demo, sourceLine, onRefresh, refreshing, effectiveAsOf, recordedThrough, error, onSignOut, onSettings, wide, children }: Props) {
   // Below 768px the rail is a menu behind a bar: the content keeps the whole width instead of being squeezed beside it.
   const [menuOpen, setMenuOpen] = useState(false);
+  const inLabs = (idx: number) => groupOf(allItems, idx) === 'Labs';
+  const items = labs || allItems.some((x, i) => inLabs(i) && x.key === active) ? allItems : allItems.filter((_, i) => !inLabs(i));
   const [unfolded, setUnfolded] = useState<ReadonlySet<NavGroup>>(new Set());
   const go = (k: string) => (e: MouseEvent) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;

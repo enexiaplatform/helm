@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button.tsx';
 import { Pill } from '../components/ui/Pill.tsx';
 import { controlClass } from '../components/ui/Field.tsx';
 import { orgRoles, type OrgRole } from '../domain/types.ts';
+import { useLabs, writeLabs } from '../lib/labs.ts';
 
 export function SettingsPage() {
   const org = useHelmStore((s) => s.activeOrg)();
@@ -20,6 +21,7 @@ export function SettingsPage() {
   const [inviteRole, setInviteRole] = useState<OrgRole>('member');
   const [inviteMessage, setInviteMessage] = useState<string | null>(null);
 
+  const labs = useLabs();
   const isAdmin = myRole === 'admin';
 
   if (!org) return null;
@@ -96,6 +98,18 @@ export function SettingsPage() {
           )}
         </section>
       </div>
+
+      <section className="mt-11 max-w-[860px]">
+        <SectionHead title="Labs" caveat="kept in this browser" />
+        <label className="mt-3 flex items-start gap-3 text-base text-ink-700">
+          <input type="checkbox" className="mt-1" checked={labs} onChange={(e) => writeLabs(e.target.checked)} />
+          <span>
+            Show the kernel instruments in the menu: Decision memory, Twin, Value Graph, Calculations, Causal,
+            Counterfactuals, Genome and Ontology.
+            <span className="mt-1 block text-meta text-ink-500">They read the same records; most need decisions, scenarios or sources HELM does not hold yet.</span>
+          </span>
+        </label>
+      </section>
 
       <section className="mt-11 max-w-[860px]">
         <SectionHead title="Decision authority" caveat="judged apart from the commitment" />

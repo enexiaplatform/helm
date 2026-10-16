@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { byBrand, readQuarter, staleDeals, pipelineFacts, type Money, type PipelinePosition, type PipelineReadable } from '@helm/twin-runtime';
+import { byBrand, readQuarter, type Money, type PipelinePosition, type PipelineReadable } from '@helm/twin-runtime';
 import { displayValue } from '../../services/scenarioRuntime.ts';
 import { SectionHead } from '../ui/SectionHead.tsx';
 import { TargetLine } from './TargetLine.tsx';
@@ -61,48 +61,19 @@ const changeOf = (now: Money, before: Money | undefined, since: string): string 
   return `${d > 0 ? '+' : '−'}${displayValue(String(Math.abs(d)), 'currency', now.currency)} since ${since}`;
 };
 
-export function QuarterPanel({ rows, previous, quarter, now, readable, source, target = null, onSetTarget = null, margins = null, onSetMargins = null }: { rows: readonly PipelinePosition[]; previous?: { at: string; rows: readonly PipelinePosition[] } | null; quarter: string; now: string; readable: PipelineReadable; source: string; target?: QuarterTarget | null; onSetTarget?: ((amount: number, currency: string) => Promise<void>) | null; margins?: ReadonlyMap<string, BrandMargin> | null; onSetMargins?: ((rows: { brand: string; pct: number }[]) => Promise<void>) | null }) {
+export function QuarterPanel({ rows, previous, quarter, readable, source, target = null, onSetTarget = null, margins = null, onSetMargins = null }: { rows: readonly PipelinePosition[]; previous?: { at: string; rows: readonly PipelinePosition[] } | null; quarter: string; readable: PipelineReadable; source: string; target?: QuarterTarget | null; onSetTarget?: ((amount: number, currency: string) => Promise<void>) | null; margins?: ReadonlyMap<string, BrandMargin> | null; onSetMargins?: ((rows: { brand: string; pct: number }[]) => Promise<void>) | null }) {
   const rate = useReadingRate();
   if (rows.length === 0) return null;
   const q = readQuarter(rows, quarter);
   const p = previous ? readQuarter(previous.rows, quarter) : null;
   const since = previous ? new Date(previous.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '';
   const label = quarterLabel(quarter);
-  const { stale, neverTouched } = staleDeals(rows, now);
-  const open = rows.filter((r) => r.state === 'OPEN');
-  const f = pipelineFacts(open, readable);
   const brands = byBrand(rows, quarter).filter((b) => b.open > 0 || b.won > 0);
   const anyBrand = brands.some((b) => b.brand !== null);
-  // One brand typed two ways is counted apart (live audit 2026-10-16: "MicronView" and "MicronVIew"). Only spellings that
-  // differ by case or spacing are said to be one brand; anything looser would be HELM guessing, so it is left alone.
-  const spellings = new Map<string, Set<string>>();
-  for (const r of rows) {
-    if (!r.brand) continue;
-    const key = r.brand.trim().replace(/\s+/g, ' ').toLowerCase();
-    spellings.set(key, (spellings.get(key) ?? new Set()).add(r.brand));
-  }
-  const twoWays = [...spellings.values()].filter((v) => v.size > 1).map((v) => [...v].map((b) => `“${b}”`).join(' and '));
-
-  const risks = [
-    q.overdue.count > 0 && { text: `${q.overdue.count} open ${q.overdue.count === 1 ? 'deal is' : 'deals are'} past ${q.overdue.count === 1 ? 'its' : 'their'} close date (${moneyText(q.overdue.value)}): close, lose or re-date ${q.overdue.count === 1 ? 'it' : 'them'} in ${source}.`, to: '/pipeline?when=overdue' },
-    stale.length > 0 && { text: `${stale.length} open ${stale.length === 1 ? 'deal has' : 'deals have'} not been touched for 30 days or more.`, to: '/pipeline?fix=stale&sort=touch&dir=asc' },
-    q.inQuarter.noProbability > 0 && { text: `${q.inQuarter.noProbability} of the deals due in ${label} carry no probability, so they add nothing to the weighted figure.`, to: '/pipeline?when=quarter&fix=noprob' },
-    q.inQuarter.yearNotStated > 0 && { text: `${q.inQuarter.yearNotStated} ${q.inQuarter.yearNotStated === 1 ? 'deal states' : 'deals state'} “Q${quarter.slice(-1)}” without a year; ${q.inQuarter.yearNotStated === 1 ? 'it is' : 'they are'} counted in ${label}.`, to: '/pipeline?when=quarter' },
-  ].filter((x): x is { text: string; to: string } => typeof x === 'object' && x !== null);
-
-  const gaps = [
-    f.zeroValue > 0 && { text: `${f.zeroValue} open ${f.zeroValue === 1 ? 'deal states' : 'deals state'} a value of 0`, to: '/pipeline?fix=zero' },
-    f.noValue > 0 && { text: `${f.noValue} have no value`, to: '/pipeline?fix=novalue' },
-    f.noProbability > 0 && { text: `${f.noProbability} have no probability`, to: '/pipeline?fix=noprob' },
-    f.noClosePeriod > 0 && { text: `${f.noClosePeriod} have no close period`, to: '/pipeline?fix=noclose' },
-    f.withoutCustomer > 0 && { text: `${f.withoutCustomer} have no customer`, to: '/pipeline?fix=nocustomer' },
-    neverTouched.length > 0 && { text: `${neverTouched.length} have no recorded touch`, to: null },
-    ...twoWays.map((w) => ({ text: `${w} are one brand written two ways, so their deals are counted apart`, to: null })),
-  ].filter((x): x is { text: string; to: string | null } => typeof x === 'object' && x !== null);
 
   return (
     <section id="pipeline" className="mt-8 scroll-mt-6">
-      <SectionHead title={`This quarter · ${label}`} meta={`${q.open.count} open`} caveat={`from ${source}, by deal state`} />
+      <SectionHead title={`Your quarter · ${label}`} meta={`${q.open.count} open`} caveat={`from ${source}, by deal state`} />
       <p className="mt-2"><RateControl from={q.open.value.currency} /></p>
       <dl className="mt-3 flex flex-wrap gap-x-10 gap-y-4">
         <Figure label={`Weighted, due in ${label}`} value={readable.value && readable.probability ? moneyText(q.inQuarter.weighted) : 'withheld'} sub={`value × probability · ${q.inQuarter.count} deals`} to="/pipeline?when=quarter&sort=weighted" alt={inReading(q.inQuarter.weighted, rate)} change={readable.value && readable.probability ? changeOf(q.inQuarter.weighted, p?.inQuarter.weighted, since) : null} />
@@ -114,37 +85,10 @@ export function QuarterPanel({ rows, previous, quarter, now, readable, source, t
 
       {readable.value && readable.probability && <TargetLine q={q} label={label} target={target} onSet={onSetTarget} />}
 
-      {(risks.length > 0 || gaps.length > 0) && (
-        <div className="mt-6 grid gap-6 md:grid-cols-2">
-          {risks.length > 0 && (
-            <div>
-              <p className="helm-label">At risk</p>
-              <ul className="mt-1 grid">
-                {risks.map((r) => (
-                  <li key={r.text} className="border-b border-ink-200 py-2 text-dense text-ink-800">
-                    {r.text} <Link to={r.to} className="whitespace-nowrap font-medium text-accent-700 hover:underline">See them →</Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {gaps.length > 0 && (
-            <div>
-              <p className="helm-label">Data to fix in {source}</p>
-              <ul className="mt-1 grid">
-                {gaps.map((g) => (
-                  <li key={g.text} className="border-b border-ink-200 py-2 text-dense text-ink-800">
-                    {g.text}. {g.to && <Link to={g.to} className="whitespace-nowrap font-medium text-accent-700 hover:underline">List →</Link>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-
       {anyBrand && readable.value && (
-        <div className="mt-6 overflow-x-auto">
+        // By brand, one click away (Phase 1: the Cockpit is three blocks; the brand ledger is detail, not the headline).
+        <details className="mt-6 overflow-x-auto">
+          <summary className="cursor-pointer text-meta font-medium text-accent-700 hover:underline">By brand · {brands.length} {brands.length === 1 ? 'line' : 'lines'}</summary>
           <table className="w-full min-w-[560px] border-collapse">
             <thead>
               <tr>
@@ -186,7 +130,7 @@ export function QuarterPanel({ rows, previous, quarter, now, readable, source, t
           <p className="mt-1 font-mono text-meta text-ink-500">In the order brands first appear in {source}. Sort them on the <Link to="/pipeline" className="text-accent-700 hover:underline">Pipeline</Link>.</p>
           {margins && margins.size > 0 && <p className="mt-1 text-meta text-ink-500">Margins are assumptions stated in HELM, not measured: no cost of goods is connected. The estimate is weighted value × assumed margin %.</p>}
           {onSetMargins && margins && <MarginEditor brands={brands.map((b) => b.brand).filter((x): x is string => x !== null)} margins={margins} onSave={onSetMargins} />}
-        </div>
+        </details>
       )}
     </section>
   );

@@ -20,7 +20,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { canSeeSnapshot, quarterKeyOf, readPipeline, type ComposedSnapshot, type PipelinePosition, type ProjectedSnapshot, type Trajectory, type TrajectoryLine, type TwinItem, type TwinItemExplanation, type TwinSnapshot } from '@helm/twin-runtime';
+import { canSeeSnapshot, quarterKeyOf, readPipeline, thisWeek, type ComposedSnapshot, type PipelinePosition, type ProjectedSnapshot, type Trajectory, type TrajectoryLine, type TwinItem, type TwinItemExplanation, type TwinSnapshot } from '@helm/twin-runtime';
 import type { QuantityUnit } from '@helm/shared';
 import type { ClaimView } from '@helm/causal-runtime';
 import type { ProjectedReviews } from '@helm/review-runtime';
@@ -45,16 +45,14 @@ import { SectionHead } from '../components/ui/SectionHead.tsx';
 import { EmptyState } from '../components/ui/EmptyState.tsx';
 import { Notice } from '../components/ui/Notice.tsx';
 import { Pill } from '../components/ui/Pill.tsx';
-import { MetricList } from '../components/ui/MetricList.tsx';
 import { IntelligencePanel } from '../components/intelligence/IntelligencePanel.tsx';
 import { AskHelm } from '../components/intelligence/AskHelm.tsx';
-import { CouncilPanel } from '../components/intelligence/CouncilPanel.tsx';
 import { QuarterPanel, quarterHeadline, quarterLabel } from '../components/cockpit/QuarterPanel.tsx';
+import { ThisWeek } from '../components/cockpit/ThisWeek.tsx';
+import { FixInSource } from '../components/cockpit/FixInSource.tsx';
 import { readQuarterTarget, setQuarterTarget, type QuarterTarget } from '../services/quarterTargets.ts';
 import { readBrandMargins, setBrandMargins, type BrandMargin } from '../services/brandMargins.ts';
 import { pipelineReadable } from '../components/cockpit/pipelineReadable.ts';
-import { StartHere } from '../components/cockpit/StartHere.tsx';
-import { DISMISSED_KEY, read as readGuide, showGettingStarted } from '../components/cockpit/gettingStarted.ts';
 import { suggestedQuestions } from '../components/intelligence/suggestedQuestions.ts';
 import { cn } from '../lib/cn.ts';
 
@@ -109,8 +107,6 @@ export function CockpitPage() {
   const [loaded, setLoaded] = useState<{ key: string; version: number; value: Loaded | null; note: string | null } | null>(null);
   const [why, setWhy] = useState<Lineage | null>(null);
   const [openAttention, setOpenAttention] = useState<string | null>(null);
-  // Bumped when the Getting started guide is dismissed or brought back, so both places re-read it.
-  const [guideKey, setGuideKey] = useState(0);
   // Bumped when a target is recorded, so the quarter reads it back.
   const [targetTick, setTargetTick] = useState(0);
 
@@ -295,41 +291,26 @@ export function CockpitPage() {
   };
 
   // A state that is not COMPLETE cannot vouch for "nothing needs attention": it may be silent because it cannot see.
-  // The headline says so instead of reassuring (audit 2026-10-09: 28 unclassified customers, headline "Nothing needs…").
   const gaps = d?.current.snapshot.completenessReasons ?? [];
-  const partial = d ? d.current.snapshot.completeness !== 'COMPLETE' : false;
+  const unclassified = gaps.filter((g) => g.code === 'UNCLASSIFIED_CUSTOMER').length;
   const urgent = tiers.cannotWait.length;
   const look = tiers.look.length + (tiers.noAuthorityVerdict.length > 0 ? 1 : 0);
-  // The quarter first, with its numbers (audit 2026-10-13: "the first sentence has no number in it"); the attention
-  // conditions follow it when any hold.
   // The quarter of the state on screen: the demo's clock is its own, and a reading is about the moment it was composed.
   const quarter = quarterKeyOf(now);
   const pipelineRows = d ? readPipeline(items) : [];
-  const attentionLine = urgent > 0 || look > 0
-    ? [
-        urgent > 0 ? `${word(urgent)} ${urgent === 1 ? 'condition cannot' : 'conditions cannot'} wait.` : '',
-        look > 0 ? `${word(look)} ${look === 1 ? 'condition needs' : 'conditions need'} a look this week.` : '',
-      ].filter(Boolean).join(' ')
-    : '';
+  const week = thisWeek(pipelineRows, now);
+  // Phase 1 (2026-10-16): the headline answers the blocks below it — the quarter, then how many deals need a step.
+  // "Nothing is due" is only said when the source states dates to be due by; with none, the headline says nothing about the week.
+  const dated = pipelineRows.some((r) => r.state === 'OPEN' && (r.nextActionDate !== null || r.sourceUpdatedAt !== null));
+  const weekLine = week.lines.length > 0 ? `${word(week.lines.length)} ${week.lines.length === 1 ? 'deal needs' : 'deals need'} a step from you this week.` : dated ? 'No deal is due for a step this week.' : '';
+  const attentionLine = urgent > 0 ? `${word(urgent)} ${urgent === 1 ? 'management condition cannot' : 'management conditions cannot'} wait.` : '';
   const headline = !d
     ? 'Reading your quarter…'
     : pipelineRows.length > 0
-      ? `${quarterHeadline(pipelineRows, quarter)}${attentionLine ? ` ${attentionLine}` : ''}`
-      : urgent === 0 && look === 0
-      ? partial
-        ? `No attention condition holds, and the state it is read from is ${d.current.snapshot.completeness.toLowerCase()}: ${word(gaps.length).toLowerCase()} ${gaps.length === 1 ? 'record it cannot fully read' : 'records it cannot fully read'}.`
-        : 'Nothing needs your attention this week. What management committed to is where it said it would be.'
-      : [
-          urgent > 0 ? `${word(urgent)} ${urgent === 1 ? 'condition cannot' : 'conditions cannot'} wait.` : 'Nothing is urgent.',
-          look > 0 ? `${word(look)} ${urgent > 0 ? '' : look === 1 ? 'condition ' : 'conditions '}${look === 1 ? 'needs' : 'need'} a look this week.` : '',
-        ].filter(Boolean).join(' ');
-  // Grouped by what the state could not read, so twenty-eight unclassified customers read as one gap, not twenty-eight.
-  const gapGroups: [string, number, string][] = [];
-  for (const g of gaps) {
-    const found = gapGroups.find(([code]) => code === g.code);
-    if (found) found[1] += 1;
-    else gapGroups.push([g.code, 1, g.message]);
-  }
+      ? [quarterHeadline(pipelineRows, quarter), weekLine, attentionLine].filter(Boolean).join(' ')
+      : urgent > 0
+        ? attentionLine
+        : 'No deal is in the pipeline yet.';
 
   const firstCompose = ic.mode === 'cloud' && !d && (livePhase === 'starting' || livePhase === 'reading' || livePhase === 'composing');
   // A newer state was composed while this one is on screen: say so until it is read, so the page never passes off the older one as current.
@@ -337,18 +318,15 @@ export function CockpitPage() {
   // A state is on screen while Memoire is still being read: it is the last one known, and the page says how old it is.
   // Only until the first pass of this session catches up, or while a new state is composed: a routine probe every minute is not news.
   const catchingUp = ic.mode === 'cloud' && !!d && ((caughtUpAt === null && (livePhase === 'starting' || livePhase === 'reading')) || livePhase === 'composing');
-  const proof = d?.integration?.proof ?? null;
-  const focusDecision = decisions[0];
-  // A cancelled or committed decision is history, not something the rules wait on.
-  const openDecisions = decisions.filter((x) => st<boolean>(x, 'open') === true).length;
   const trajectoryDecision = d?.trajectory ? decisionTitle(decisionIdOf(governance.get(d.trajectory.commitmentId))) : null;
+  const readable = pipelineReadable(viewer, now);
 
   return (
     <>
       <PageHeader
         kicker={`Management · ${twinCtx.story ? twinCtx.story.scopes.vietnam.label : 'Enterprise'} · ${d ? `state as known on ${readInstant(d.current.snapshot.spec.lens.recordedThrough)}` : '…'}`}
         title={headline}
-        lede="Your quarter, what is at risk, what needs fixing, and what has already been decided."
+        lede={`Your quarter, the deals that need a step this week, and what to fix in ${source}.`}
       >
         {d && (
           <button type="button" onClick={() => window.print()} className="mt-2 text-meta font-medium text-accent-700 hover:underline print:hidden">
@@ -375,88 +353,42 @@ export function CockpitPage() {
         data?.note && <Notice tone="warning" label="Withheld" className="mt-4">{data.note}</Notice>
       )}
 
-      {d && <StartHere key={guideKey} items={items} readable={pipelineReadable(viewer, now)} reviews={d.reviews.reviews} now={now} onDismiss={() => setGuideKey((k) => k + 1)} />}
-
-      {d && <QuarterPanel
-          rows={pipelineRows}
-          previous={d.previous}
-          target={d.target}
-          onSetTarget={
-            twinCtx.kernel.valueGraph && (ic.mode === 'demo' || myRole() === 'admin' || myRole() === 'manager')
-              ? async (amount, currency) => {
-                  await setQuarterTarget(twinCtx.kernel.valueGraph!, scope!, quarter, amount, currency);
-                  setTargetTick((t) => t + 1);
-                }
-              : null
-          }
-          margins={d.margins}
-          onSetMargins={
-            twinCtx.kernel.valueGraph && (ic.mode === 'demo' || myRole() === 'admin' || myRole() === 'manager')
-              ? async (rows) => {
-                  await setBrandMargins(twinCtx.kernel.valueGraph!, scope!, rows);
-                  setTargetTick((t) => t + 1);
-                }
-              : null
-          }
-          quarter={quarter}
-          now={now} readable={pipelineReadable(viewer, now)} source={source} />}
-
-      {/* Full width: an answer that lists deals is a table (audit 2026-10-13: it was a narrow column of paragraphs). */}
-      <section className="mt-8 max-w-[960px]">
-        <SectionHead title="Ask HELM" size="section-sm" caveat="answers only from what HELM holds, as you" />
-        <div className="mt-3"><AskHelm viewer={viewer} suggestions={suggestedQuestions(items, now)} /></div>
-      </section>
-
-      {ic.reviews.viewers.length > 1 && (
-        <div className="mt-6 flex flex-wrap items-end gap-4">
-          <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
-            <span className="helm-label">Read as</span>
-            <ReaderSelect className={select} viewers={ic.reviews.viewers} value={viewerKey} onChange={setViewerKey} />
-          </label>
-          <p className="max-w-reading pb-2 text-meta text-ink-500">Switch reader to see how clearance and decision visibility change what is shown — and what is withheld, said out loud.</p>
-        </div>
-      )}
-      {d && (d.projection?.withheld.length ?? 0) > 0 && (
-        <p className="mt-3 max-w-reading text-dense text-ink-700">
-          Withheld from this reader: {d.projection!.withheld.map((w) => `${w.count} ${w.sensitivity.replaceAll('_', ' ').toLowerCase()} ${w.count === 1 ? 'item' : 'items'}`).join(', ')} — above their clearance, not absent.
-        </p>
-      )}
-
-      {partial && gapGroups.length > 0 && (
-        <Notice tone="warning" label="Some records could not be fully read" className="mt-6">
-          {/* One line of counts; the examples one click away (audit 2026-10-13: on a phone the examples filled the first screen). */}
-          <details>
-            <summary className="cursor-pointer">
-              <span className="font-mono text-meta">{gapGroups.map(([code, k]) => `${code.replaceAll('_', ' ').toLowerCase()} · ${k}`).join('  ·  ')}</span>
-              <span className="ml-2 text-meta underline">examples</span>
-            </summary>
-            <ul className="mt-2 grid gap-1">
-              {gapGroups.map(([code, k, example]) => (
-                <li key={code}>
-                  <span className="font-mono text-meta">{code.replaceAll('_', ' ').toLowerCase()} · {k}</span> — {k > 1 ? 'for example: ' : ''}
-                  <Said text={example} />
-                </li>
-              ))}
-            </ul>
-          </details>
-          {gapGroups.some(([code]) => code === 'UNCLASSIFIED_CUSTOMER') && (
-            <p className="mt-2">
-              HELM classifies a Memoire customer by its account&rsquo;s key-account flag: set, a key account; cleared, a
-              standard customer. These accounts have no flag in Memoire, so HELM leaves them unclassified rather than
-              guess. Setting the flag in Memoire classifies them on the next change to one of their opportunities.
-            </p>
-          )}
-          <p className="mt-2">
-            Each one is listed in <Link to="/twin" className="underline">the Twin</Link>.
-          </p>
-        </Notice>
-      )}
-
-      <div className="mt-9 flex flex-wrap gap-10">
+      <div className="mt-2 flex flex-wrap gap-10">
         <div className="min-w-0 flex-[1_1_560px]">
-          <section>
-            <SectionHead title="Cannot wait" meta={d ? String(urgent) : '…'} caveat="each with its cause" dot={urgent > 0 ? 'warning' : undefined} />
-            {d && urgent === 0 && <p className="mt-3 max-w-reading text-ui text-ink-500">Nothing here: no line is breached, no commitment has moved off what it committed, no critical assumption is disproved.</p>}
+          {/* Phase 1 (2026-10-16): three blocks — the quarter, this week, what to fix. The rest follows only when it holds something. */}
+          {d && (
+            <QuarterPanel
+              rows={pipelineRows}
+              previous={d.previous}
+              target={d.target}
+              onSetTarget={
+                twinCtx.kernel.valueGraph && (ic.mode === 'demo' || myRole() === 'admin' || myRole() === 'manager')
+                  ? async (amount, currency) => {
+                      await setQuarterTarget(twinCtx.kernel.valueGraph!, scope!, quarter, amount, currency);
+                      setTargetTick((t) => t + 1);
+                    }
+                  : null
+              }
+              margins={d.margins}
+              onSetMargins={
+                twinCtx.kernel.valueGraph && (ic.mode === 'demo' || myRole() === 'admin' || myRole() === 'manager')
+                  ? async (rows) => {
+                      await setBrandMargins(twinCtx.kernel.valueGraph!, scope!, rows);
+                      setTargetTick((t) => t + 1);
+                    }
+                  : null
+              }
+              quarter={quarter}
+              readable={readable}
+              source={source}
+            />
+          )}
+          {d && pipelineRows.length > 0 && <ThisWeek rows={pipelineRows} now={now} source={source} live={ic.mode === 'cloud'} />}
+          {d && pipelineRows.length > 0 && <FixInSource rows={pipelineRows} quarter={quarter} readable={readable} source={source} unclassifiedCustomers={unclassified} />}
+
+          {urgent > 0 && (
+          <section className="mt-10">
+            <SectionHead title="Cannot wait" meta={String(urgent)} caveat="management conditions, each with its cause" dot="warning" />
             <ul>
               {tiers.cannotWait.map((a) => {
                 const { title, cause } = present(a);
@@ -477,22 +409,11 @@ export function CockpitPage() {
               })}
             </ul>
           </section>
+          )}
 
+          {look > 0 && (
           <section className="mt-10">
-            <SectionHead title="Needs a look this week" meta={d ? String(look) : '…'} caveat="one line each" />
-            {d && look === 0 && (
-              // An empty state is one line and one action (audit 2026-10-12): what is watched, and how to give the rules something to watch.
-              <p className="mt-3 max-w-reading text-ui text-ink-500">
-                Nothing to look at. The rules watch {word(openDecisions).toLowerCase()} open {openDecisions === 1 ? 'decision' : 'decisions'},{' '}
-                {word(items.filter((i) => i.kind === 'CONSTRAINT').length).toLowerCase()} constraints and {word(items.filter((i) => i.kind === 'OBJECTIVE').length).toLowerCase()} objectives.
-                {openDecisions === 0 && !d.trajectory && (
-                  <>
-                    {' '}
-                    <Link to="/decisions?frame=1" className="font-medium text-accent-700 underline">Frame a decision →</Link>
-                  </>
-                )}
-              </p>
-            )}
+            <SectionHead title="Needs a look" meta={String(look)} caveat="management conditions, one line each" />
             <ul>
               {tiers.look.map((a) => {
                 const act = actOn(a);
@@ -547,6 +468,7 @@ export function CockpitPage() {
               )}
             </ul>
           </section>
+          )}
 
           {d?.trajectory && (
           <section className="mt-10">
@@ -605,9 +527,9 @@ export function CockpitPage() {
           </section>
           )}
 
+          {liveDecisions.length > 0 && (
           <section className="mt-10">
-            <SectionHead title="Decisions and governance" meta={d ? String(liveDecisions.length) : '…'} caveat="visibility is not authority" />
-            {d && liveDecisions.length === 0 && <p className="mt-3 text-ui text-ink-500">{cancelledDecisions > 0 ? 'No decision is in play.' : 'No decision is visible to this reader.'}</p>}
+            <SectionHead title="Decisions and governance" meta={String(liveDecisions.length)} caveat="visibility is not authority" />
             <ul>
               {liveDecisions.map((dec) => {
                 const cid = String(st<string | null>(dec, 'commitmentId') ?? '');
@@ -627,6 +549,7 @@ export function CockpitPage() {
             </ul>
             <p className="mt-3 text-meta text-ink-600">{cancelledDecisions > 0 ? `${word(cancelledDecisions)} cancelled ${cancelledDecisions === 1 ? 'decision is' : 'decisions are'} kept on record in Decisions. ` : ''}Frame, weigh and commit in <Link to="/decisions" className="text-accent-700 underline">Decisions</Link>; see who must approve in <Link to="/governance" className="text-accent-700 underline">Governance</Link>.</p>
           </section>
+          )}
 
           {((d?.claims.length ?? 0) > 0 || (d?.genome.patterns.length ?? 0) > 0 || (d?.counterfactuals.cases.length ?? 0) > 0) && (
           <section className="mt-10">
@@ -667,54 +590,39 @@ export function CockpitPage() {
           )}
         </div>
 
-        <aside className="w-full max-w-[360px] flex-[0_1_360px]">
-          <MetricList
-            title="This review"
-            kind={latestReview ? { label: latestReview.status, tone: latestReview.status === 'OPEN' ? 'open' : 'reviewed' } : undefined}
-            metrics={[
-              // While the state is being read, nothing is claimed: "none" and "0" are statements, "…" is not.
-              { label: 'Latest review', sub: latestReview?.review.cadence.toLowerCase(), value: !d ? '…' : latestReview ? latestReview.review.periodLabel : 'none' },
-              { label: 'Carried forward', sub: 'the same objects, not retyped', value: !d ? '…' : String(latestReview?.items.filter((i) => i.carriedFromItemId).length ?? 0) },
-              { label: 'Decisions needed', value: !d ? '…' : String(items.filter((a) => a.kind === 'ATTENTION' && /AWAITING|READY/i.test(conditionOf(a))).length) },
-            ]}
+        <aside className="w-full max-w-[360px] flex-[0_1_360px] pt-8">
+          <SectionHead title="Management brief" size="section-sm" />
+          <IntelligencePanel
+            task="DRAFT_MANAGEMENT_BRIEF"
+            params={{ ...(latestReview && latestReview.status === 'OPEN' ? { reviewId: latestReview.review.id } : {}), quarter }}
+            viewer={viewer}
+            label="Draft the management brief"
+            detail={`The ${quarterLabel(quarter)} pipeline, what needs attention${latestReview?.status === 'OPEN' ? ` and the ${latestReview.review.periodLabel} review` : ''} — each statement grounded in what HELM holds.`}
           />
-          <p className="mt-2 text-meta text-ink-600">
-            <Link to="/reviews" className="text-accent-700 underline">Open the reviews →</Link>
-            {readGuide(DISMISSED_KEY) && (
-              <>
-                {' · '}
-                <button type="button" onClick={() => { showGettingStarted(); setGuideKey((k) => k + 1); }} className="text-accent-700 underline">Getting started</button>
-              </>
-            )}
-          </p>
-
-          <div className="mt-8">
-            <SectionHead title="Management brief" size="section-sm" />
-            <IntelligencePanel
-              task="DRAFT_MANAGEMENT_BRIEF"
-              params={{ ...(latestReview && latestReview.status === 'OPEN' ? { reviewId: latestReview.review.id } : {}), quarter }}
-              viewer={viewer}
-              label="Draft the management brief"
-              detail={`The ${quarterLabel(quarter)} pipeline, what needs attention${latestReview?.status === 'OPEN' ? ` and the ${latestReview.review.periodLabel} review` : ''} — each statement grounded in what HELM holds.`}
-            />
-          </div>
-
-          <div className="mt-8">
-            <SectionHead title="Connected sources" size="section-sm" />
-            {proof ? (
-              <div className="mt-3 text-dense text-ink-700">
-                <p>{ic.mode === 'demo' ? 'The demo source' : 'Memoire'} owns the commercial fact; HELM references it. A new opportunity entered the enterprise without being typed in, and the same sync run twice changed nothing.</p>
-                <p className="mt-2 font-mono text-meta text-ink-500">first sync {proof.firstSync.outcome.toLowerCase()} · {proof.firstSync.counts.entitiesCreated} entities · {proof.firstSync.counts.observationsRecorded} observations · repeat {proof.repeatSync.counts.observationsRecorded + proof.repeatSync.counts.entitiesCreated} written</p>
-                <p className="mt-2 text-meta text-ink-600"><Link to="/sources" className="text-accent-700 underline">Sources, identity and dry-run writeback →</Link></p>
-              </div>
-            ) : (
-              <p className="mt-3 text-dense text-ink-600">Memoire is read as you, and only read. <Link to="/sources" className="text-accent-700 underline">Sources →</Link></p>
-            )}
-          </div>
+          <p className="mt-3 text-meta text-ink-600"><Link to="/reviews" className="text-accent-700 underline">Reviews →</Link> · <Link to="/decisions" className="text-accent-700 underline">Decisions →</Link></p>
         </aside>
       </div>
 
-      {focusDecision && <CouncilPanel question={`What does each management function make of “${focusDecision.label}”?`} request={{ ...(latestReview ? { reviewId: latestReview.review.id } : {}) }} viewer={viewer} />}
+      {/* Full width: an answer that lists deals is a table (audit 2026-10-13: it was a narrow column of paragraphs). */}
+      <section className="mt-12 max-w-[960px]">
+        <SectionHead title="Ask HELM" size="section-sm" caveat="answers only from what HELM holds, as you" />
+        <div className="mt-3"><AskHelm viewer={viewer} suggestions={suggestedQuestions(items, now)} /></div>
+      </section>
+
+      {ic.reviews.viewers.length > 1 && (
+        <div className="mt-6 flex flex-wrap items-end gap-4">
+          <label className="grid max-w-full grid-cols-[minmax(0,1fr)] gap-1">
+            <span className="helm-label">Read as</span>
+            <ReaderSelect className={select} viewers={ic.reviews.viewers} value={viewerKey} onChange={setViewerKey} />
+          </label>
+          <p className="max-w-reading pb-2 text-meta text-ink-500">Switch reader to see how clearance and decision visibility change what is shown — and what is withheld, said out loud.</p>
+        </div>
+      )}
+      {d && (d.projection?.withheld.length ?? 0) > 0 && (
+        <p className="mt-3 max-w-reading text-dense text-ink-700">
+          Withheld from this reader: {d.projection!.withheld.map((w) => `${w.count} ${w.sensitivity.replaceAll('_', ' ').toLowerCase()} ${w.count === 1 ? 'item' : 'items'}`).join(', ')} — above their clearance, not absent.
+        </p>
+      )}
     </>
   );
 }

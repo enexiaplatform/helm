@@ -55,7 +55,8 @@ export interface MemoireReader {
 // 0.3.0 reads the account's key-account flag; 0.4.0 the deal's brand, channel, last touch, next action date and close
 // date (audit 2026-10-13: no view by brand, no stale deals). A new connector build resumes from no checkpoint, so every
 // opportunity is read once more through the new translation; what did not change is recognised as unchanged.
-export const MEMOIRE_CONNECTOR = 'memoire-connector@0.4.0';
+// 0.5.0 keeps when Memoire last changed the deal (Phase 1 "This week": a deal nobody has updated for 30 days).
+export const MEMOIRE_CONNECTOR = 'memoire-connector@0.5.0';
 
 const OPPORTUNITY_FIELDS: readonly FieldSpec[] = [
   { name: 'id', type: 'string', required: true },
@@ -130,6 +131,7 @@ export function createMemoireAdapter(reader: MemoireReader, options: { pageSize?
             lastTouchAt: f.last_touch_at ?? null,
             nextActionDate: f.next_action_date ?? null,
             closedOn: f.closed_on ?? null,
+            sourceUpdatedAt: f.updated_at,
             sourceId: f.id,
           },
         },

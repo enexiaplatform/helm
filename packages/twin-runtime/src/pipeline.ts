@@ -28,7 +28,10 @@ export type PipelinePosition = {
   readonly channel: string | null;
   /** When the source last recorded a touch on the deal (ISO), or null. */
   readonly lastTouchAt: string | null;
+  /** The next step the source states for the deal (a date), or null. */
   readonly nextActionDate: string | null;
+  /** When the source last changed the deal (ISO), or null when the state does not carry it. */
+  readonly sourceUpdatedAt: string | null;
   /** When the source records the deal as closed, or null. */
   readonly closedOn: string | null;
   /** The deal's id in its source system, for a link back to it; null when the state does not carry it. */
@@ -109,6 +112,7 @@ export function readPipeline(items: readonly TwinItem[]): PipelinePosition[] {
       channel: s(attrs['channel']),
       lastTouchAt: s(attrs['lastTouchAt']),
       nextActionDate: s(attrs['nextActionDate']),
+      sourceUpdatedAt: s(attrs['sourceUpdatedAt']),
       closedOn: s(attrs['closedOn']),
       sourceId: s(attrs['sourceId']) ?? sourceIdOf(String(e.state['canonicalKey'] ?? '')),
       value: val ? s(val.state['value']) : null,
@@ -285,6 +289,69 @@ export function staleDeals(rows: readonly PipelinePosition[], nowIso: string, da
     stale: open.filter((r) => r.lastTouchAt !== null && Date.parse(r.lastTouchAt) < cutoff),
     neverTouched: open.filter((r) => r.lastTouchAt === null),
   };
+}
+
+/**
+ * The last day of a close period as Memoire states it ("2026-10-30", "2026-11", "Nov 2026", "Q4 2026", "2026-Q4"), as
+ * YYYY-MM-DD — or null for a bare quarter or anything unreadable: a close date HELM cannot place has not passed.
+ */
+export function closeEndOf(stated: string | null): string | null {
+  if (!stated) return null;
+  const t = stated.trim().toUpperCase();
+  const lastOfMonth = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+  const day = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (day) {
+    const d = new Date(Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3])));
+    return Number.isNaN(d.getTime()) || d.getUTCMonth() !== Number(day[2]) - 1 ? null : d.toISOString().slice(0, 10);
+  }
+  const month = t.match(/^(\d{4})-(\d{1,2})$/);
+  if (month && Number(month[2]) >= 1 && Number(month[2]) <= 12) return lastOfMonth(Number(month[1]), Number(month[2]));
+  const named = t.match(/^([A-Z]{3})[A-Z]*\.?[\s/-]+(\d{4})$/);
+  if (named && MONTHS[named[1]!]) return lastOfMonth(Number(named[2]), MONTHS[named[1]!]!);
+  const at = quarterOf(stated);
+  return at && at.year !== null ? lastOfMonth(Number(at.year), at.quarter * 3) : null;
+}
+
+/** Why a deal is on "This week": each a date the source states, said back — never a judgement of the deal. */
+export type WeekReason =
+  | { readonly kind: 'NEXT_STEP_OVERDUE'; readonly date: string }
+  | { readonly kind: 'NEXT_STEP_DUE'; readonly date: string }
+  | { readonly kind: 'CLOSE_PASSED'; readonly date: string }
+  | { readonly kind: 'NOT_UPDATED'; readonly date: string };
+export type WeekLine = { readonly deal: PipelinePosition; readonly reasons: readonly WeekReason[]; readonly since: string };
+export type WeekReading = { readonly lines: readonly WeekLine[]; readonly counts: Readonly<Record<WeekReason['kind'], number>>; readonly today: string };
+
+const dayOf = (iso: string | null): string | null => (iso && /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10) : null);
+const plusDays = (day: string, n: number): string => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * The OPEN deals that need a step from their owner this week, by named conditions on dates the source states: a next
+ * step that is overdue or due within `days`, a close date that has passed, no change in the source for `quietDays`.
+ * A deal is listed once with every reason it has. The list is in the order its earliest date came, oldest first — an
+ * order by date, never a ranking of which deal matters most.
+ */
+export function thisWeek(rows: readonly PipelinePosition[], nowIso: string, options: { days?: number; quietDays?: number } = {}): WeekReading {
+  const today = nowIso.slice(0, 10);
+  const horizon = plusDays(today, options.days ?? 7);
+  const quiet = plusDays(today, -(options.quietDays ?? 30));
+  const counts = { NEXT_STEP_OVERDUE: 0, NEXT_STEP_DUE: 0, CLOSE_PASSED: 0, NOT_UPDATED: 0 };
+  const lines: WeekLine[] = [];
+  for (const deal of rows) {
+    if (deal.state !== 'OPEN') continue;
+    const reasons: WeekReason[] = [];
+    const next = dayOf(deal.nextActionDate);
+    if (next !== null && next < today) reasons.push({ kind: 'NEXT_STEP_OVERDUE', date: next });
+    else if (next !== null && next <= horizon) reasons.push({ kind: 'NEXT_STEP_DUE', date: next });
+    const closeEnd = closeEndOf(deal.expectedClosePeriod);
+    if (closeEnd !== null && closeEnd < today) reasons.push({ kind: 'CLOSE_PASSED', date: closeEnd });
+    const updated = dayOf(deal.sourceUpdatedAt);
+    if (updated !== null && updated < quiet) reasons.push({ kind: 'NOT_UPDATED', date: updated });
+    if (reasons.length === 0) continue;
+    for (const r of reasons) counts[r.kind] += 1;
+    lines.push({ deal, reasons, since: reasons.map((r) => r.date).sort()[0]! });
+  }
+  lines.sort((a, b) => (a.since < b.since ? -1 : a.since > b.since ? 1 : a.deal.opportunity.localeCompare(b.deal.opportunity)));
+  return { lines, counts, today };
 }
 
 /** One line per brand the deals state (and one for none): counts and sums, in the order brands first appear. Never ranked. */

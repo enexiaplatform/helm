@@ -24,8 +24,8 @@ export { createExplainer } from './explain.ts';
 export { readStructure, classificationOf, ACCOUNT_CLASSES } from './structure.ts';
 export type { StructureView, AccountClass } from './structure.ts';
 export { decisionStateAt, OPEN_DECISION_STATES } from './management.ts';
-export { readPipeline, pipelineFacts, opportunityLabel, customerOfSubject, closesIn, quarterOf, quarterKeyOf, dealStateOf, readQuarter, staleDeals, byBrand } from './pipeline.ts';
-export type { PipelinePosition, PipelineFacts, PipelineReadable, DealState, Money, QuarterReading, BrandLine } from './pipeline.ts';
+export { readPipeline, pipelineFacts, opportunityLabel, customerOfSubject, closesIn, quarterOf, quarterKeyOf, dealStateOf, readQuarter, staleDeals, byBrand, thisWeek, closeEndOf } from './pipeline.ts';
+export type { PipelinePosition, PipelineFacts, PipelineReadable, DealState, Money, QuarterReading, BrandLine, WeekReason, WeekLine, WeekReading } from './pipeline.ts';
 export { snapshotAttention, attentionItem, MATERIALITY_V1, ATTENTION_RULES_VERSION, isMaterial, isDeterioration } from './attention.ts';
 export {
   METRIC_SENSITIVITY,

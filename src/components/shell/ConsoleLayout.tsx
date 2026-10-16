@@ -7,6 +7,7 @@ import { cloudScope, demoScope } from '../../services/ontologyGraph.ts';
 import { displayClock, resolveScenarioWorkspace } from '../../services/scenarioRuntime.ts';
 import { attentionCount } from '../../services/twinRuntime.ts';
 import { prepareDemoWorld } from '../../services/demoWorld.ts';
+import { useLabs } from '../../lib/labs.ts';
 import { AppShell } from './AppShell.tsx';
 
 /** Kernel instruments run full width; everything else is the 1240px management register. */
@@ -102,6 +103,7 @@ export function ConsoleLayout() {
     };
   }, [mode, scope, live.version, live.readEpoch, demoReady]);
 
+  const labs = useLabs();
   const active = keyOf(pathname);
   const activeOrg = organizations.find((o) => o.id === activeOrgId);
 
@@ -111,6 +113,7 @@ export function ConsoleLayout() {
       onNavigate={(key) => navigate(hrefOf(key))}
       hrefFor={hrefOf}
       openSignals={openSignals}
+      labs={labs}
       orgName={activeOrg?.name ?? '—'}
       orgs={organizations}
       activeOrgId={activeOrgId}

@@ -151,13 +151,14 @@ export function PipelinePage() {
 
   const live = data.mode === 'cloud';
   const reading = readingRate;
-  const currency = view.totals.open.value.currency ?? view.totals.won.value.currency;
   const allValue = view.sorted.reduce<number | null>((t, r) => (r.value === null ? t : (t ?? 0) + Number(r.value)), null);
   const allWeighted = view.sorted.reduce<number | null>((t, r) => (weighted(r) === null ? t : (t ?? 0) + weighted(r)!), null);
   const currencies = new Set(view.sorted.filter((r) => r.value !== null).map((r) => r.currency));
+  // The deals' own currency: a view of lost deals alone has no open or won total to borrow one from ("worth 399.27K.").
+  const currency = currencies.size === 1 ? [...currencies][0]! : (view.totals.open.value.currency ?? view.totals.won.value.currency);
   const select = 'max-w-full rounded-md border border-ink-200 bg-white px-2 py-[6px] text-dense';
   const th = (k: SortKey, label: string, align: 'left' | 'right' = 'left'): ReactNode => (
-    <th scope="col" className={cn('ledger-th whitespace-nowrap', align === 'right' && 'text-right')}>
+    <th scope="col" className={cn('ledger-th whitespace-nowrap', align === 'right' && 'text-right')} aria-sort={sort === k ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
       <button
         type="button"
         className="uppercase hover:text-ink-950"
@@ -173,7 +174,6 @@ export function PipelinePage() {
           }
           setParams(n, { replace: true });
         }}
-        aria-sort={sort === k ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
       >
         {label}
         {sort === k ? (dir === 'asc' ? ' ↑' : ' ↓') : ''}

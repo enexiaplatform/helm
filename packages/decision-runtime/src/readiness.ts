@@ -109,7 +109,7 @@ export function evaluateReadiness(input: {
       gaps.push({
         code: 'scenario-partial',
         severity: 'GAP',
-        message: `${alternative.label}'s future state is ${input.completenessOf(state)}: some values are blocked or unavailable.`,
+        message: `The future state of “${alternative.label}” is ${String(input.completenessOf(state)).toLowerCase()}: some values are blocked or unavailable.`,
         alternativeId: alternative.id,
       });
     }

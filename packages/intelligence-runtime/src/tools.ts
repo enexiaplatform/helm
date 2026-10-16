@@ -110,6 +110,16 @@ const names = (text: string, name: string | null): boolean => {
   const words = new Set(fold(text).split(/[^a-z0-9]+/));
   return nameWords(name).some((w) => words.has(w));
 };
+/**
+ * Whether a text names a brand. Brands are short ("PMM", "IUL"), so the whole brand is matched as a word or a phrase —
+ * a distinctive word of four letters or more, as for a customer, would never find them (live audit 2026-10-16).
+ */
+const namesBrand = (text: string, brand: string | null): boolean => {
+  const b = brand ? fold(brand).trim().replace(/\s+/g, ' ') : '';
+  if (b.length < 2 || !/[a-z0-9]/.test(b)) return false;
+  const t = fold(text);
+  return b.includes(' ') ? t.includes(b) : new Set(t.split(/[^a-z0-9]+/)).has(b);
+};
 
 type ItemLike = { key: string; kind: string; label: string; layer: string | null; status: string; sensitivity: string; categories: readonly string[]; state: Readonly<Record<string, unknown>>; reason: string | null };
 
@@ -215,10 +225,10 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
       const mentioning = str(args['mentioning']);
       // The subjects the text names, read from the state's own entities: a condition is kept when it names one of them.
       const subjects = mentioning
-        ? (proj.value.items as unknown as ItemLike[]).filter((i) => i.kind === 'ENTITY' && names(mentioning, String(i.state['name'] ?? i.label))).map((i) => String(i.state['name'] ?? i.label))
+        ? (proj.value.items as unknown as ItemLike[]).filter((i) => i.kind === 'ENTITY' && i.state['entityTypeKey'] !== 'Scenario' && names(mentioning, String(i.state['name'] ?? i.label))).map((i) => String(i.state['name'] ?? i.label))
         : [];
       const att = subjects.length > 0 ? all.filter((i) => subjects.some((n) => nameWords(n).some((w) => fold(i.label).includes(w)))) : all;
-      const scoped = subjects.length > 0 ? [`${att.length} of ${all.length} attention conditions name ${[...new Set(subjects)].join(' or ')}; the others are not shown here.`] : [];
+      const scoped = subjects.length > 0 && all.length > 0 ? [`${att.length} of ${all.length} attention conditions name ${[...new Set(subjects)].join(' or ')}; the others are not shown here.`] : [];
       return done(att.slice(0, MAX.items).map((i) => evidenceOfItem(i, lens, 'What matters?')), att.length === 0 ? [...scoped, subjects.length > 0 ? 'No attention condition names it.' : 'No attention condition holds in this state.'] : [...scoped, ...withheldNote(withheld, 'item(s)')], withheld);
     },
   });
@@ -267,7 +277,8 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
       const limit = typeof args['limit'] === 'number' && Number.isFinite(args['limit']) && args['limit'] > 0 ? Math.floor(args['limit'] as number) : null;
       const notUnderstood = str(args['notUnderstood']);
       const mentioning = str(args['mentioning']);
-      const mentioned = mentioning ? all.filter((p) => names(mentioning, p.customer) || names(mentioning, p.opportunity) || names(mentioning, p.brand)) : [];
+      const byBrand = (p: (typeof all)[number]) => !!mentioning && namesBrand(mentioning, p.brand);
+      const mentioned = mentioning ? all.filter((p) => names(mentioning, p.customer) || names(mentioning, p.opportunity) || byBrand(p)) : [];
       if (mentioning && mentioned.length === 0 && str(args['onlyIfMentioned']) === 'yes') {
         return done([], ['The question names no customer or opportunity HELM can read in this state.']);
       }
@@ -285,7 +296,7 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
       if (condition === 'NO_PROBABILITY') named.push('no stated probability');
       if (condition === 'NO_CLOSE_PERIOD') named.push('no stated close period');
       if (customer) named.push(`held by a customer named like "${customer}"`);
-      if (mentioned.length > 0) named.push(`named in the question (${[...new Set(mentioned.map((p) => p.customer ?? p.opportunity))].join(', ')})`);
+      if (mentioned.length > 0) named.push(`named in the question (${[...new Set(mentioned.map((p) => (byBrand(p) ? `brand ${p.brand}` : p.customer ?? p.opportunity)))].join(', ')})`);
       const rows = all.filter(
         (p) =>
           (!period || closesIn(p.expectedClosePeriod, period) !== 'NO') &&
@@ -332,7 +343,7 @@ export function createGovernedTools(src: IntelligenceSources): ToolRegistry {
         [
           // What the answer did with the question first: a long summary is clipped when it is read out.
           notUnderstood ? `not understood, so not applied: ${notUnderstood} — these rows are NOT filtered by it` : '',
-          sortBy ? `ordered as the question asks: by ${sortBy}, ${asc ? 'lowest' : 'highest'} first${limit ? `, the first ${limit}` : ''} — HELM does not rank on its own` : '',
+          sortBy ? `ordered as asked (by the question, or by the brief's own plan): by ${sortBy}, ${asc ? 'lowest' : 'highest'} first${limit ? `, the first ${limit}` : ''} — HELM does not rank on its own` : '',
           named.length > 0 ? `${rows.length} match: ${named.join(', ')}` : '',
           quarterLine ? `of these, ${quarterLine.inQuarter.count} open deals are due in ${period}: ${moneyOf(quarterLine.inQuarter.value)} in value, ${moneyOf(quarterLine.inQuarter.weighted)} weighted by probability; won and lost deals are never forecast` : '',
           `${facts.opportunities} opportunities in the state you may read`,

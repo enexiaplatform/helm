@@ -108,6 +108,27 @@ function exclusiveFor(key: string) {
  * Start keeping HELM current with Memoire for one reader in one organization. Returns the live sync (to wake it)
  * and the way to stop it. Nothing starts when the cloud is unavailable.
  */
+/**
+ * A Refresh that finds nothing new in Memoire records no sync, so the sync history alone dates the bar to the last read
+ * that CHANGED something (live audit 2026-10-16: refreshed at 23:53, reopened, "last read 14:27, 9 h ago"). The last
+ * check is kept per organization and reader in this browser; it only ever dates the bar, never a figure.
+ */
+const checkedKey = (orgId: string, userId: string) => `helm.memoire.checkedAt.${orgId}.${userId}`;
+const readChecked = (orgId: string, userId: string): string | null => {
+  try {
+    return localStorage.getItem(checkedKey(orgId, userId));
+  } catch {
+    return null;
+  }
+};
+const keepChecked = (orgId: string, userId: string, at: string) => {
+  try {
+    localStorage.setItem(checkedKey(orgId, userId), at);
+  } catch {
+    // Storage blocked: the bar falls back to the sync history.
+  }
+};
+
 export function startMemoireLiveSync(scope: Scope): { live: LiveSync | null; stop: () => void } {
   const orgId = String(scope.orgId);
   const userId = String(scope.actorId);
@@ -119,7 +140,7 @@ export function startMemoireLiveSync(scope: Scope): { live: LiveSync | null; sto
     if (!ctx) return;
     const syncs = await ctx.store.listSyncs(ctx.scope, { system: 'memoire' });
     if (!syncs.ok || useMemoireLive.getState().orgId !== orgId) return;
-    const last = syncs.value.filter((x) => x.outcome === 'SUCCEEDED' || x.outcome === 'PARTIAL').reduce<string | null>((m, x) => (m === null || x.recordedAt > m ? x.recordedAt : m), null);
+    const last = [readChecked(orgId, userId), ...syncs.value.filter((x) => x.outcome === 'SUCCEEDED' || x.outcome === 'PARTIAL').map((x) => x.recordedAt)].reduce<string | null>((m, x) => (x !== null && (m === null || x > m) ? x : m), null);
     if (last) useMemoireLive.setState((st) => ({ lastReadAt: st.lastReadAt && st.lastReadAt > last ? st.lastReadAt : last }));
   });
 
@@ -182,7 +203,9 @@ export function startMemoireLiveSync(scope: Scope): { live: LiveSync | null; sto
     exclusive: exclusiveFor(`helm:memoire-live:${orgId}:${userId}`),
     onState: (s) => {
       // A state from a sync that was already replaced (another org, a sign-out) is not this console's state.
-      if (useMemoireLive.getState().orgId === orgId) useMemoireLive.setState({ ...s, ...(s.caughtUpAt ? { lastReadAt: s.caughtUpAt } : {}) });
+      if (useMemoireLive.getState().orgId !== orgId) return;
+      if (s.caughtUpAt) keepChecked(orgId, userId, s.caughtUpAt);
+      useMemoireLive.setState({ ...s, ...(s.caughtUpAt ? { lastReadAt: s.caughtUpAt } : {}) });
     },
     now: () => new Date().toISOString(),
   });

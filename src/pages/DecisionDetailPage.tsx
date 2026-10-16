@@ -182,7 +182,8 @@ export function DecisionDetailPage() {
       name: c.name,
       meta: [
         readable(c.style),
-        c.threshold !== null ? c.threshold : null,
+        // The line in its own unit (live audit 2026-10-16: "hard constraint · 30" for a 30% margin line).
+        c.threshold !== null ? displayValue(c.threshold, c.unit, null) : null,
         c.required ? 'required' : null,
         c.author.label,
         c.demoPolicy ? 'demo management policy' : null,
@@ -478,13 +479,16 @@ function Governance({ scope, mode, commitmentId, onChanged }: { scope: Scope; mo
 
 // ============================================================== readiness
 
+/** A kernel enum read out: NOT_READY → "Not ready" (CLAUDE.md: enums are rendered readable on management pages). */
+const said = (e: string): string => e.charAt(0) + e.slice(1).toLowerCase().replaceAll('_', ' ');
+
 function Readiness({ readiness }: { readiness: DecisionWorkspace['readiness'] }) {
   const tone = readiness.state === 'READY' ? 'text-emerald-700' : readiness.state === 'READY_WITH_GAPS' ? 'text-amber-700' : 'text-red-700';
   return (
     <section className="mt-10">
       <SectionHead
         title="Is the preparation complete?"
-        meta={<span className={cn('font-medium', tone)}>{readiness.state}</span>}
+        meta={<span className={cn('font-medium', tone)}>{said(readiness.state)}</span>}
         caveat="procedural completeness only, never a judgement of the choice"
       />
       {readiness.gaps.length === 0 ? (
@@ -493,7 +497,7 @@ function Readiness({ readiness }: { readiness: DecisionWorkspace['readiness'] })
         readiness.gaps.map((g, i) => (
           <div key={`${g.code}-${i}`} className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-4 border-b border-ink-200 py-[10px]">
             <span className={cn('font-mono text-[11px] font-semibold leading-5 tracking-[0.04em]', g.severity === 'BLOCKING' ? 'text-red-700' : 'text-amber-700')}>
-              {g.severity}
+              {said(g.severity)}
             </span>
             <span className="text-dense text-ink-700" title={g.message}>{readableText(g.message)}</span>
           </div>

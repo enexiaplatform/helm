@@ -42,3 +42,28 @@ describe('the words of a pipeline question', () => {
     assert.deepEqual(top.find((c) => c.tool === 'getPipelinePositions')?.args, { sortBy: 'value', limit: 5, mentioning: 'Top 5 largest deals of Samil?' });
   });
 });
+
+describe('live audit 2026-10-16: what a manager typed', () => {
+  const tools = ['getManagementAttention', 'getPipelinePositions'].map((name) => ({ name, description: '', args: [] }));
+  const pipe = async (question) => (await createReferenceProvider().plan({ question, tools, now: '2026-10-16T09:00:00.000Z' })).find((c) => c.tool === 'getPipelinePositions')?.args;
+
+  it('a name at the start of the question is still a name', async () => {
+    assert.equal((await pipe('Tailin deals due in Q4')).mentioning, 'Tailin deals due in Q4');
+    assert.equal((await pipe('Which deals close this quarter?')).mentioning, undefined, 'an opening question word names nothing');
+  });
+
+  it('a bare quarter is this year\'s', async () => {
+    assert.equal((await pipe('Tailin deals due in Q4')).closePeriod, '2026-Q4');
+    assert.equal((await pipe('deal nào chốt trong quý 1?')).closePeriod, '2026-Q1');
+    assert.equal((await pipe('deals in Q1 2027')).closePeriod, '2027-Q1', 'a stated year wins');
+  });
+
+  it('a short brand is passed on to be matched', async () => {
+    assert.equal((await pipe('How much is weighted for PMM this quarter?')).mentioning, 'How much is weighted for PMM this quarter?');
+  });
+
+  it('time since the last touch and a year are said back, not dropped', () => {
+    assert.match(String(pipelineWords('which deals have not moved for 30 days?').notUnderstood), /last touch/);
+    assert.match(String(pipelineWords('which deals were lost this year?').notUnderstood), /a year/);
+  });
+});

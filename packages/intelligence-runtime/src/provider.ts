@@ -46,6 +46,8 @@ export interface AiProvider extends ProviderIdentity {
 const clip = (s: string, n = 220) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 /** A capitalised word of three letters or more with no digit: a name, not "Q1" or "2027". */
 const NAMES_SOMETHING = /(?:^|[\s"“(])\p{Lu}\p{L}{2,}/u;
+/** The first word of a question is capitalised whatever it is; it names something only when it is not one of these. */
+const OPENS_A_QUESTION = /^(which|what|how|who|whom|where|when|why|is|are|was|were|do|does|did|can|could|will|would|should|show|list|give|tell|find|top|compare|any|all|the|my|our|me|please|deal|deals|opportunities)\b/i;
 
 const STAGE_WORDS = ['lead', 'discovery', 'qualification', 'technical discussion', 'proposal', 'negotiation', 'procurement'];
 
@@ -82,6 +84,9 @@ export function pipelineWords(q: string): Record<string, unknown> {
     /\bmargin\b|biên lợi nhuận|lợi nhuận gộp/.test(q) && 'a margin (no cost is connected)',
     /\btarget\b|\bquota\b|chỉ tiêu/.test(q) && 'a target (none is recorded)',
     /last week|tuần trước|since monday/.test(q) && 'a change since last week',
+    // Live audit 2026-10-16: "which deals have not moved for 30 days?" came back with every deal and no word of why.
+    /not moved|not been touched|untouched|not touched|no activity|inactive|stale|idle|chưa (được )?(chạm|cập nhật)|không có hoạt động/.test(q) && 'time since the last touch (a touch date is read only where Memoire records one on the deal)',
+    /this year|last year|năm nay|năm ngoái/.test(q) && 'a year (ask by quarter, for example 2026-Q3)',
   ].filter((x): x is string => typeof x === 'string');
   if (unknown.length > 0) out['notUnderstood'] = unknown.join('; ');
   return out;
@@ -124,7 +129,11 @@ export function createReferenceProvider(): AiProvider {
         const args: Record<string, unknown> = { ...pipelineWords(q) };
         const explicit = q.match(/\b(20\d\d)[-\s]?q([1-4])\b/) ?? q.match(/\bq([1-4])[-\s/]?(20\d\d)\b/);
         if (explicit) args['closePeriod'] = explicit[1]!.length === 4 ? `${explicit[1]}-Q${explicit[2]}` : `${explicit[2]}-Q${explicit[1]}`;
-        else if (/this quarter|current quarter|quý này/.test(q) && input.now) {
+        // A bare quarter ("due in Q4", "quý 4") is this year's, as Memoire's own bare quarters are read.
+        else if ((q.match(/\bq([1-4])\b/) ?? q.match(/quý\s*([1-4])\b/)) && input.now) {
+          const bare = (q.match(/\bq([1-4])\b/) ?? q.match(/quý\s*([1-4])\b/))!;
+          args['closePeriod'] = `${new Date(input.now).getUTCFullYear()}-Q${bare[1]}`;
+        } else if (/this quarter|current quarter|quý này/.test(q) && input.now) {
           const d = new Date(input.now);
           args['closePeriod'] = `${d.getUTCFullYear()}-Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
         }
@@ -137,7 +146,9 @@ export function createReferenceProvider(): AiProvider {
         else if (/no (expected )?close|without a close|no close period|chưa có (kỳ|thời điểm) chốt/.test(q)) args['condition'] = 'NO_CLOSE_PERIOD';
         // The question may name a customer or a deal — a capitalised word past its first ("… with Rohto Vietnam?"); the
         // tool reads which names the state holds. A question that names nothing keeps exactly its named conditions.
-        if (NAMES_SOMETHING.test(input.question.trim().replace(/^\S+\s*/, ''))) args['mentioning'] = input.question;
+        // The opening word counts too unless it only opens the question (live audit 2026-10-16: "Tailin deals due in Q4" lost Tailin).
+        const asked = input.question.trim();
+        if (NAMES_SOMETHING.test(OPENS_A_QUESTION.test(asked) ? asked.replace(/^\S+\s*/, '') : asked)) args['mentioning'] = input.question;
         calls.push({ tool: 'getPipelinePositions', args });
       }
       if (calls.length === 0) {

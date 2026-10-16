@@ -96,7 +96,10 @@ export async function computePack(sources: ReviewSources, scope: Scope, input: P
       const commitments = await sources.decisions.listCommitments(scope, d.id);
       if (!commitments.ok) continue;
       const known = commitments.value.filter((c) => ms(c.committedAt) <= ms(lens.recordedThrough));
-      if (known.length === 0) decisionsNeeded.push({ decisionId: d.id, title: d.title, question: d.managementQuestion, openedAt: d.createdAt });
+      // A decision cancelled by the lens waits for nothing (live audit 2026-10-16: a cancelled test decision headed the brief's
+      // decisions required). Cancelling is terminal, so its last update is when it was cancelled; cancelled later, it was open then.
+      const cancelled = d.state === 'CANCELLED' && ms(d.updatedAt) <= ms(lens.recordedThrough);
+      if (known.length === 0 && !cancelled) decisionsNeeded.push({ decisionId: d.id, title: d.title, question: d.managementQuestion, openedAt: d.createdAt });
       for (const c of known) {
         const cf = cfs.ok ? cfs.value.find((s) => s.spec.commitmentId === c.id && ms(s.createdAt) <= ms(lens.recordedThrough)) : undefined;
         if (!cf) continue;

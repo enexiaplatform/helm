@@ -7,6 +7,7 @@
 
 import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { computePack } from '../src/index.ts';
 import { buildReviewStory, unwrap } from './harness.mjs';
 
 let s;
@@ -158,5 +159,22 @@ describe('a closed review stays what management saw', () => {
     assert.equal(before.ok, false);
     assert.equal(before.error.code, 'review.not_known_at_lens');
     void between;
+  });
+});
+
+describe('live audit 2026-10-16: a cancelled decision waits for nothing', () => {
+  it('cancelled by the lens, it is not a decision needed; cancelled after it, it was open then', async () => {
+    const r = r1.review;
+    const lens = r.openingLens;
+    const real = unwrap(await s.decisionStore.getDecision(s.scope, s.story.decisionId), 'decision');
+    const asIf = (updatedAt) => ({
+      ...s.reviewSources,
+      decisions: { ...s.decisionStore, listDecisions: async () => ({ ok: true, value: [{ ...real, state: 'CANCELLED', createdAt: lens.recordedThrough, updatedAt }] }), listCommitments: async () => ({ ok: true, value: [] }) },
+    });
+    const input = { lens, since: null, previousReviewId: null, snapshotId: r.openingSnapshotId, previousClosingSnapshotId: null };
+    const before = await computePack(asIf(lens.recordedThrough), s.scope, input);
+    assert.equal(before.decisionsNeeded.items.length, 0, 'cancelled by the lens');
+    const later = await computePack(asIf(new Date(Date.parse(lens.recordedThrough) + 86400000).toISOString()), s.scope, input);
+    assert.equal(later.decisionsNeeded.items.length, 1, 'cancelled after the lens: it was still open then');
   });
 });

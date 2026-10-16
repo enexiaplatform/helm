@@ -478,7 +478,9 @@ function ReadinessLine({ readiness, state }: { readiness: ReadinessReport; state
       <p className="mt-3 text-dense text-ink-600">
         {state === 'READY_FOR_DECISION'
           ? 'It is ready for decision. What management chooses, and why, is recorded when it is committed.'
-          : 'Nothing in the preparation blocks it. Mark it ready for decision to commit it.'}
+          : state === 'DRAFT'
+            ? 'Nothing in the preparation blocks it. Mark it investigating or modelling, then ready for decision, to commit it.'
+            : 'Nothing in the preparation blocks it. Mark it ready for decision to commit it.'}
       </p>
     );
   return (

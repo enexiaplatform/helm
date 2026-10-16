@@ -55,7 +55,8 @@ import {
 } from './types.ts';
 import { memoizedValueGraph, readNode, traceCache, type ReadLayer } from './values.ts';
 
-export const COMPOSER_VERSION = 'helm-twin-composer@1';
+// @2 (2026-10-16): a commitment item carries the date it named to look again and when its outcome was last reviewed.
+export const COMPOSER_VERSION = 'helm-twin-composer@2';
 
 export type TwinSources = {
   readonly graph: GraphStore;

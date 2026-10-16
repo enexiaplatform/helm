@@ -182,6 +182,7 @@ export function CockpitPage() {
     const direct = st<string>(i, 'decisionId');
     if (direct) return direct;
     if (i.kind === 'DECISION') return i.refs.find((r) => r.kind === 'DECISION')?.id ?? (i.key.startsWith('decision:') ? i.key.slice('decision:'.length) : null);
+    if (i.kind === 'COMMITMENT') return i.key.startsWith('commitment:') ? i.key.slice('commitment:'.length) : null;
     if (i.kind === 'GOVERNANCE') {
       const title = i.label.replace(/^Governance of /, '');
       return decisionIdOf(decisions.find((x) => x.label === title));
@@ -252,7 +253,7 @@ export function CockpitPage() {
 
   const actOn = (a: TwinItem) => {
     const id = decisionOfCondition(a);
-    if (id) return { to: `/decisions/${id}`, label: 'Open the decision' };
+    if (id) return { to: `/decisions/${id}`, label: conditionOf(a) === 'LOOK_AGAIN_DUE' ? 'Record what happened' : 'Open the decision' };
     if (conditionOf(a) === 'APPROVAL_PENDING' || conditionOf(a) === 'COMMITMENT_NOT_AUTHORIZED') return { to: '/governance', label: 'Open Governance' };
     return { to: '/twin', label: 'Open it in the Twin' };
   };

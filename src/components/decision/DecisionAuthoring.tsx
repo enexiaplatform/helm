@@ -22,6 +22,7 @@ import type { UserId } from '@helm/shared';
 import type { DecisionWorkspaceContext } from '../../services/decisionRuntime.ts';
 import { valueMetrics } from '../../services/ontologyGraph.ts';
 import { recomposeCurrentState } from '../../services/memoireLiveSync.ts';
+import { displayValue } from '../../services/scenarioRuntime.ts';
 import { loadCustomerNames, withCustomer } from '../../services/customerNames.ts';
 import { Modal } from '../ui/Modal.tsx';
 import { Field, controlClass } from '../ui/Field.tsx';
@@ -806,6 +807,7 @@ function CommitForm({
   const [summary, setSummary] = useState('');
   const [why, setWhy] = useState('');
   const [tradeOff, setTradeOff] = useState('');
+  const [expect, setExpect] = useState('');
   const [acknowledge, setAcknowledge] = useState(false);
   const openChallenges = workspace.challenges.filter((c) => c.status === 'OPEN');
   const notReadyState = workspace.decision.state !== 'READY_FOR_DECISION';
@@ -824,6 +826,12 @@ function CommitForm({
           rationale: [{ kind: 'JUDGEMENT', ref: null, label: 'Management judgement', statement: why.trim() }],
           acceptedTradeOffs: tradeOff.trim() ? [{ label: 'Accepted trade-off', statement: tradeOff.trim(), criterionId: null, metricKey: null, givenUp: null, inFavourOf: choice?.label ?? null }] : [],
           acknowledgeOpenChallenges: openChallenges.length > 0 ? acknowledge : undefined,
+          // What management expects, in its own words: the outcome review reads what happened against it.
+          expectedOutcomes: expect.trim() ? [{ label: 'What management expects', kind: 'QUALITATIVE', statement: expect.trim() }] : [],
+          // The date to look again is sealed into the commitment itself, so the twin can say when it has passed.
+          reviewTriggers: reviewDate
+            ? [{ key: 'look-again', description: `Look again on ${reviewDate}, whatever has happened.`, kind: 'DATE', metricKey: null, comparator: null, threshold: null, byDate: reviewDate }]
+            : [],
         }, reviewDate || null)
       }
     >
@@ -847,6 +855,9 @@ function CommitForm({
       <Field label="What management accepts by choosing it" className="sm:col-span-2" hint="optional — what is given up">
         <input className={controlClass} value={tradeOff} onChange={(e) => setTradeOff(e.target.value)} />
       </Field>
+      <Field label="What you expect to happen" className="sm:col-span-2" hint="optional — in your words; on the day you look again, what happened is read against it">
+        <textarea className={controlClass} rows={2} value={expect} onChange={(e) => setExpect(e.target.value)} />
+      </Field>
       <Field label="Look again on" hint="when the outcome is read against what was expected">
         <input type="date" className={controlClass} value={reviewDate} onChange={(e) => setReviewDate(e.target.value)} required />
       </Field>
@@ -860,5 +871,117 @@ function CommitForm({
         The commitment is sealed with what was on the table and carries no authority verdict: whether you were allowed to make it is judged apart, in Governance.
       </p>
     </FormShell>
+  );
+}
+
+const OUTCOMES = ['CONFIRMED', 'PARTIALLY_CONFIRMED', 'DISPROVED', 'UNKNOWN'] as const;
+
+/**
+ * Looking again (2026-10-16): what happened, read against what management expected when it committed, and how each
+ * assumption turned out. Until then the runtime could record an outcome review and nothing in the app called it, so no
+ * decision ever came back and the genome had nothing to learn from. The review is a person's account, with their name
+ * on it; HELM computes a variance only where a number was expected and a number is given, and judges nothing.
+ */
+export function OutcomeReviewForm({ ctx, workspace, author, onChanged }: { ctx: DecisionWorkspaceContext; workspace: DecisionWorkspace; author: Author; onChanged: () => void }) {
+  const commitment = workspace.commitment!;
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [actuals, setActuals] = useState<Record<string, { actual: string; note: string }>>({});
+  const [results, setResults] = useState<Record<string, { outcome: string; note: string }>>({});
+  const [notes, setNotes] = useState('');
+  const assumptions = workspace.assumptions;
+  const said = Object.values(actuals).some((a) => a.note.trim() || a.actual.trim()) || Object.values(results).some((r) => r.outcome) || notes.trim().length > 0;
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await ctx.runtime.recordOutcomeReview(ctx.scope, commitment.id, {
+        reviewedByLabel: author.label,
+        actuals: commitment.expectedOutcomes.map((e) => ({
+          label: e.label,
+          metricKey: e.metricKey,
+          actual: actuals[e.label]?.actual.trim() || null,
+          note: actuals[e.label]?.note.trim() || null,
+        })),
+        assumptionResults: assumptions
+          .filter((a) => results[a.id]?.outcome)
+          .map((a) => ({ assumptionId: a.id, outcome: results[a.id]!.outcome as (typeof OUTCOMES)[number], note: results[a.id]!.note.trim() || null })),
+        notes: notes.trim(),
+      });
+      if (!r.ok) setError(r.error.message);
+      else {
+        setOpen(false);
+        // The Cockpit reads the look-again condition from the current state: what was just recorded belongs in it.
+        if (ctx.mode === 'cloud') recomposeCurrentState();
+        onChanged();
+      }
+    } catch (e) {
+      setError(asMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <div className="mt-6">
+        <Button onClick={() => setOpen(true)}>Record what happened</Button>
+        <p className="mt-2 max-w-reading text-meta text-ink-500">What happened against what was expected, and how the assumptions turned out. Not a verdict on the decision.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-6 rounded-xl border border-ink-200 bg-white p-5 shadow-panel">
+      <h3 className="font-serif text-panel text-ink-950">What happened</h3>
+      <p className="mt-1 max-w-reading text-dense text-ink-600">Recorded as {author.label}. A good decision can meet a poor outcome and a careless one can get lucky: HELM keeps the two apart.</p>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        {commitment.expectedOutcomes.map((e) => (
+          <div key={e.label} className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
+            <p className="text-dense text-ink-700 sm:col-span-2">
+              <span className="helm-label mr-2">Expected</span>
+              {e.kind === 'MODELLED' ? (
+                <>
+                  {e.label} · <span className="font-mono text-accent-700" title={e.expectedValue ?? undefined}>{displayValue(e.expectedValue, e.unit, e.currency)}</span>
+                </>
+              ) : (
+                e.statement ?? e.label
+              )}
+            </p>
+            {e.kind === 'MODELLED' && (
+              <Field label="Actual" hint="the reading now, as a number">
+                <input className={controlClass} inputMode="decimal" value={actuals[e.label]?.actual ?? ''} onChange={(x) => setActuals({ ...actuals, [e.label]: { actual: x.target.value, note: actuals[e.label]?.note ?? '' } })} />
+              </Field>
+            )}
+            <Field label="What happened" className={e.kind === 'MODELLED' ? '' : 'sm:col-span-2'}>
+              <textarea className={controlClass} rows={2} value={actuals[e.label]?.note ?? ''} onChange={(x) => setActuals({ ...actuals, [e.label]: { actual: actuals[e.label]?.actual ?? '', note: x.target.value } })} />
+            </Field>
+          </div>
+        ))}
+        {assumptions.map((a) => (
+          <div key={a.id} className="grid gap-3 sm:col-span-2 sm:grid-cols-[minmax(0,1fr)_200px]">
+            <p className="font-serif text-base text-ink-900 sm:col-span-2">{a.statement}</p>
+            <Field label="Note" hint="optional">
+              <input className={controlClass} value={results[a.id]?.note ?? ''} onChange={(x) => setResults({ ...results, [a.id]: { outcome: results[a.id]?.outcome ?? '', note: x.target.value } })} />
+            </Field>
+            <Field label="It turned out">
+              <select className={controlClass} value={results[a.id]?.outcome ?? ''} onChange={(x) => setResults({ ...results, [a.id]: { outcome: x.target.value, note: results[a.id]?.note ?? '' } })}>
+                <option value="">Not said yet</option>
+                {OUTCOMES.map((o) => <option key={o} value={o}>{o.replace('_', ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase())}</option>)}
+              </select>
+            </Field>
+          </div>
+        ))}
+        <Field label="What to carry into the next decision" className="sm:col-span-2" hint="optional">
+          <textarea className={controlClass} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button variant="primary" disabled={busy || !said} onClick={() => void submit()}>{busy ? 'Recording it…' : `Record as ${author.label}`}</Button>
+        <Button variant="ghost" disabled={busy} onClick={() => setOpen(false)}>Not now</Button>
+      </div>
+      {error && <p role="alert" className="mt-3 text-dense text-red-700">{error}</p>}
+    </div>
   );
 }

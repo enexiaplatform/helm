@@ -323,6 +323,7 @@ export const attentionConditions = [
   'OBJECTIVE_OFF_TRACK',
   'RISK_EXPOSURE_INCREASED',
   'COMMITTED_FUTURE_OFF_TRACK',
+  'LOOK_AGAIN_DUE',
 ] as const;
 export type AttentionCondition = (typeof attentionConditions)[number];
 

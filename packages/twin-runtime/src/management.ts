@@ -366,6 +366,10 @@ export async function composeManagement(
         expectedOutcomes: commitment.expectedOutcomes.map((e) => ({ label: e.label, metricKey: e.metricKey, nodeId: e.nodeId, period: e.period ? periodKey(e.period) : null })),
         reconsideration: revision.reason === 'RECONSIDERED' && revision.id === commitment.revisionId,
         authorityStatusOnCommitment: commitment.authorityStatus,
+        // The date the commitment itself named to look again — a DATE review trigger, sealed with it, never the decision's
+        // editable horizon — and when an outcome review of it was last recorded, as known at the boundary.
+        lookAgainOn: commitment.reviewTriggers.filter((t) => t.kind === 'DATE' && t.byDate).map((t) => t.byDate!.slice(0, 10)).sort()[0] ?? null,
+        outcomeReviewedAt: reviewsKnown.filter((r) => r.commitmentId === commitment.id).at(-1)?.reviewedAt ?? null,
       },
       refs: [
         ref('COMMITMENT', commitment.id, commitment.fingerprint, decision.title),

@@ -26,6 +26,7 @@ export function concernQuestion(e: { label: string; status: string | null }): st
   const label = e.label.trim();
   const authority = label.match(/^Authority over (.+?) is (?:NOT EVALUATED|INDETERMINATE)\.?$/);
   if (authority || e.status === 'AUTHORITY_UNRESOLVED') return 'Who records the authority verdict for the commitments that carry none?';
+  if (e.status === 'LOOK_AGAIN_DUE') return `What has happened since it was committed, against what was expected: ${clipWords(label.split(':')[0]!, 70)}?`;
   if (e.status === 'COMMITTED_FUTURE_OFF_TRACK') return `What explains the distance between what was committed and what happened: ${clipWords(label.split(':')[0]!, 70)}?`;
   if (e.status === 'OBJECTIVE_OFF_TRACK') return `What would bring ${clipWords(label.split(':')[0]!, 70)} back to its target?`;
   if (e.status === 'CRITICAL_ASSUMPTION_DISPROVED') {

@@ -33,9 +33,9 @@ import { CommitmentBanner } from '../components/decision/CommitmentBanner.tsx';
 import { CriteriaMatrix, type MatrixAlt, type MatrixCell, type MatrixRow } from '../components/decision/CriteriaMatrix.tsx';
 import { AssumptionList } from '../components/decision/AssumptionList.tsx';
 import { ChallengeList } from '../components/decision/ChallengeList.tsx';
-import { DecisionAuthoring } from '../components/decision/DecisionAuthoring.tsx';
+import { DecisionAuthoring, OutcomeReviewForm } from '../components/decision/DecisionAuthoring.tsx';
 import { cn } from '../lib/cn.ts';
-import { readable as readableText, tidyText } from '../lib/format.ts';
+import { readable as readableText, tidyText, trueMinus } from '../lib/format.ts';
 
 /** What raised a decision, in words. */
 const TRIGGER_WORDS: Record<string, string> = {
@@ -378,7 +378,10 @@ export function DecisionDetailPage() {
       )}
 
       {commitment ? (
-        <CommitmentRecord workspace={workspace} explanation={explanation} />
+        <>
+          <CommitmentRecord workspace={workspace} explanation={explanation} />
+          <OutcomeReviewForm ctx={ctx} workspace={workspace} author={{ label: userEmail ?? 'Management', userId: userId ? asUserId(userId) : null }} onChanged={() => void reload(ctx, decision.id, revisionId)} />
+        </>
       ) : (
         <section className="mt-11">
           <SectionHead title="Commitment" />
@@ -773,7 +776,7 @@ function OutcomeReviews({ workspace }: { workspace: DecisionWorkspace }) {
                     <td className="py-[10px] text-dense text-ink-700">{v.label}</td>
                     <td className="py-[10px] pl-3 text-right font-mono text-dense text-ink-600">{v.expected ?? '—'}</td>
                     <td className="py-[10px] pl-3 text-right font-mono text-dense font-medium">{v.actual ?? '—'}</td>
-                    <td className="py-[10px] pl-3 text-right font-mono text-dense font-medium">{v.variance ?? '—'}</td>
+                    <td className="py-[10px] pl-3 text-right font-mono text-dense font-medium">{v.variance === null ? '—' : trueMinus(v.variance)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -787,6 +790,14 @@ function OutcomeReviews({ workspace }: { workspace: DecisionWorkspace }) {
                 </span>
               </div>
             ))}
+            {r.variances.some((v) => v.note) && (
+              <ul className="mt-2 grid gap-1">
+                {r.variances.filter((v) => v.note).map((v, i) => (
+                  <li key={i} className="text-dense text-ink-800"><span className="text-ink-500">{v.label}: </span>{v.note}</li>
+                ))}
+              </ul>
+            )}
+            {r.notes && <p className="mt-2 max-w-reading text-dense text-ink-800"><span className="helm-label mr-2">To carry forward</span>{r.notes}</p>}
             <p className="mt-3 font-serif text-read italic leading-[23px] text-ink-800">“{r.statement}”</p>
           </div>
         ))}

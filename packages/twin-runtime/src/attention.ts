@@ -32,7 +32,8 @@ export const MATERIALITY_V1 = {
   } as Readonly<Record<string, string>>,
 } as const;
 
-export const ATTENTION_RULES_VERSION = `helm-twin-attention@1+${MATERIALITY_V1.key}`;
+// @2 (2026-10-16): look-again-due@1.
+export const ATTENTION_RULES_VERSION = `helm-twin-attention@2+${MATERIALITY_V1.key}`;
 
 export function materialLine(unit: string | null): string | null {
   return unit ? (MATERIALITY_V1.byUnit[unit] ?? null) : null;
@@ -151,6 +152,20 @@ export function snapshotAttention(items: readonly TwinItem[], effectiveAsOf: str
         ),
       );
     }
+  }
+  // A commitment past the date it named to look again, with no outcome review recorded: the loop from commitment to
+  // outcome is open. Not a verdict on the decision — only that what was expected has not been read against what happened.
+  for (const c of byKind('COMMITMENT')) {
+    const on = s(c, 'lookAgainOn') as string | null | undefined;
+    if (!on || on > effectiveAsOf.slice(0, 10) || s(c, 'outcomeReviewedAt')) continue;
+    out.push(
+      attentionItem(
+        'LOOK_AGAIN_DUE',
+        'look-again-due@1: a commitment is past the date it named to look again, and no outcome review is recorded',
+        `${c.label}: the date set to look again, ${on}, has passed and no outcome review is recorded.`,
+        [c],
+      ),
+    );
   }
   // Committed future vs what the enterprise became, once the committed period has ended.
   const E = Date.parse(effectiveAsOf);

@@ -315,6 +315,234 @@ export function FrameDecisionModal({
   );
 }
 
+// ================================================= recording a decision in one sitting
+
+type Rating = 'STRONG_SUPPORT' | 'SUPPORT' | 'NEUTRAL' | 'CONCERN' | 'STRONG_CONCERN';
+const RATINGS: readonly { value: Rating; label: string }[] = [
+  { value: 'STRONG_SUPPORT', label: 'strongly supports it' },
+  { value: 'SUPPORT', label: 'supports it' },
+  { value: 'NEUTRAL', label: 'neither' },
+  { value: 'CONCERN', label: 'raises a concern' },
+  { value: 'STRONG_CONCERN', label: 'raises a strong concern' },
+];
+
+type Side = { label: string; rating: Rating; why: string };
+
+/**
+ * Record a decision (2026-10-16): the whole management act on one screen — the question, two alternatives, what
+ * mattered and how each stood against it, the choice and why, what is expected, and when to look again. Framing it the
+ * long way took eight separate acts on two pages, so a decision a manager had already taken was never recorded.
+ *
+ * Nothing is shortened in the record: HELM performs the same kernel acts in order (frame, two alternatives, a
+ * qualitative criterion, an assessment of each, investigating, ready, commit), each with the person's own words and
+ * name. HELM writes no alternative, criterion, rating or reason; an alternative without a computed future is recorded
+ * as unmodelled, and the record says so. If an act is refused, what was recorded so far stays, and the decision opens
+ * where it stopped.
+ */
+export function RecordDecisionModal({ ctx, author, onClose, onRecorded }: { ctx: DecisionWorkspaceContext; author: Author; onClose: () => void; onRecorded: (decisionId: string) => void }) {
+  const [question, setQuestion] = useState('');
+  const [trigger, setTrigger] = useState<DecisionTriggerType>('MANUAL');
+  const [oppQuery, setOppQuery] = useState('');
+  const [oppId, setOppId] = useState('');
+  const opportunities = useOpportunities(ctx, trigger === 'OPPORTUNITY');
+  const oppShown = useMemo(() => {
+    const q = oppQuery.trim().toLowerCase();
+    return (opportunities ?? []).filter((o) => !q || o.label.toLowerCase().includes(q)).slice(0, 200);
+  }, [opportunities, oppQuery]);
+  const [a, setA] = useState<Side>({ label: '', rating: 'NEUTRAL', why: '' });
+  const [b, setB] = useState<Side>({ label: '', rating: 'NEUTRAL', why: '' });
+  const [matters, setMatters] = useState('');
+  const [mattersWhy, setMattersWhy] = useState('');
+  const [chosen, setChosen] = useState<'a' | 'b' | ''>('');
+  const [summary, setSummary] = useState('');
+  const [why, setWhy] = useState('');
+  const [tradeOff, setTradeOff] = useState('');
+  const [expect, setExpect] = useState('');
+  const [lookAgain, setLookAgain] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [stoppedAt, setStoppedAt] = useState<string | null>(null);
+
+  const long = (s: string, n = 8) => s.trim().length >= n;
+  const complete =
+    long(question, 12) && a.label.trim() && b.label.trim() && a.label.trim() !== b.label.trim() && matters.trim() && long(mattersWhy) && long(a.why) && long(b.why) && chosen && long(summary) && long(why) && lookAgain;
+
+  const record = async () => {
+    setError(null);
+    setStoppedAt(null);
+    const rt = ctx.runtime;
+    const by = { kind: 'PERSON' as const, label: author.label, userId: author.userId };
+    let decisionId: string | null = null;
+    const step = async <T,>(what: string, run: () => Promise<{ ok: true; value: T } | { ok: false; error: { message: string } }>): Promise<T> => {
+      setBusy(what);
+      const r = await run();
+      if (!r.ok) throw new Error(`${what}: ${r.error.message}`);
+      return r.value;
+    };
+    try {
+      const opportunity = trigger === 'OPPORTUNITY' ? ((opportunities ?? []).find((o) => o.id === oppId) ?? null) : null;
+      const framed = await step('Framing the question', () =>
+        rt.createDecision(ctx.scope, {
+          title: question.trim().slice(0, 80),
+          managementQuestion: question.trim(),
+          triggerType: trigger,
+          triggerRefs: opportunity ? [{ kind: 'OPPORTUNITY' as const, ref: opportunity.id, label: opportunity.label }] : [],
+          owner: by,
+          horizon: { reviewDate: lookAgain },
+        }),
+      );
+      decisionId = framed.decision.id;
+      const revisionId = framed.revision.id;
+      const altA = await step(`Adding “${a.label.trim()}”`, () => rt.addAlternative(ctx.scope, revisionId, { label: a.label.trim(), sort: 1 }));
+      const altB = await step(`Adding “${b.label.trim()}”`, () => rt.addAlternative(ctx.scope, revisionId, { label: b.label.trim(), sort: 2 }));
+      const criterion = await step('Writing down what mattered', () =>
+        rt.addCriterion(ctx.scope, revisionId, { key: slug(matters), name: matters.trim(), style: 'QUALITATIVE', required: true, direction: 'NONE', author: by, rationale: mattersWhy.trim() }),
+      );
+      for (const [alt, side] of [[altA, a], [altB, b]] as const) {
+        await step(`Recording how “${alt.label}” stands`, () => rt.recordAssessment(ctx.scope, { criterionId: criterion.id, alternativeId: alt.id, rating: side.rating, rationale: side.why.trim(), author: by }));
+      }
+      await step('Marking it investigating', () => rt.setState(ctx.scope, framed.decision.id, 'INVESTIGATING'));
+      await step('Marking it ready for decision', () => rt.setState(ctx.scope, framed.decision.id, 'READY_FOR_DECISION'));
+      const choice = chosen === 'a' ? altA : altB;
+      await step('Committing', () =>
+        rt.commit(ctx.scope, revisionId, {
+          chosenAlternativeId: choice.id,
+          authorship: 'MANAGEMENT_AUTHORED',
+          committedByLabel: author.label,
+          summary: summary.trim(),
+          rationale: [{ kind: 'JUDGEMENT', ref: null, label: 'Management judgement', statement: why.trim() }],
+          acceptedTradeOffs: tradeOff.trim() ? [{ label: 'Accepted trade-off', statement: tradeOff.trim(), criterionId: null, metricKey: null, givenUp: null, inFavourOf: choice.label }] : [],
+          expectedOutcomes: expect.trim() ? [{ label: 'What management expects', kind: 'QUALITATIVE', statement: expect.trim() }] : [],
+          reviewTriggers: [{ key: 'look-again', description: `Look again on ${lookAgain}, whatever has happened.`, kind: 'DATE', metricKey: null, comparator: null, threshold: null, byDate: lookAgain }],
+        }),
+      );
+      if (ctx.mode === 'cloud') recomposeCurrentState();
+      onRecorded(framed.decision.id);
+    } catch (e) {
+      setError(asMessage(e));
+      if (decisionId) {
+        setStoppedAt(decisionId);
+        if (ctx.mode === 'cloud') recomposeCurrentState();
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const sideFields = (key: 'a' | 'b', side: Side, set: (s: Side) => void) => (
+    <div className="grid gap-[14px] rounded-lg border border-ink-200 bg-sheet p-3 sm:grid-cols-2">
+      <Field label={key === 'a' ? 'First alternative' : 'Second alternative'} className="sm:col-span-2" hint={key === 'b' ? 'leaving things as they are is an alternative too' : undefined}>
+        <input className={controlClass} value={side.label} onChange={(e) => set({ ...side, label: e.target.value })} required />
+      </Field>
+      <Field label={matters.trim() ? `Against “${matters.trim()}”, it` : 'Against what matters, it'}>
+        <select className={controlClass} value={side.rating} onChange={(e) => set({ ...side, rating: e.target.value as Rating })}>
+          {RATINGS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+        </select>
+      </Field>
+      <Field label="Because">
+        <input className={controlClass} value={side.why} onChange={(e) => set({ ...side, why: e.target.value })} required minLength={8} />
+      </Field>
+    </div>
+  );
+
+  return (
+    <Modal title="Record a decision" onClose={onClose} wide>
+      <form
+        className="grid gap-[14px]"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (complete && !busy) void record();
+        }}
+      >
+        <Field label="The management question" hint='A question, not a topic: "Do we hold the Q4 price for Rohto against the competing quote?"'>
+          <textarea className={controlClass} rows={2} value={question} onChange={(e) => setQuestion(e.target.value)} required minLength={12} autoFocus />
+        </Field>
+        <div className="grid gap-[14px] sm:grid-cols-2">
+          <Field label="What raised it">
+            <select className={controlClass} value={trigger} onChange={(e) => setTrigger(e.target.value as DecisionTriggerType)}>
+              {TRIGGERS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </Field>
+          {trigger === 'OPPORTUNITY' ? (
+            <Field label="Which opportunity" hint="optional — read from Memoire, nothing is copied">
+              <div className="grid gap-2">
+                <input className={controlClass} value={oppQuery} onChange={(e) => setOppQuery(e.target.value)} placeholder={opportunities ? `Search ${opportunities.length} opportunities` : 'Reading the opportunities…'} />
+                <select className={controlClass} value={oppId} onChange={(e) => setOppId(e.target.value)} disabled={!opportunities}>
+                  <option value="">— none chosen —</option>
+                  {oppShown.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                </select>
+              </div>
+            </Field>
+          ) : (
+            <Field label="Owner">
+              <input className={controlClass} value={author.label} readOnly />
+            </Field>
+          )}
+          <Field label="What mattered most" hint='in a few words: "Margin on the account"'>
+            <input className={controlClass} value={matters} onChange={(e) => setMatters(e.target.value)} required />
+          </Field>
+          <Field label="Why it mattered">
+            <input className={controlClass} value={mattersWhy} onChange={(e) => setMattersWhy(e.target.value)} required minLength={8} />
+          </Field>
+        </div>
+        {sideFields('a', a, setA)}
+        {sideFields('b', b, setB)}
+        <fieldset className="grid gap-2">
+          <legend className="text-meta font-medium text-ink-600">The alternative management chooses</legend>
+          <div className="flex flex-wrap gap-4">
+            {(['a', 'b'] as const).map((k) => {
+              const label = (k === 'a' ? a : b).label.trim();
+              return (
+                <label key={k} className="inline-flex items-center gap-2 text-dense text-ink-900">
+                  <input type="radio" name="chosen" checked={chosen === k} onChange={() => setChosen(k)} disabled={!label} />
+                  {label || (k === 'a' ? 'First alternative' : 'Second alternative')}
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+        <div className="grid gap-[14px] sm:grid-cols-2">
+          <Field label="In one sentence" className="sm:col-span-2">
+            <input className={controlClass} value={summary} onChange={(e) => setSummary(e.target.value)} required minLength={8} />
+          </Field>
+          <Field label="Why this one" className="sm:col-span-2">
+            <textarea className={controlClass} rows={2} value={why} onChange={(e) => setWhy(e.target.value)} required minLength={8} />
+          </Field>
+          <Field label="What management accepts by choosing it" className="sm:col-span-2" hint="optional — what is given up">
+            <input className={controlClass} value={tradeOff} onChange={(e) => setTradeOff(e.target.value)} />
+          </Field>
+          <Field label="What you expect to happen" hint="optional — read against what happens">
+            <textarea className={controlClass} rows={2} value={expect} onChange={(e) => setExpect(e.target.value)} />
+          </Field>
+          <Field label="Look again on" hint="the Cockpit raises it on this day">
+            <input type="date" className={controlClass} value={lookAgain} onChange={(e) => setLookAgain(e.target.value)} required />
+          </Field>
+        </div>
+        <p className="text-meta text-ink-500">
+          HELM records each act in your name — the question, both alternatives, what mattered, your ratings, the commitment — and computes nothing for them: neither alternative is modelled. Nothing is ranked or scored. Whether you were allowed to commit is judged apart, in Governance.
+        </p>
+        {error && (
+          <p role="alert" className="text-dense text-red-700">
+            {error}
+            {stoppedAt && (
+              <>
+                {' '}What was recorded before it stays.{' '}
+                <button type="button" className="font-medium underline" onClick={() => onRecorded(stoppedAt)}>Open it</button>
+              </>
+            )}
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" type="submit" disabled={!!busy || !complete}>
+            {busy ? `${busy}…` : `Record as ${author.label}`}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 // ================================================ preparing an open decision
 
 type Panel = 'alternative' | 'criterion' | 'assumption' | 'assess' | 'commit' | null;

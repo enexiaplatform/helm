@@ -356,7 +356,7 @@ export function CockpitPage() {
               className="mt-8"
               title="No management decision is on record."
               detail="A decision in HELM holds the question, the alternatives and what each one costs elsewhere in the enterprise, who may decide, and what was expected — so it can be looked at again against what happened."
-              action={<Button variant="primary" onClick={() => navigate('/decisions')}>Frame a decision</Button>}
+              action={<Button variant="primary" onClick={() => navigate('/decisions?record=1')}>Record a decision</Button>}
             />
           )}
 

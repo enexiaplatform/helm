@@ -22,7 +22,7 @@ import { EmptyState } from '../components/ui/EmptyState.tsx';
 import { DecisionRow, type DecisionRowView } from '../components/decision/DecisionRow.tsx';
 import type { PillTone } from '../components/ui/Pill.tsx';
 import { displayDate, readable, resolveDecisionContext, type DecisionWorkspaceContext } from '../services/decisionRuntime.ts';
-import { FrameDecisionModal } from '../components/decision/DecisionAuthoring.tsx';
+import { FrameDecisionModal, RecordDecisionModal } from '../components/decision/DecisionAuthoring.tsx';
 import { Button } from '../components/ui/Button.tsx';
 import { asUserId } from '@helm/shared';
 import { loadDecisionSummaries, type DecisionSummary } from '../services/decisionWorkspace.ts';
@@ -104,6 +104,8 @@ export function DecisionsPage() {
   // ?frame=1 opens the framing form directly: the Cockpit's start-here guide links here.
   const [params, setParams] = useSearchParams();
   const [framing, setFraming] = useState(params.get('frame') === '1');
+  // ?record=1 opens Record a decision: the Cockpit links here when no decision is on record.
+  const [recording, setRecording] = useState(params.get('record') === '1');
   // The link opened the form once; a reload or a back step does not open it again.
   useEffect(() => {
     if (params.has('frame')) setParams({}, { replace: true });
@@ -178,10 +180,14 @@ export function DecisionsPage() {
     items.length === 0
       ? 'No decision has been framed yet.'
       : `${word(items.length)} ${plural(items.length, 'decision', 'decisions')} on record${all ? `, ${all}` : `: ${parts.join(', ')}`}.`;
+  // A decision already taken is recorded in one sitting; one still to be prepared is framed and built up act by act.
   const frame = ctx ? (
-    <Button variant="primary" onClick={() => setFraming(true)}>
-      Frame a decision
-    </Button>
+    <span className="flex flex-wrap items-center gap-2">
+      <Button variant="primary" onClick={() => setRecording(true)}>
+        Record a decision
+      </Button>
+      <Button onClick={() => setFraming(true)}>Frame one to prepare</Button>
+    </span>
   ) : null;
 
   return (
@@ -198,7 +204,7 @@ export function DecisionsPage() {
         <EmptyState
           className="mt-9"
           title="No decisions yet"
-          detail="A decision starts with a question — not a topic. Frame it here; bind the futures it chooses between now, or branch them on Scenarios first and add them as alternatives later."
+          detail="A decision starts with a question — not a topic. Record one already taken in a single sitting, or frame one still open and bind the futures it chooses between, branched on Scenarios."
           action={
             <span className="flex flex-wrap items-center gap-4">
               {frame}
@@ -219,6 +225,17 @@ export function DecisionsPage() {
               </section>
             ))}
         </div>
+      )}
+      {recording && ctx && (
+        <RecordDecisionModal
+          ctx={ctx}
+          author={{ label: userEmail ?? 'Management', userId: userId ? asUserId(userId) : null }}
+          onClose={() => setRecording(false)}
+          onRecorded={(id) => {
+            setRecording(false);
+            navigate(`/decisions/${id}`);
+          }}
+        />
       )}
       {framing && ctx && (
         <FrameDecisionModal

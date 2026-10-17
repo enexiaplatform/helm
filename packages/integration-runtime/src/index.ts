@@ -24,6 +24,8 @@ export { createMemoireAdapter, createFixtureMemoireReader, MEMOIRE_CONNECTOR, ME
 export type { MemoireReader, MemoireOpportunityRow, MemoireCursor } from './memoire.ts';
 export { createMemoireOrderCostAdapter, createFixtureOrderCostReader, MEMOIRE_COST_CONNECTOR, MEMOIRE_ORDER_COST_CONTRACT } from './memoireCosts.ts';
 export type { MemoireOrderCostReader, MemoireOrderCostRow, MemoireCostCursor } from './memoireCosts.ts';
+export { createMemoireReceivableAdapter, createFixtureReceivableReader, MEMOIRE_RECEIVABLE_CONNECTOR, MEMOIRE_RECEIVABLE_CONTRACT } from './memoireReceivables.ts';
+export type { MemoireReceivableReader, MemoireReceivableRow, MemoireReceivableCursor, MemoireReceipt } from './memoireReceivables.ts';
 export { sourceAndModel } from './truth.ts';
 export type { SourceAndModel, TruthReading } from './truth.ts';
 export { createWritebackGateway, createMemoireWritebackAdapter } from './writeback.ts';

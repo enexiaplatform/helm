@@ -519,6 +519,20 @@ export const seedValueMetrics: readonly SeedValueMetric[] = [
     scopeCategories: COMMERCIAL_SCOPES,
     metadata: { introducedIn: 'phase-4' },
   },
+  {
+    // Step 3 (2026-10-17): the cash end of the chain, as the source records it. What is still owed is NOT a HELM metric:
+    // the source derives it from its own payment terms and schedule, and HELM does not compute it again.
+    key: 'CashReceived',
+    name: 'Cash Received',
+    description: 'Money banked against a commercial event to date, as the source records each receipt.',
+    dimension: 'CAPITAL',
+    unitType: 'currency',
+    aggregation: 'SUM',
+    directionality: 'HIGHER_IS_BETTER',
+    timeBehavior: 'CUMULATIVE',
+    scopeCategories: COMMERCIAL_SCOPES,
+    metadata: { introducedIn: 'step-3' },
+  },
 ];
 
 export const seedValueMetricKeys = seedValueMetrics.map((m) => m.key);

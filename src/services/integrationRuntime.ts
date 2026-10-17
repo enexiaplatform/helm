@@ -25,6 +25,8 @@ import {
   createMemoireAdapter,
   createMemoireOrderCostAdapter,
   createFixtureOrderCostReader,
+  createMemoireReceivableAdapter,
+  createFixtureReceivableReader,
   createMemoireWritebackAdapter,
   createWritebackGateway,
   sourceAndModel,
@@ -42,7 +44,7 @@ import { MERIDIAN_DEMO_USERS, scopeAs } from '@helm/authority-runtime';
 import { asValidTime, seqIdGen, type Result, type Scope } from '@helm/shared';
 import { supabaseClient } from '../lib/supabaseClient.ts';
 import { getCloudGraphs } from './ontologyGraph.ts';
-import { createMemoireOpportunityReader, createMemoireOrderCostReader } from './memoireBridge.ts';
+import { createMemoireOpportunityReader, createMemoireOrderCostReader, createMemoireReceivableReader } from './memoireBridge.ts';
 import { resolveReviewContext } from './reviewRuntime.ts';
 import { resolveTwinContext, type TwinContext } from './twinRuntime.ts';
 
@@ -54,8 +56,11 @@ export type IntegrationContext = {
   readonly pipeline: IngestionPipeline;
   readonly gateway: WritebackGateway;
   readonly adapter: SourceAdapter;
-  /** Step 3: Memoire's order costs, read after the opportunities they name (a cost needs its opportunity first). */
-  readonly costAdapter: SourceAdapter;
+  /**
+   * Step 3: what Memoire records about each order past the deal — its landed cost and the cash received — read after
+   * the opportunities they name (an order needs its opportunity first), in this order.
+   */
+  readonly orderAdapters: readonly SourceAdapter[];
   /** Demo: what the canonical proof did. Null in the cloud. */
   readonly proof: IntegrationProof | null;
   /** Demo: change what the fixture Memoire says, and sync. */
@@ -127,6 +132,12 @@ function getDemoIntegration(scope: Scope): Promise<IntegrationContext> {
         { id: 'cost-9001', opportunity_id: 'opp-9001', amount: 1650000000, currency: 'VND', duty_amount: 82500000, freight_amount: 41000000, other_amount: null, extras_currency: null, is_sample: false, created_at: '2027-04-21T02:00:00.000Z', updated_at: '2027-04-21T02:00:00.000Z' },
       ]),
     );
+    // …and the cash that came back for it, in two receipts.
+    const receivableAdapter = createMemoireReceivableAdapter(
+      createFixtureReceivableReader([
+        { id: 'recv-9001', opportunity_id: 'opp-9001', receipts: [{ amount: 750000000, currency: 'VND', received_on: '2027-04-10' }, { amount: 500000000, currency: 'VND', received_on: '2027-04-21' }], is_sample: false, updated_at: '2027-04-21T03:00:00.000Z' },
+      ]),
+    );
     const pipeline = createIngestionPipeline({ graph: k.graph, valueGraph: k.valueGraph!, store, clock: k.clock });
     const gateway = createWritebackGateway({ decisions: k.decisionStore, authority: k.authority, store, adapters: [createMemoireWritebackAdapter()] });
 
@@ -141,6 +152,7 @@ function getDemoIntegration(scope: Scope): Promise<IntegrationContext> {
     said[1] = { ...said[1]!, pipeline_probability: 40, updated_at: '2027-04-22T02:00:00.000Z' };
     const changedSync = must(await pipeline.run(gm, adapter), 'changed sync');
     must(await pipeline.run(gm, costAdapter), 'order costs');
+    must(await pipeline.run(gm, receivableAdapter), 'order receipts');
     const sv = node ? must(await sourceAndModel(k.valueGraph!, gm, node.id), 'source and model') : null;
     k.clock.jumpTo?.('2027-04-23T03:00:00.000Z');
     // A source that changed its schema is stopped, not guessed at.
@@ -159,7 +171,7 @@ function getDemoIntegration(scope: Scope): Promise<IntegrationContext> {
       pipeline,
       gateway,
       adapter,
-      costAdapter,
+      orderAdapters: [costAdapter, receivableAdapter],
       memoire: { rows: said },
       proof: { firstSync, repeatSync, changedSync, driftBlocked, writebacks: dispatched.requests, replayed: again.requests, sourceVsModel: sv, sourceVsModelLabel: 'Opportunity Probability — Hanoi hospital tender' },
     };
@@ -173,7 +185,7 @@ async function getCloudIntegration(scope: Scope): Promise<IntegrationContext | n
   if (!twin || !graphs || !supabaseClient) return null;
   const store = createPostgresIntegrationStore({ client: supabaseClient });
   const adapter = createMemoireAdapter(createMemoireOpportunityReader());
-  const costAdapter = createMemoireOrderCostAdapter(createMemoireOrderCostReader());
+  const orderAdapters = [createMemoireOrderCostAdapter(createMemoireOrderCostReader()), createMemoireReceivableAdapter(createMemoireReceivableReader())];
   return {
     scope,
     mode: 'cloud',
@@ -182,7 +194,7 @@ async function getCloudIntegration(scope: Scope): Promise<IntegrationContext | n
     pipeline: createIngestionPipeline({ graph: graphs.graphStore, valueGraph: graphs.valueGraph, store, clock: twin.kernel.clock }),
     gateway: createWritebackGateway({ decisions: twin.kernel.decisionStore, authority: twin.kernel.authority, store, adapters: [createMemoireWritebackAdapter()] }),
     adapter,
-    costAdapter,
+    orderAdapters,
     proof: null,
     memoire: null,
   };
@@ -194,23 +206,28 @@ export async function resolveIntegrationContext(mode: 'demo' | 'cloud', scope: S
 
 export async function syncNow(ctx: IntegrationContext): Promise<SyncRecord> {
   const opportunities = must(await ctx.pipeline.run(ctx.scope, ctx.adapter), 'sync');
-  must(await ctx.pipeline.run(ctx.scope, ctx.costAdapter), 'order costs');
+  for (const a of ctx.orderAdapters) must(await ctx.pipeline.run(ctx.scope, a), a.connector);
   return opportunities;
 }
 
 /**
- * One page of the live read: opportunities first; once they have nothing new, the order costs that name them. A cost
- * read before its opportunity would be quarantined, so the costs wait for the opportunities to catch up.
+ * One page of the live read: opportunities first; once they have nothing new, the orders that name them — costs, then
+ * receipts — each until it has nothing new. An order read before its opportunity would be quarantined, so the orders
+ * wait for the opportunities to catch up.
  */
 export async function syncNextPage(ctx: IntegrationContext, limit: number): Promise<Result<SyncRecord>> {
-  const opportunities = await ctx.pipeline.run(ctx.scope, ctx.adapter, { limit });
-  if (!opportunities.ok || opportunities.value.counts.records > 0) return opportunities;
-  return ctx.pipeline.run(ctx.scope, ctx.costAdapter, { limit });
+  let last = await ctx.pipeline.run(ctx.scope, ctx.adapter, { limit });
+  if (!last.ok || last.value.counts.records > 0) return last;
+  for (const a of ctx.orderAdapters) {
+    last = await ctx.pipeline.run(ctx.scope, a, { limit });
+    if (!last.ok || last.value.counts.records > 0) return last;
+  }
+  return last;
 }
 
 /** Whether the source holds anything after the checkpoint — one row read through the adapter, nothing recorded. */
 export async function sourceHasNews(ctx: IntegrationContext): Promise<boolean> {
-  for (const adapter of [ctx.adapter, ctx.costAdapter]) {
+  for (const adapter of [ctx.adapter, ...ctx.orderAdapters]) {
     const cp = must(await ctx.store.checkpointOf(ctx.scope, adapter.system, adapter.connector), 'checkpoint');
     if (must(await adapter.pull(ctx.scope, cp.cursor, 1), 'source probe').records.length > 0) return true;
   }

@@ -315,7 +315,19 @@ export function createIngestionPipeline(deps: IngestionPipelineDeps): IngestionP
     const node = await valueGraph.upsertValueNode(scope, { metricKey: f.metricKey, subjectEntityId: asEntityId(subjectId), timeHorizon: 'current', label: f.label, createdBy: scope.actorId });
     if (!node.ok) throw new Error(node.error.message);
     const latest = await valueGraph.getLatestObservation(scope, { nodeId: node.value.id, type: f.observationType, scenarioEntityId: null });
-    if (latest.ok && latest.value && latest.value.numericValue === f.value && latest.value.unitType === f.unit && (latest.value.currency ?? null) === (f.currency ?? null)) return 'unchanged';
+    // Unchanged means the same reading for the same interval: a period or running-total metric moves its interval as well
+    // as its value, and the same figure for a new interval is a new fact (2026-10-17).
+    const at = (t: string | null | undefined) => (t ? Date.parse(t) : null);
+    if (
+      latest.ok &&
+      latest.value &&
+      latest.value.numericValue === f.value &&
+      latest.value.unitType === f.unit &&
+      (latest.value.currency ?? null) === (f.currency ?? null) &&
+      at(latest.value.periodStart) === at(f.periodStart) &&
+      at(latest.value.periodEnd) === at(f.periodEnd)
+    )
+      return 'unchanged';
     const obs = await valueGraph.recordObservation(scope, {
       nodeId: node.value.id,
       observationType: f.observationType,

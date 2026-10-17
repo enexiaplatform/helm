@@ -1,5 +1,5 @@
 import { ok, fail } from '@helm/shared';
-import type { MemoireOpportunityRow, MemoireOrderCostReader, MemoireOrderCostRow, MemoireReader } from '@helm/integration-runtime';
+import type { MemoireOpportunityRow, MemoireOrderCostReader, MemoireOrderCostRow, MemoireReader, MemoireReceivableReader, MemoireReceivableRow } from '@helm/integration-runtime';
 import { supabaseClient } from '../lib/supabaseClient.ts';
 
 /**
@@ -85,6 +85,41 @@ export function createMemoireOrderCostReader(): MemoireOrderCostReader {
             extras_currency: str(p['extrasCurrency']),
             is_sample: typeof p['isSample'] === 'boolean' ? (p['isSample'] as boolean) : null,
             created_at: new Date(r.created_at).toISOString(),
+            updated_at: new Date(r.updated_at).toISOString(),
+          };
+        }),
+      );
+    },
+  };
+}
+
+/**
+ * The Memoire read port for order receipts (step 3, 2026-10-17): the signed-in user's own `order_receivables` (RLS
+ * scopes it), rows strictly after a cursor, oldest first. Only the receipts banked are read out of Memoire's payload —
+ * what is still owed is Memoire's own derivation and is not read. Read-only.
+ */
+export function createMemoireReceivableReader(): MemoireReceivableReader {
+  return {
+    async listReceivables(_scope, after, limit) {
+      if (!supabaseClient) return fail('integration.no_client', 'Memoire cannot be read: no database client is configured.');
+      let q = supabaseClient.from('order_receivables').select('id, payload, updated_at').order('updated_at', { ascending: true }).order('id', { ascending: true }).limit(limit);
+      if (after) {
+        const nextMs = new Date(Date.parse(after.updatedAt) + 1).toISOString();
+        q = q.or(`updated_at.gte.${nextMs},and(updated_at.gte.${after.updatedAt},updated_at.lt.${nextMs},id.gt.${after.id})`);
+      }
+      const { data, error } = await q;
+      if (error) return fail('integration.read_failed', `Reading Memoire receivables failed: ${error.message}`);
+      type Read = { id: string; payload: Record<string, unknown> | null; updated_at: string };
+      const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v : null);
+      return ok(
+        ((data ?? []) as Read[]).map((r): MemoireReceivableRow => {
+          const p = r.payload ?? {};
+          const receipts = Array.isArray(p['receipts']) ? (p['receipts'] as Record<string, unknown>[]) : [];
+          return {
+            id: r.id,
+            opportunity_id: str(p['opportunityId']) ?? '',
+            receipts: receipts.map((x) => ({ amount: typeof x['amount'] === 'number' || typeof x['amount'] === 'string' ? (x['amount'] as number | string) : null, currency: str(x['currency']), received_on: str(x['receivedOn']) })),
+            is_sample: typeof p['isSample'] === 'boolean' ? (p['isSample'] as boolean) : null,
             updated_at: new Date(r.updated_at).toISOString(),
           };
         }),

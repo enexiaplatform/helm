@@ -8,7 +8,7 @@
 -- declares. Idempotent: an upsert of every system metric, touching nothing an
 -- organization defined for itself. Only helm_value_metrics is written.
 --
--- Metrics introduced since the Phase 2 migration: OrderQuantity, DemandCoverage, AllocatedInventory, UnservedDemand, RevenueAtRisk.
+-- Metrics introduced since the Phase 2 migration: OrderQuantity, DemandCoverage, AllocatedInventory, UnservedDemand, RevenueAtRisk, CashReceived.
 -- Definitions revised since: WorkingCapital.directionality (was LOWER_IS_BETTER).
 -- ============================================================================
 
@@ -53,7 +53,8 @@ VALUES
   ('vm_demandcoverage', NULL, 'DemandCoverage', 'Demand Coverage', 'Share of a period''s inventory requirement that own stock covers. HELM''s proxy for the ability to serve — not a measured service level.', 'CUSTOMER', 'percentage', NULL, 'numeric', 'WEIGHTED_AVERAGE', 'HIGHER_IS_BETTER', 'PERIOD', ARRAY['operations', 'commercial', 'resource']::text[], 1, 'active', true, '{"introducedIn":"phase-4","weightBy":"InventoryRequirement"}'::jsonb),
   ('vm_allocatedinventory', NULL, 'AllocatedInventory', 'Allocated Inventory', 'Units of own stock a management choice commits to one opportunity for a period. Stated, never derived: HELM does not allocate.', 'OPERATIONAL', 'units', NULL, 'numeric', 'SUM', 'CONTEXT_DEPENDENT', 'PERIOD', ARRAY['commercial', 'market']::text[], 1, 'active', true, '{"introducedIn":"phase-4"}'::jsonb),
   ('vm_unserveddemand', NULL, 'UnservedDemand', 'Unserved Order Quantity', 'Units of a won order that the stock allocated to it would not cover.', 'OPERATIONAL', 'units', NULL, 'numeric', 'SUM', 'LOWER_IS_BETTER', 'PERIOD', ARRAY['commercial', 'market']::text[], 1, 'active', true, '{"introducedIn":"phase-4"}'::jsonb),
-  ('vm_revenueatrisk', NULL, 'RevenueAtRisk', 'Revenue at Risk', 'Expected revenue attached to the part of an order that cannot be served under a stated allocation.', 'RISK', 'currency', NULL, 'numeric', 'SUM', 'LOWER_IS_BETTER', 'PERIOD', ARRAY['commercial', 'market']::text[], 1, 'active', true, '{"introducedIn":"phase-4"}'::jsonb)
+  ('vm_revenueatrisk', NULL, 'RevenueAtRisk', 'Revenue at Risk', 'Expected revenue attached to the part of an order that cannot be served under a stated allocation.', 'RISK', 'currency', NULL, 'numeric', 'SUM', 'LOWER_IS_BETTER', 'PERIOD', ARRAY['commercial', 'market']::text[], 1, 'active', true, '{"introducedIn":"phase-4"}'::jsonb),
+  ('vm_cashreceived', NULL, 'CashReceived', 'Cash Received', 'Money banked against a commercial event to date, as the source records each receipt.', 'CAPITAL', 'currency', NULL, 'numeric', 'SUM', 'HIGHER_IS_BETTER', 'CUMULATIVE', ARRAY['commercial', 'market']::text[], 1, 'active', true, '{"introducedIn":"step-3"}'::jsonb)
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   description = EXCLUDED.description,
